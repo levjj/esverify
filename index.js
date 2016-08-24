@@ -123,9 +123,11 @@ class Theorem {
     // -> SMTOutput
     if (this._results) return this._results;
     const smt = this.csystem(),
-          result = await new Promise(resolve =>
-            setTimeout(() => resolve("sat\n(model)\n"), 1000));
-    return this._results = result;
+          req = await fetch("/nodejs/Z3server/", {
+            method: "POST",
+            body: smt
+          });
+    return this._results = await req.text();
   }
   
   async isSatisfied() {
