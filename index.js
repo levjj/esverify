@@ -1,6 +1,6 @@
 import { arr } from "lively.lang";
 import { parse, stringify } from "lively.ast";
-import normalizer from "JS_WALA/normalizer/lib/normalizer";
+import normalizer from "./jswala.js";
 
 // type JSSource = string;
 // type SMTInput = string;

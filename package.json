@@ -1,7 +1,7 @@
 {
   "name": "lively.verify",
   "version": "0.0.1",
-  "description": "Extended Static Checking for interactively verifying JavaScript",
+  "description": "Experimental support for interactively verifying JavaScript",
   "author": "Christopher Schuster <cs@livoris.net>",
   "license": "MIT",
   "bugs": {
@@ -20,12 +20,11 @@
     "packageMap": {
       "lively.ast": "./node_modules/lively.ast",
       "lively.lang": "./node_modules/lively.lang",
-      "mocha-es6": "./node_modules/mocha-es6",
-      "JS_WALA": "./node_modules/JS_WALA",
-      "z3.js": "./node_modules/z3.js"
+      "mocha-es6": "./node_modules/mocha-es6"
     }
   },
   "scripts": {
+    "build": "node build-jswala.js",
     "test": "mocha-es6 tests/*-test.js"
   },
   "repository": {
@@ -33,12 +32,12 @@
     "url": "git+https://github.com/LivelyKernel/lively.verify.git"
   },
   "dependencies": {
-    "JS_WALA": "https://github.com/nwinter/JS_WALA/tarball/master",
     "lively.ast": "^0.7.25",
-    "lively.lang": "^0.6.0",
-    "z3.js": "babelsberg/z3.js"
+    "lively.lang": "^0.6.0"
   },
   "devDependencies": {
+    "browserify": "^13.0.1",
+    "JS_WALA": "https://github.com/nwinter/JS_WALA/tarball/master",
     "mocha-es6": "^0.3.9"
   }
 }
