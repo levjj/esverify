@@ -1,3 +1,5 @@
+/* global fetch */
+
 import { arr } from "lively.lang";
 import { parse, stringify } from "lively.ast";
 import normalizer from "./jswala.js";
@@ -12,12 +14,12 @@ function funcBody(func) {
   // TODO remove conditions
   const normalized = normalizer.normalize(func,
     {unify_ret: true, unfold_ifs: true});
-  return normalized.body;
+  return normalized.body.body;
 }
 
 function preConditions(func) {
   // FunctionDeclaration -> Array<Expression>
-  return func.body
+  return func.body.body
     .filter(stmt =>
       stmt.type == "ExpressionStatement" &&
       stmt.expression.type == "CallExpression" &&
@@ -29,7 +31,7 @@ function preConditions(func) {
 
 function postConditions(func) {
   // FunctionDeclaration -> Array<Expression>
-  return func.body
+  return func.body.body
     .filter(stmt =>
       stmt.type == "ExpressionStatement" &&
       stmt.expression.type == "CallExpression" &&
@@ -83,10 +85,12 @@ const preamble = `
 
 function assertionToSMT(expr) {
   // Expression -> SMTInput
+  return `(jsbool true)`;
 }
 
 function statementToSMT(stmt) {
   // Statement -> SMTInput
+  return "";
 }
 
 class Theorem {
@@ -96,10 +100,12 @@ class Theorem {
   }
   
   description() {
+    // -> string
     return `${this.func.name}:\n${stringify(this.postcondition)}`;
   }
   
   csystem() {
+    // -> SMTInput
     if (this._csystem) return this._csystem;
 
     const parameters = this.func.params.map(p =>
@@ -122,25 +128,25 @@ class Theorem {
   async solve() {
     // -> SMTOutput
     if (this._results) return this._results;
-    const smt = this.csystem(),
-          req = await fetch("/nodejs/Z3server/", {
-            method: "POST",
-            body: smt
-          });
+    const req = await fetch("/nodejs/Z3server/", {
+      method: "POST",
+      body: this.csystem()
+    });
     return this._results = await req.text();
   }
   
   async isSatisfied() {
     // -> Bool
     const res = await this.solve();
-    return res.startsWith("sat");
+    return res.startsWith("unsat");
   }
 }
 
 function functions(ast) {
+  // Node -> Array<FunctionDeclaration>?
   const result = [];
-  for (const node of ast.body.body) {
-    if (node.type !== "FunctionDeclaration") return;
+  for (const node of ast.body) {
+    if (node.type !== "FunctionDeclaration") return null;
     result.push(node);
   }
   return result;
@@ -152,14 +158,14 @@ function theorems(fun) {
 }
 
 export function theoremsInSource(src) {
-  // JSSource -> Array<Theorem>
+  // JSSource -> Array<Theorem>?
   try {
     const ast = parse(src),
           funcs = functions(ast);
-    if (!funcs) return [];
+    if (!funcs) return null;
     return arr.flatmap(funcs, theorems);
   } catch (e) {
     console.error(e);
-    return [];
+    return null
   }
 }
