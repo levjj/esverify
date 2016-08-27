@@ -1,7 +1,7 @@
 import { arr } from "lively.lang";
 import { parse } from "lively.ast";
 
-import { theorems } from "./theorems.js";
+import Theorem from "./theorems.js";
 
 // type JSSource = string;
 // type SMTInput = string;
@@ -15,6 +15,23 @@ function functions(ast) {
     result.push(node);
   }
   return result;
+}
+
+function postConditions(func) {
+  // FunctionDeclaration -> Array<Expression>
+  return func.body.body
+    .filter(stmt =>
+      stmt.type == "ExpressionStatement" &&
+      stmt.expression.type == "CallExpression" &&
+      stmt.expression.callee.type == "Identifier" &&
+      stmt.expression.callee.name == "ensures"
+    )
+    .map(stmt => stmt.expression.arguments[0]);
+}
+
+export function theorems(fun) {
+  // FunctionDeclaration -> Array<Theorem>
+  return postConditions(fun).map(post => new Theorem(fun, post));
 }
 
 export function theoremsInSource(src) {

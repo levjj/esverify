@@ -1,5 +1,6 @@
 /* global fetch */
 
+import { obj } from "lively.lang";
 import { stringify } from "lively.ast";
 import Visitor from "lively.ast/generated/estree-visitor.js";
 
@@ -22,21 +23,17 @@ class RemoveAssertions extends Visitor {
   }
 }
 
-function funcBody(func) {
+function functionBody(func) {
   // FunctionDeclaration -> BlockStatement
   
   // normalize function body to SSA-like language
   const ra = new RemoveAssertions(),
-      replaced = ra.accept(func, null, []),
+      replaced = ra.accept(obj.deepCopy(func), null, []),
       prog = {type: "Program", body: [replaced]},
       normalized = normalizer.normalize(prog,
         {unify_ret: true});
   // extract statements in function
-  const nFunc = normalized.body[0].expression.callee;
-  return {
-    type: "BlockStatement",
-    body: nFunc.body.body[1].expression.right.body.body
-  };
+  return normalized.body[0].expression.callee.body.body[1].expression.right;
 }
 
 function preConditions(func) {
@@ -51,28 +48,30 @@ function preConditions(func) {
     .map(stmt => stmt.expression.arguments[0]);
 }
 
-function postConditions(func) {
-  // FunctionDeclaration -> Array<Expression>
-  return func.body.body
-    .filter(stmt =>
-      stmt.type == "ExpressionStatement" &&
-      stmt.expression.type == "CallExpression" &&
-      stmt.expression.callee.type == "Identifier" &&
-      stmt.expression.callee.name == "ensures"
-    )
-    .map(stmt => stmt.expression.arguments[0]);
-}
-
-export class Theorem {
+export default class Theorem {
   constructor(func, postcondition) {
     // FunctionDeclaration, Expression -> Theorem
     this.func = func;
     this.postcondition = postcondition;
+    this._result = null;
   }
   
   description() {
     // -> string
     return `${this.func.id.name}:\n${stringify(this.postcondition)}`;
+  }
+  
+  funcBody() {
+    return {
+      type: "BlockStatement",
+      body: functionBody(this.func).body.body
+    };
+  }
+  
+  funcBodyStr() {
+    const func = functionBody(this.func);
+    func.id = this.func.id;
+    return stringify(func);
   }
   
   csystem() {
@@ -83,13 +82,11 @@ export class Theorem {
             `(declare-const ${p.name} JSVal)`).join('\n'),
           requirements = preConditions(this.func).map(c =>
             `(assert (_truthy ${assertionToSMT(c, this.func)}))`).join('\n'),
-          [body] = statementToSMT(funcBody(this.func)),
+          [body] = statementToSMT(this.funcBody()),
           post = `(assert (not (_truthy ${assertionToSMT(this.postcondition, this.func)})))`;
     
-    console.log(stringify(funcBody(this.func)));
-
-    return this._csystem = `
-${preamble}
+    return this._csystem =
+`${preamble}
 
 ; parameters
 ${parameters}
@@ -108,28 +105,34 @@ ${post}
 (get-value (${this.func.params.map(p => p.name).join(' ')} _res))`;
   }
   
+  result() {
+    return this._result;
+  }
+  
   async solve() {
     // -> SMTOutput
-    if (this._results) return this._results;
+    if (this._result) return this._result;
     const req = await fetch("/nodejs/Z3server/", {
       method: "POST",
       body: this.csystem()
     });
-    return this._results = await req.text();
+    return this._result = await req.text();
   }
   
-  async isSatisfied() {
-    // -> Bool
-    const res = await this.solve();
+  isSatisfiable() {
+    // -> Bool?
+    const res = this.result();
+    if (!res) return null;
     if (res.startsWith("unsat")) return true;
     if (res.startsWith("sat")) return false;
     throw new Error("z3 failed to solve problem");
   }
   
-  async getModel() {
-    // -> { [string]: any }
+  getModel() {
+    // -> { [string]: any }?
     if (this._model) return this._model;
-    let res = await this.solve();
+    let res = this.result();
+    if (!res) return null;
     if (!res.startsWith("sat")) throw new Error("no model available");
     // remove "sat"
     res = res.slice(3, res.length);
@@ -146,9 +149,4 @@ ${post}
     });
     return this._model = model;
   }
-}
-
-export function theorems(fun) {
-  // FunctionDeclaration -> Array<Theorem>
-  return postConditions(fun).map(post => new Theorem(fun, post));
 }

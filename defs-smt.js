@@ -1,6 +1,5 @@
-export const preamble = `
-
-; Values in JavaScript
+export const preamble =
+`; Values in JavaScript
 (declare-datatypes () (
   (JSVal
     (jsnum (numv Int))

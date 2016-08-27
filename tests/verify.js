@@ -29,12 +29,14 @@ describe("verify", () => {
       expect(theorems).to.have.length(1);
     });
     
-    it("has a description", () => {
+    it("has a description", async () => {
+      await theorems[0].solve();
       expect(theorems[0].description()).to.be.eql("max:\nmax(a, b) >= a");
     });
     
     it("can be verified", async () => {
-      const result = await theorems[0].isSatisfied();
+      await theorems[0].solve();
+      const result = theorems[0].isSatisfiable();
       expect(result).to.be.true;
     });
   });
@@ -59,13 +61,13 @@ describe("verify", () => {
     });
 
     it("can not be verified", async () => {
-      const result = await theorems[0].isSatisfied();
-      expect(result).to.be.false;
+      await theorems[0].solve();
+      expect(theorems[0].isSatisfiable()).to.be.false;
     });
     
     it("returns counter-example", async () => {
-      const result = await theorems[0].getModel();
-      expect(result).to.containSubset({
+      await theorems[0].solve();
+      expect(theorems[0].getModel()).to.containSubset({
         _res: 0,
         a: false,
         b: 0,
