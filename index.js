@@ -2,7 +2,11 @@
 
 import { arr } from "lively.lang";
 import { parse, stringify } from "lively.ast";
+
 import normalizer from "./jswala.js";
+import assertionsToSMT from "./assertions.js";
+import statementsToSMT from "./javascript.js";
+import { preamble } from "./defs-smt.js";
 
 // type JSSource = string;
 // type SMTInput = string;
@@ -41,58 +45,6 @@ function postConditions(func) {
     .map(stmt => stmt.expression.arguments[0]);
 }
 
-const preamble = `
-; Values in JavaScript
-(declare-datatypes () (
-  (JSVal
-    (jsnum (numv Int))
-    (jsbool (boolv Bool))
-    (jsstring (stringv (List Int)))
-    jsnull
-    jsundefined
-    (jsarray (items JSValList))
-    (jsobj (props JSPropList)))
-  (JSValList empty (cons (car JSVal) (cdr JSValList)))
-  (JSProp (prop (key (List Int)) (val JSVal)))
-  (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
-
-; Types in JavaScript
-(declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj)))
-
-(define-fun _js-typeof ((a JSVal)) JSType
-  (ite (is-jsnum a) JSNum
-  (ite (is-jsbool a) JSBool
-  (ite (is-jsstring a) JSString
-  (ite (is-jsnull a) JSObj
-  (ite (is-jsundefined a) JSUndefined
-  (ite (is-jsarray a) JSArray
-  JSObj)))))))
-
-; a >= b
-(define-fun _js-geq ((a JSVal) (b JSVal)) JSVal
-  (ite (is-jsnum a)
-    (ite (is-jsnum b)
-      (ite (>= (numv a) (numv b)) (jsbool true) (jsbool false))
-      (jsbool false))
-    (jsbool false)))
-
-; !!x
-(define-fun _js-truthy ((x JSVal)) Bool
-  (ite (is-jsnum x)
-    (not (= (numv x) 0))
-    (boolv x)))
-`;
-
-function assertionToSMT(expr) {
-  // Expression -> SMTInput
-  return `(jsbool true)`;
-}
-
-function statementToSMT(stmt) {
-  // Statement -> SMTInput
-  return "";
-}
-
 class Theorem {
   constructor(func, postcondition) {
     this.func = func;
@@ -118,6 +70,7 @@ class Theorem {
     return this._csystem = `
       ${preamble}
       ${parameters}
+      (declare-const _res JSVal)
       ${requirements}
       ${body}
       ${post}
