@@ -68,12 +68,14 @@ const binOpToSMT = {
 };
 
 function arrayToSMT(elements) {
+  // Array<Identifier> -> SMTInput
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
   return `(cons ${head.name} ${arrayToSMT})`;
 }
 
 function expressionToSMT(expr) {
+  // Statement -> SMTInput
   switch (expr.type) {
     case 'FunctionExpression':
       throw new Error("unsupported");
@@ -112,11 +114,11 @@ function expressionToSMT(expr) {
 }
 
 export default function statementToSMT(stmt, antecedents = []) {
+  // Statement -> SMTInput
   function as(s) {
     if (antecedents.length == 0) return `(assert ${s})`;
     return `(assert (=> (and ${antecedents.join(' ')}) ${s}))`;
   }
-  // Statement -> SMTInput
   switch (stmt.type) {
     case 'BlockStatement':
       return stmt.body.map(s => statementToSMT(s, antecedents)).join('\n');
