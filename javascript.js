@@ -44,10 +44,10 @@ const unOpToSMT = {
 };
 
 const binOpToSMT = {
-  "==": "_js-eq",
-  "!=": "_js-neq",
-  "===": "=",
-  //"!==": "neq",
+  "==": "_js-eq", // non-standard
+  "!=": "_js-neq", // non-standard
+  "===": "_js-eq", // non-standard
+  "!==": "_js-neq", // non-standard
   "<": "_js_lt",
   "<=": "_js_leq",
   ">": "_js_gt",
@@ -89,9 +89,6 @@ function expressionToSMT(expr) {
       if (expr.operator == 'delete') throw new Error("unsupported");
       return `(${unOpToSMT[expr.operator]} ${expr.argument.name})`;
     case 'BinaryExpression':
-      if (expr.operator === "!==") {
-        return `(not (= ${expr.right.name} ${expr.left.name}))`;
-      }
       return `(${binOpToSMT[expr.operator]} ${expr.left.name} ${expr.right.name})`;
     case 'CallExpression':
       throw new Error("unsupported");

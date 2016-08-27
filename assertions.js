@@ -21,10 +21,10 @@ const unOpToSMT = {
 };
 
 const binOpToSMT = {
-  "==": "_js-eq",
-  "!=": "_js-neq",
-  "===": "=",
-  //"!==": "neq",
+  "==": "_js-eq", // non-standard
+  "!=": "_js-neq", // non-standard
+  "===": "_js-eq", // non-standard
+  "!==": "_js-neq", // non-standard
   "<": "_js_lt",
   "<=": "_js_leq",
   ">": "_js_gt",
@@ -74,9 +74,6 @@ export function assertionToSMT(expr, func) {
       const left = assertionToSMT(expr.left, func),
             right = assertionToSMT(expr.right, func),
             binop = binOpToSMT[expr.operator];
-      if (expr.operator === "!==") {
-        return `(not (= ${left} ${right}))`;
-      }
       return `(${binop} ${left} ${right})`;
     case "CallExpression":
       if (expr.callee.type == "Identifier" &&
