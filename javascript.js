@@ -71,7 +71,7 @@ function arrayToSMT(elements) {
   // Array<Identifier> -> SMTInput
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
-  return `(cons ${head.name} ${arrayToSMT})`;
+  return `(cons ${head.name} ${arrayToSMT(tail)})`;
 }
 
 function expressionToSMT(expr) {
@@ -92,7 +92,7 @@ function expressionToSMT(expr) {
       if (expr.operator === "!==") {
         return `(not (= ${expr.right.name} ${expr.left.name}))`;
       }
-      return `(${binOpToSMT[expr.operator]} ${expr.right.name} ${expr.left.name})`;
+      return `(${binOpToSMT[expr.operator]} ${expr.left.name} ${expr.right.name})`;
     case 'CallExpression':
       throw new Error("unsupported");
     case 'NewExpression':
@@ -102,6 +102,7 @@ function expressionToSMT(expr) {
     case 'Identifier':
       return expr.name;
     case 'Literal':
+      if (expr.value === undefined) return `jsundefined`;
       if (expr.value === null) return `jsnull`;
       switch (typeof expr.value) {
         case "boolean": return `(jsbool ${expr.value})`;
@@ -113,29 +114,43 @@ function expressionToSMT(expr) {
   }
 }
 
-export default function statementToSMT(stmt, antecedents = []) {
-  // Statement -> SMTInput
+// type Antedecents = Array<SMTInput>
+// type BreakLabel = string;
+// type BreakCondition = {cond: Antedecents, label: BreakLabel}
+
+export function statementToSMT(stmt, pc = []) {
+  // Statement, Antedecents -> [SMTInput, Array<BreakCondition>]
   function as(s) {
-    if (antecedents.length == 0) return `(assert ${s})`;
-    return `(assert (=> (and ${antecedents.join(' ')}) ${s}))`;
+    if (pc.length == 0) return [`(assert ${s})\n`, []];
+    return [`(assert (=> (and ${pc.join(' ')}) ${s}))\n`, []];
   }
   switch (stmt.type) {
     case 'BlockStatement':
-      return stmt.body.map(s => statementToSMT(s, antecedents)).join('\n');
+      return stmt.body.reduce(([smt, bc], s) => {
+        const breakConds = bc.map(bc => `(and ${bc.cond.join(' ')})`),
+              newPC = breakConds.length == 0 ? pc : pc.concat(
+                [`(not (or ${breakConds.join(' ')}))`]),
+              [ssmt, sbc] = statementToSMT(s, newPC);
+        return [smt + ssmt, bc.concat(sbc)];
+      }, ["", []]);
     case 'IfStatement':
-      const tst = `(_js-truthy ${stmt.test.name})`;
-      if (stmt.alternate.length === 1 && stmt.alternate.body[0].type == "EmptyStatement") {
-        return statementToSMT(stmt.consequent,
-                              antecedents.concat([tst])); 
-      } else {
-        return statementToSMT(stmt.alternate,
-                              antecedents.concat([`(not ${tst})`]));
-      }
+      const tst = `(_truthy ${stmt.test.name})`,
+            [smt1, bc1] = statementToSMT(stmt.consequent, pc.concat([tst])),
+            [smt2, bc2] = statementToSMT(stmt.alternate, pc.concat([`(not ${tst})`])),
+            thenBreakConds = bc1.map(({label, cond}) =>
+              ({label, cond: cond.concat([tst])})),
+            elseBreakConds = bc2.map(({label, cond}) =>
+              ({label, cond: cond.concat([`(not ${tst})`])}));
+      return [smt1 + smt2, thenBreakConds.concat(elseBreakConds)];
     case 'LabeledStatement':
-      return statementToSMT(stmt.body);
-    case 'EmptyStatement': return "";
+      const [smt, bc] = statementToSMT(stmt.body);
+      // after this statement, breaks with this label are resolved
+      return [smt, bc.filter(({label}) => label != stmt.label.name)];
+    case 'EmptyStatement': return ["", []];
     case 'BreakStatement':
-      throw new Error("unsupported");
+      // break unconditionally
+      // (any statements in ablock after break are unreachable)
+      return ["", [{label: stmt.label.name, cond: []}]];
     case 'ReturnStatement':
       return as(`(= _res ${stmt.argument.name})`);
     case 'ThrowStatement':
@@ -146,11 +161,11 @@ export default function statementToSMT(stmt, antecedents = []) {
       throw new Error("unsupported");
     case 'ForInStatement':
       throw new Error("unsupported");
-    case 'DebuggerStatement': return "";
+    case 'DebuggerStatement': return ["", []];
     case 'VariableDeclaration':
-      return stmt.declarations
-              .map(decl => `(declare-const ${decl.id.name} JSVal)`)
-              .join('');
+      return [stmt.declarations
+              .map(decl => `(declare-const ${decl.id.name} JSVal)\n`)
+              .join(''), []];
     case 'ExpressionStatement':
       const {left, right} = stmt.expression;
       if (left.type == 'MemberExpression') {
@@ -158,5 +173,28 @@ export default function statementToSMT(stmt, antecedents = []) {
       }
       return as(`(= ${left.name} ${expressionToSMT(right)})`);
     default: throw new Error('Unknown AST node in statement');
+  }
+}
+
+function smtToArray(smt) {
+  // SMTOutput -> Array<any>
+  const s = smt.trim();
+  if (s == "empty") return [];
+  const [_, h, t] = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
+  return [smtToValue(h)].concat(smtToArray(t));
+}
+
+export function smtToValue(smt) {
+  // SMTOutput -> any
+  const s = smt.trim();
+  if (s == "jsundefined") return undefined;
+  if (s == "jsnull") return null;
+  const [_, tag, v] = s.match(/^\((\w+)\ (.*)\)$/);
+  switch (tag) {
+    case "jsbool": return v == "true";
+    case "jsnum": return +v;
+    case "jsstr": return v.substr(1, v.length - 2);
+    case "jsarr": return smtToArray(v);
+    default: throw new Error("unsupported");
   }
 }

@@ -1,11 +1,14 @@
 /*
 AExpression = Identifier (name: string)
-            | Literal (value: boolean | number | string)
+            | Literal (value: undefined | null | boolean | number | string)
+            | ArrayExpression (elements: Array<AExpression>),
             | UnaryExpression (operator: "+" | "-",
                                argument: AExpression)
             | BinaryExpression (operator: "=",
                                 left: AExpression,
                                 right: AExpression)
+            | CallExpression (callee: Identifier,
+                              params: Array<Identifier>)
 */
 
 const unOpToSMT = {
@@ -41,28 +44,49 @@ const binOpToSMT = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-export default function assertionToSMT(expr) {
+function arrayToSMT(elements) {
+  // Array<AExpression> -> SMTInput
+  if (elements.length === 0) return `empty`;
+  const [head, ...tail] = elements;
+  return `(cons ${assertionToSMT(head)} ${arrayToSMT(tail)})`;
+}
+
+export function assertionToSMT(expr, func) {
   // AExpression -> SMTInput
   switch (expr.type) {
     case "Identifier": return expr.name;
-    case "Literal": switch (typeof expr.value) {
-      case "boolean": return `(jsbool ${expr.value})`;
-      case "number": return `(jsnum ${expr.value})`;
-      case "string": return expr.value == "number" ? "JSNum" : "JSBool";
-      default: throw new Error("unsupported");
-    }
+    case "Literal":
+      if (expr.value === undefined) return `jsundefined`;
+      if (expr.value === null) return `jsnull`;
+      switch (typeof expr.value) {
+        case "boolean": return `(jsbool ${expr.value})`;
+        case "number": return `(jsnum ${expr.value})`;
+        case "string": return `(jsstr "${expr.value}")`;
+        default: throw new Error("unsupported");
+      }
+    case 'ArrayExpression':
+      return `(jsarray ${arrayToSMT(expr.elements)})`;
     case "UnaryExpression":
-      const arg = assertionToSMT(expr.argument),
+      const arg = assertionToSMT(expr.argument, func),
             op = unOpToSMT[expr.operator];
       return `(${op} ${arg})`;
     case "BinaryExpression":
-      const left = assertionToSMT(expr.left),
-            right = assertionToSMT(expr.right),
+      const left = assertionToSMT(expr.left, func),
+            right = assertionToSMT(expr.right, func),
             binop = binOpToSMT[expr.operator];
       if (expr.operator === "!==") {
         return `(not (= ${left} ${right}))`;
       }
       return `(${binop} ${left} ${right})`;
+    case "CallExpression":
+      if (expr.callee.type == "Identifier" &&
+          expr.callee.name == func.id.name &&
+          expr.arguments.length == func.params.length &&
+          expr.arguments.every((arg, idx) =>
+            arg.type == "Identifier" && arg.name == func.params[idx].name)) {
+        return "_res";
+      }
+      throw new Error("unsupported");
     default: throw new Error("unsupported");
   }
 }

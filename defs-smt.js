@@ -20,7 +20,7 @@ export const preamble = `
 (define-fun _type ((x JSVal)) JSType
   (ite (is-jsnum x) JSNum
   (ite (is-jsbool x) JSBool
-  (ite (is-jsstring x) JSString
+  (ite (is-jsstr x) JSString
   (ite (is-jsnull x) JSObj
   (ite (is-jsundefined x) JSUndefined
   (ite (is-jsarray x) JSArray
@@ -31,7 +31,7 @@ export const preamble = `
       (is-jsundefined x)
       (and (is-jsnum x) (= (numv x) 0))
       (and (is-jsbool x) (not (boolv x)))
-      (and (is-jsstring x) (= (strval x) ""))))
+      (and (is-jsstr x) (= (strv x) ""))))
 
 (define-fun _truthy ((x JSVal)) Bool
   (not (_falsy x)))
@@ -40,7 +40,7 @@ export const preamble = `
 (define-fun _js-typeof ((x JSVal)) JSVal
   (ite (is-jsnum x) (jsstr "number")
   (ite (is-jsbool x) (jsstr "boolean")
-  (ite (is-jsstring x) (jsstr "string")
+  (ite (is-jsstr x) (jsstr "string")
   (ite (is-jsundefined x) (jsstr "undefined")
   (jsstr "object"))))))
 
@@ -60,7 +60,7 @@ export const preamble = `
 
 ; ~
 (define-fun _js-bnot ((x JSVal)) JSVal
-  (ite (is-jsnum x) (jsnum (bv2int (bvneg (int2bv (numv x)))))
+  (ite (is-jsnum x) (jsnum (bv2int (bvneg ((_ int2bv 32) (numv x)))))
   jsundefined)) ; non-standard!
 
 ; void
@@ -69,11 +69,11 @@ export const preamble = `
 
 ; ==
 (define-fun _js-eq ((a JSVal) (b JSVal)) JSVal
-  (= a b)) ; non-standard!
+  (jsbool (= a b))) ; non-standard!
 
 ; !=
 (define-fun _js-neq ((a JSVal) (b JSVal)) JSVal
-  (not (= a b))) ; non-standard!
+  (jsbool (not (= a b)))) ; non-standard!
 
 ; <
 (define-fun _js_lt ((a JSVal) (b JSVal)) JSVal
@@ -133,21 +133,38 @@ export const preamble = `
 
 ; <<
 (define-fun _js-lshift ((a JSVal) (b JSVal)) JSVal
+  (ite (and (is-jsnum a) (is-jsnum b))
+    (jsnum (bv2int (bvshl ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  jsundefined)) ; non-standard!
 
 ; >>
 (define-fun _js-rshift ((a JSVal) (b JSVal)) JSVal
+  (ite (and (is-jsnum a) (is-jsnum b))
+    (jsnum (bv2int (bvashr ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  jsundefined)) ; non-standard!
 
 ; >>>
 (define-fun _js-rzshift ((a JSVal) (b JSVal)) JSVal
+  (ite (and (is-jsnum a) (is-jsnum b))
+    (jsnum (bv2int (bvlshr ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  jsundefined)) ; non-standard!
 
 ; |
 (define-fun _js-bor ((a JSVal) (b JSVal)) JSVal
+  (ite (and (is-jsnum a) (is-jsnum b))
+    (jsnum (bv2int (bvor ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  jsundefined)) ; non-standard!
 
 ; ^
 (define-fun _js-bxor ((a JSVal) (b JSVal)) JSVal
+  (ite (and (is-jsnum a) (is-jsnum b))
+    (jsnum (bv2int (bvxor ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  jsundefined)) ; non-standard!
 
 ; &
 (define-fun _js-band ((a JSVal) (b JSVal)) JSVal
-
+  (ite (and (is-jsnum a) (is-jsnum b))
+    (jsnum (bv2int (bvand ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  jsundefined)) ; non-standard!
 
 `;
