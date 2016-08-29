@@ -1,33 +1,12 @@
 import { arr } from "lively.lang";
 import { parse } from "lively.ast";
 
+import { functions, postConditions } from "./visitors.js";
 import Theorem from "./theorems.js";
 
 // type JSSource = string;
 // type SMTInput = string;
 // type SMTOutput = string;
-
-function functions(ast) {
-  // Node -> Array<FunctionDeclaration>?
-  const result = [];
-  for (const node of ast.body) {
-    if (node.type !== "FunctionDeclaration") return null;
-    result.push(node);
-  }
-  return result;
-}
-
-function postConditions(func) {
-  // FunctionDeclaration -> Array<Expression>
-  return func.body.body
-    .filter(stmt =>
-      stmt.type == "ExpressionStatement" &&
-      stmt.expression.type == "CallExpression" &&
-      stmt.expression.callee.type == "Identifier" &&
-      stmt.expression.callee.name == "ensures"
-    )
-    .map(stmt => stmt.expression.arguments[0]);
-}
 
 export function theorems(fun) {
   // FunctionDeclaration -> Array<Theorem>

@@ -1,51 +1,23 @@
 /* global fetch */
 
-import { obj } from "lively.lang";
 import { stringify } from "lively.ast";
-import Visitor from "lively.ast/generated/estree-visitor.js";
 
 import normalizer from "./jswala.js";
 import { assertionToSMT } from "./assertions.js";
 import { statementToSMT, smtToValue } from "./javascript.js";
 import { preamble } from "./defs-smt.js";
-
-class RemoveAssertions extends Visitor {
-  accept(node, state, path) {
-    const n = super.accept(node, state, path);
-    if (n.type == "ExpressionStatement" &&
-        n.expression.type == "CallExpression" &&
-        n.expression.callee.type == "Identifier" &&
-        (n.expression.callee.name == "requires" ||
-         n.expression.callee.name == "ensures") ) {
-      return {type: "EmptyStatement"};
-    }
-    return n;
-  }
-}
+import { removeAssertions, preConditions } from "./visitors.js";
 
 function functionBody(func) {
   // FunctionDeclaration -> BlockStatement
   
   // normalize function body to SSA-like language
-  const ra = new RemoveAssertions(),
-      replaced = ra.accept(obj.deepCopy(func), null, []),
-      prog = {type: "Program", body: [replaced]},
-      normalized = normalizer.normalize(prog,
-        {unify_ret: true});
+  const replaced = removeAssertions(func),
+        prog = {type: "Program", body: [replaced]},
+        normalized = normalizer.normalize(prog,
+          {unify_ret: true});
   // extract statements in function
   return normalized.body[0].expression.callee.body.body[1].expression.right;
-}
-
-function preConditions(func) {
-  // FunctionDeclaration -> Array<Expression>
-  return func.body.body
-    .filter(stmt =>
-      stmt.type == "ExpressionStatement" &&
-      stmt.expression.type == "CallExpression" &&
-      stmt.expression.callee.type == "Identifier" &&
-      stmt.expression.callee.name == "requires"
-    )
-    .map(stmt => stmt.expression.arguments[0]);
 }
 
 export default class Theorem {
