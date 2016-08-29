@@ -7,5 +7,5 @@ require('browserify')(
   let rewritten = String(buf).replace(
     /(if\(typeof Object\.defineProperty \!== 'undefined'\))/,
     "if([].flatmap) return;\n$1");
-  fs.writeFileSync("jswala.js", rewritten);
+  fs.writeFileSync("generated/jswala.js", rewritten);
 });

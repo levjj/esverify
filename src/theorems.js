@@ -2,7 +2,7 @@
 
 import { stringify } from "lively.ast";
 
-import normalizer from "./jswala.js";
+import normalizer from "../generated/jswala.js";
 import { assertionToSMT } from "./assertions.js";
 import { statementToSMT, smtToValue } from "./javascript.js";
 import { preamble } from "./defs-smt.js";
