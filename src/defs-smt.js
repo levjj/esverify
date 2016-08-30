@@ -8,13 +8,14 @@ export const preamble =
     jsnull
     jsundefined
     (jsarray (items JSValList))
-    (jsobj (props JSPropList)))
+    (jsobj (props JSPropList))
+    jsfun)
   (JSValList empty (cons (car JSVal) (cdr JSValList)))
   (JSProp (prop (key (List Int)) (val JSVal)))
   (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
 
 ; Types in JavaScript
-(declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj)))
+(declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj JSFunction)))
 
 (define-fun _type ((x JSVal)) JSType
   (ite (is-jsnum x) JSNum
@@ -23,7 +24,8 @@ export const preamble =
   (ite (is-jsnull x) JSObj
   (ite (is-jsundefined x) JSUndefined
   (ite (is-jsarray x) JSArray
-  JSObj)))))))
+  (ite (is-jsfun x) JSFunction
+  JSObj))))))))
 
 (define-fun _falsy ((x JSVal)) Bool
   (or (is-jsnull x)
@@ -41,7 +43,8 @@ export const preamble =
   (ite (is-jsbool x) (jsstr "boolean")
   (ite (is-jsstr x) (jsstr "string")
   (ite (is-jsundefined x) (jsstr "undefined")
-  (jsstr "object"))))))
+  (ite (is-jsfun x) (jsstr "function")
+  (jsstr "object")))))))
 
 ; -
 (define-fun _js-negative ((x JSVal)) JSVal

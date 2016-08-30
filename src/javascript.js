@@ -69,7 +69,7 @@ const binOpToSMT = {
 
 function arrayToSMT(elements) {
   // Array<Identifier> -> SMTInput
-  if (elements.length === 0) return `empty`;
+  if (elements.length === 0) return "empty";
   const [head, ...tail] = elements;
   return `(cons ${head.name} ${arrayToSMT(tail)})`;
 }
@@ -78,7 +78,7 @@ function expressionToSMT(expr) {
   // Statement -> SMTInput
   switch (expr.type) {
     case 'FunctionExpression':
-      throw new Error("unsupported");
+      return "jsfun"
     case 'ThisExpression':
       throw new Error("unsupported");
     case 'ArrayExpression':
@@ -99,8 +99,8 @@ function expressionToSMT(expr) {
     case 'Identifier':
       return expr.name;
     case 'Literal':
-      if (expr.value === undefined) return `jsundefined`;
-      if (expr.value === null) return `jsnull`;
+      if (expr.value === undefined) return "jsundefined";
+      if (expr.value === null) return "jsnull";
       switch (typeof expr.value) {
         case "boolean": return `(jsbool ${expr.value})`;
         case "number": return `(jsnum ${expr.value})`;
@@ -189,7 +189,7 @@ export function smtToValue(smt) {
   const [_, tag, v] = s.match(/^\((\w+)\ (.*)\)$/);
   switch (tag) {
     case "jsbool": return v == "true";
-    case "jsnum": return +v;
+    case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
     case "jsstr": return v.substr(1, v.length - 2);
     case "jsarr": return smtToArray(v);
     default: throw new Error("unsupported");

@@ -51,7 +51,7 @@ function arrayToSMT(elements) {
   return `(cons ${assertionToSMT(head)} ${arrayToSMT(tail)})`;
 }
 
-export function assertionToSMT(expr, func) {
+export function assertionToSMT(expr) {
   // AExpression -> SMTInput
   switch (expr.type) {
     case "Identifier": return expr.name;
@@ -67,23 +67,15 @@ export function assertionToSMT(expr, func) {
     case 'ArrayExpression':
       return `(jsarray ${arrayToSMT(expr.elements)})`;
     case "UnaryExpression":
-      const arg = assertionToSMT(expr.argument, func),
+      const arg = assertionToSMT(expr.argument),
             op = unOpToSMT[expr.operator];
       return `(${op} ${arg})`;
     case "BinaryExpression":
-      const left = assertionToSMT(expr.left, func),
-            right = assertionToSMT(expr.right, func),
+      const left = assertionToSMT(expr.left),
+            right = assertionToSMT(expr.right),
             binop = binOpToSMT[expr.operator];
       return `(${binop} ${left} ${right})`;
-    case "CallExpression":
-      if (expr.callee.type == "Identifier" &&
-          expr.callee.name == func.id.name &&
-          expr.arguments.length == func.params.length &&
-          expr.arguments.every((arg, idx) =>
-            arg.type == "Identifier" && arg.name == func.params[idx].name)) {
-        return "_res";
-      }
+    default:
       throw new Error("unsupported");
-    default: throw new Error("unsupported");
   }
 }
