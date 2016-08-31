@@ -1,10 +1,10 @@
 import { stringify } from "lively.ast";
-import { exprStmt, funcExpr, funcCall, program } from "lively.ast/lib/nodes.js";
+import { exprStmt, funcExpr, funcCall, program, varDecl } from "lively.ast/lib/nodes.js";
 import { arr } from "lively.lang";
 
 import normalizer from "../generated/jswala.js";
 import Theorem from "./theorems.js";
-import { removeAssertions, replaceFunctionResult } from "./visitors.js";
+import { removeAssertions, replaceFunctionResult, findDefs } from "./visitors.js";
 
 class VerificationScope {
   
@@ -33,14 +33,24 @@ class VerificationScope {
     return this.node;
   }
   
+  vars() {
+    // -> Array<string>
+    return findDefs(this.node).concat(this.surroundingVars());
+  }
+  
+  surroundingVars() {
+    // -> Array<string>
+    return this.parent.vars();
+  }
+  
   normalizedNode() {
     // -> Array<Statement>
     // normalize function body to SSA-like language
     const prog = removeAssertions(this.nodeAsProgram()),
-          iife = program(exprStmt(funcCall(funcExpr({}, [], ...prog.body)))),
-          normalized = normalizer.normalize(iife, {unify_ret: true});
-    window.tom = normalized;
-    const origProg = normalized.body[0].expression.callee.body;
+          stmts = this.surroundingVars().map(v => varDecl(v)).concat(prog.body),
+          iife = program(exprStmt(funcCall(funcExpr({}, [], ...stmts)))),
+          normalized = normalizer.normalize(iife, {unify_ret: true}),
+          origProg = normalized.body[0].expression.callee.body;
     // extract statements in function
     return origProg.body[1].expression.right;
   }
@@ -56,10 +66,8 @@ export class FunctionScope extends VerificationScope {
         stmt.type == "ExpressionStatement" &&
         stmt.expression.type == "CallExpression" &&
         stmt.expression.callee.type == "Identifier" &&
-        (stmt.expression.callee.name == "requires" ||
-         stmt.expression.callee.name == "ensures" ||
-         stmt.expression.callee.name == "assert" ||
-         stmt.expression.callee.name == "invariant"));
+        (["requires", "ensures", "assert", "invariant"]
+          .includes(stmt.expression.callee.name)));
   }
   
   preConditions() {
@@ -152,4 +160,10 @@ export class TopLevelScope extends VerificationScope {
         stmt.expression.callee.name == "invariant")
       .map(stmt => stmt.expression.arguments[0]);
   }
+  
+  surroundingVars() {
+    // -> Array<string>
+    return [];
+  }
+  
 }

@@ -34,11 +34,11 @@ export default class Theorem {
 ; parameters
 ${parameters}
 
-; requirements
-${requirements}
-
 ; body
 ${body}
+
+; requirements
+${requirements}
 
 ; post condition
 ${post}
