@@ -43,6 +43,7 @@ class FindScopes extends Visitor {
     state.unshift(newScope);
     super.visitFunctionDeclaration(node, state, path);
     state.shift();
+    return node;
   }
 }
 
