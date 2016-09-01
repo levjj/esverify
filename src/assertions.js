@@ -11,6 +11,8 @@ AExpression = Identifier (name: string)
                               params: Array<Identifier>)
 */
 
+import { getVar } from "./javascript.js";
+
 const unOpToSMT = {
   "typeof": "_js-typeof",
   "-": "_js-negative",
@@ -44,17 +46,17 @@ const binOpToSMT = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-function arrayToSMT(elements) {
-  // Array<AExpression> -> SMTInput
+function arrayToSMT(elements, vars) {
+  // Array<AExpression>, Vars -> SMTInput
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
-  return `(cons ${assertionToSMT(head)} ${arrayToSMT(tail)})`;
+  return `(cons ${assertionToSMT(head, vars)} ${arrayToSMT(tail, vars)})`;
 }
 
-export function assertionToSMT(expr) {
-  // AExpression -> SMTInput
+export function assertionToSMT(expr, vars = {}) {
+  // AExpression, Vars -> SMTInput
   switch (expr.type) {
-    case "Identifier": return expr.name;
+    case "Identifier": return getVar(expr.name, vars);
     case "Literal":
       if (expr.value === undefined) return `jsundefined`;
       if (expr.value === null) return `jsnull`;
@@ -65,16 +67,28 @@ export function assertionToSMT(expr) {
         default: throw new Error("unsupported");
       }
     case 'ArrayExpression':
-      return `(jsarray ${arrayToSMT(expr.elements)})`;
+      return `(jsarray ${arrayToSMT(expr.elements, vars)})`;
     case "UnaryExpression":
-      const arg = assertionToSMT(expr.argument),
+      const arg = assertionToSMT(expr.argument, vars),
             op = unOpToSMT[expr.operator];
       return `(${op} ${arg})`;
     case "BinaryExpression":
-      const left = assertionToSMT(expr.left),
-            right = assertionToSMT(expr.right),
+      const left = assertionToSMT(expr.left, vars),
+            right = assertionToSMT(expr.right, vars),
             binop = binOpToSMT[expr.operator];
       return `(${binop} ${left} ${right})`;
+    case "ConditionalExpression":
+      const test = assertionToSMT(expr.test, vars),
+            then = assertionToSMT(expr.consequent, vars),
+            elze = assertionToSMT(expr.alternate, vars);
+      return `(ite (_truthy ${test}) ${then} ${elze})`;
+    case "CallExpression":
+      if (expr.callee.type == "Identifier" &&
+        expr.callee.name == "old" &&
+        expr.arguments.length == 1) {
+        return assertionToSMT(expr.arguments[0], {});
+      }
+      throw new Error("unsupported");
     default:
       throw new Error("unsupported");
   }

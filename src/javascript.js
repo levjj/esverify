@@ -1,3 +1,5 @@
+import { arr } from "lively.lang";
+
 /*
 
 Stmt = var x1, x2, ..., xn;
@@ -67,29 +69,84 @@ const binOpToSMT = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-function arrayToSMT(elements) {
-  // Array<Identifier> -> SMTInput
-  if (elements.length === 0) return "empty";
-  const [head, ...tail] = elements;
-  return `(cons ${head.name} ${arrayToSMT(tail)})`;
+// type VarName = string;
+// type Vars = { [VarName]: number }  // latest assigned value
+
+export function createVars(names = []) {
+  // Array<VarName> -> Vars
+  return names.reduce((vars, n) => {
+    vars[n] = 0;
+    return vars;
+  }, {});
 }
 
-function expressionToSMT(expr) {
-  // Statement -> SMTInput
+function incVar(v, vars) {
+  // VarName, Vars -> Vars
+  if (!(v in vars)) return {...vars, [v]: 0};
+  return {...vars, [v]: vars[v] + 1};
+}
+
+export function getVar(v, vars) {
+  // VarName, Vars -> SMTInput
+  if (!(v in vars)) return v + "_0";
+  return v + "_" + vars[v];
+}
+
+function phiVars(pc, myVars, altVars) {
+    // Array<SMTInput>, Vars, Vars -> SMTInput
+  let smt = '';
+  for (const v in altVars) {
+    if (myVars[v] < altVars[v]) {
+      smt += `(assert (=> (and ${pc.join(' ')}) (= ${getVar(v, altVars)} ${getVar(v, myVars)})))\n`;
+    }
+  }
+  return smt;
+}
+
+function joinVars(vars1, vars2) {
+  // Vars, Vars -> [SMTInput, Vars]
+  const res = {};
+  const allKeys = arr.uniq(Object.keys(vars1).concat(Object.keys(vars2)));
+  for (const v of allKeys) {
+    res[v] = v in vars1 ? (v in vars2 ? Math.max(vars1[v], vars2[v]) : vars1[v]) : vars2[v];
+  }
+  return res;
+}
+
+export function varsToSMT(vars) {
+  // Vars -> SMTInput
+  let smt = '';
+  for (const v in vars) {
+    for (let i = 0; i <= vars[v]; i++) {
+      smt += `(declare-const ${v}_${i} JSVal)\n`;
+    }
+  }
+  return smt;
+}
+
+function arrayToSMT(elements, vars) {
+  // Array<Identifier>, Vars -> SMTInput
+  if (elements.length === 0) return "empty";
+  const [head, ...tail] = elements;
+  return `(cons ${getVar(head.name, vars)} ${arrayToSMT(tail, vars)})`;
+}
+
+function expressionToSMT(expr, vars) {
+  // Expression, Vars -> SMTInput
   switch (expr.type) {
     case 'FunctionExpression':
       return "jsfun"
     case 'ThisExpression':
       throw new Error("unsupported");
     case 'ArrayExpression':
-      return `(jsarray ${arrayToSMT(expr.elements)})`;
+      return `(jsarray ${arrayToSMT(expr.elements, vars)})`;
     case 'ObjectExpression':
       throw new Error("unsupported");
     case 'UnaryExpression':
       if (expr.operator == 'delete') throw new Error("unsupported");
-      return `(${unOpToSMT[expr.operator]} ${expr.argument.name})`;
+      return `(${unOpToSMT[expr.operator]} ${getVar(expr.argument.name, vars)})`;
     case 'BinaryExpression':
-      return `(${binOpToSMT[expr.operator]} ${expr.left.name} ${expr.right.name})`;
+      return `(${binOpToSMT[expr.operator]} ${getVar(expr.left.name, vars)} ${getVar(expr.right.name, vars)})`;
     case 'CallExpression':
       throw new Error("unsupported");
     case 'NewExpression':
@@ -97,7 +154,7 @@ function expressionToSMT(expr) {
     case 'MemberExpression':
       throw new Error("unsupported");
     case 'Identifier':
-      return expr.name;
+      return getVar(expr.name, vars);
     case 'Literal':
       if (expr.value === undefined) return "jsundefined";
       if (expr.value === null) return "jsnull";
@@ -115,41 +172,49 @@ function expressionToSMT(expr) {
 // type BreakLabel = string;
 // type BreakCondition = {cond: Antedecents, label: BreakLabel}
 
-export function statementToSMT(stmt, pc = []) {
-  // Statement, Antedecents -> [SMTInput, Array<BreakCondition>]
-  function as(s) {
-    if (pc.length == 0) return [`(assert ${s})\n`, []];
-    return [`(assert (=> (and ${pc.join(' ')}) ${s}))\n`, []];
-  }
+function assertEq(left, right, vars, pc) {
+  // VarName, SMTInput, Vars, Array<SMTInput> -> [SMTInput, Array<BreakCondition>, Vars]
+  const nvars = incVar(left, vars),
+        eq = `(= ${getVar(left, nvars)} ${right})`;
+  if (pc.length == 0) return [`(assert ${eq})\n`, nvars, []];
+  return [`(assert (=> (and ${pc.join(' ')}) ${eq}))\n`, nvars, []];
+}
+
+export function statementToSMT(stmt, vars = {}, pc = []) {
+  // Statement, Vars, Array<SMTInput> -> [SMTInput, Vars, Array<BreakCondition>]
   switch (stmt.type) {
     case 'BlockStatement':
-      return stmt.body.reduce(([smt, bc], s) => {
+      return stmt.body.reduce(([smt, vars, bc], s) => {
         const breakConds = bc.map(bc => `(and ${bc.cond.join(' ')})`),
               newPC = breakConds.length == 0 ? pc : pc.concat(
                 [`(not (or ${breakConds.join(' ')}))`]),
-              [ssmt, sbc] = statementToSMT(s, newPC);
-        return [smt + ssmt, bc.concat(sbc)];
-      }, ["", []]);
+              [ssmt, nvars, sbc] = statementToSMT(s, vars, newPC);
+        return [smt + ssmt, nvars, bc.concat(sbc)];
+      }, ["", vars, []]);
     case 'IfStatement':
-      const tst = `(_truthy ${stmt.test.name})`,
-            [smt1, bc1] = statementToSMT(stmt.consequent, pc.concat([tst])),
-            [smt2, bc2] = statementToSMT(stmt.alternate, pc.concat([`(not ${tst})`])),
+      const tst = `(_truthy ${getVar(stmt.test.name, vars)})`,
+            [smt1, nvars1, bc1] = statementToSMT(stmt.consequent, vars, pc.concat([tst])),
+            [smt2, nvars2, bc2] = statementToSMT(stmt.alternate, vars, pc.concat([`(not ${tst})`])),
             thenBreakConds = bc1.map(({label, cond}) =>
               ({label, cond: cond.concat([tst])})),
             elseBreakConds = bc2.map(({label, cond}) =>
-              ({label, cond: cond.concat([`(not ${tst})`])}));
-      return [smt1 + smt2, thenBreakConds.concat(elseBreakConds)];
+              ({label, cond: cond.concat([`(not ${tst})`])})),
+            smt1phi = phiVars(pc.concat([tst]), nvars1, nvars2),
+            smt2phi = phiVars(pc.concat([`(not ${tst})`]), nvars2, nvars1),
+            nvars3 = joinVars(nvars1, nvars2);
+      return [smt1 + smt1phi + smt2 + smt2phi, nvars3, thenBreakConds.concat(elseBreakConds)];
     case 'LabeledStatement':
-      const [smt, bc] = statementToSMT(stmt.body);
+      const [smt, nvars, bc] = statementToSMT(stmt.body, vars, []);
       // after this statement, breaks with this label are resolved
-      return [smt, bc.filter(({label}) => label != stmt.label.name)];
-    case 'EmptyStatement': return ["", []];
+      return [smt, nvars, bc.filter(({label}) => label != stmt.label.name)];
+    case 'EmptyStatement': return ["", vars, []];
+    case 'DebuggerStatement': return ["", vars, []];
     case 'BreakStatement':
       // break unconditionally
       // (any statements in ablock after break are unreachable)
-      return ["", [{label: stmt.label.name, cond: []}]];
+      return ["", vars, [{label: stmt.label.name, cond: []}]];
     case 'ReturnStatement':
-      return as(`(= _res ${stmt.argument.name})`);
+      return assertEq("_res", getVar(stmt.argument.name, vars), vars, pc);
     case 'ThrowStatement':
       throw new Error("unsupported");
     case 'TryStatement':
@@ -158,17 +223,18 @@ export function statementToSMT(stmt, pc = []) {
       throw new Error("unsupported");
     case 'ForInStatement':
       throw new Error("unsupported");
-    case 'DebuggerStatement': return ["", []];
     case 'VariableDeclaration':
-      return [stmt.declarations
-              .map(decl => `(declare-const ${decl.id.name} JSVal)\n`)
-              .join(''), []];
+      // assign "undefined"
+      return stmt.declarations.reduce(([smt, nvars, bc], {id}) => {
+        const [ssmt, nvars2, sbc] = assertEq(id.name, "jsundefined", nvars, pc);
+        return [smt + ssmt, nvars2, bc.concat(sbc)];
+      }, ["", vars, []]);
     case 'ExpressionStatement':
       const {left, right} = stmt.expression;
       if (left.type == 'MemberExpression') {
         throw new Error("unsupported");
       }
-      return as(`(= ${left.name} ${expressionToSMT(right)})`);
+      return assertEq(left.name, expressionToSMT(right, vars), vars, pc);
     default: throw new Error('Unknown AST node in statement');
   }
 }

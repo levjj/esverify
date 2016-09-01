@@ -91,7 +91,7 @@ describe("verify", () => {
       
       function decrement() {
         if (counter > 0) counter--;
-        ensures(counter > 0 ? counter < old(counter) : counter === old(counter));
+        ensures(old(counter) > 0 ? counter < old(counter) : counter === old(counter));
       }
     }).toString();
     
@@ -130,7 +130,7 @@ describe("verify", () => {
     });
     
     it("decrement decrements", async () => {
-      expect(theorems[5].description).to.be.eql("decrement:\ncounter > 0 ? counter < old(counter) : counter === old(counter)");
+      expect(theorems[5].description).to.be.eql("decrement:\nold(counter) > 0 ? counter < old(counter) : counter === old(counter)");
       await theorems[5].solve();
       expect(theorems[5].isSatisfiable()).to.be.true;
     });

@@ -105,7 +105,7 @@ export class FunctionScope extends VerificationScope {
 
   theorems() {
     // -> Array<Theorem>
-    const params = this.node.params.map(p => p.name).concat(["_res"]),
+    const params = this.node.params.map(p => p.name).concat(this.surroundingVars()),
           pre = this.preConditions().concat(this.parent.invariants()),
           body = this.normalizedNode().body,
           toProve = this.postConditions().concat(this.invariants()),
