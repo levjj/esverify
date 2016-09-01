@@ -7,8 +7,9 @@ import { statementToSMT, smtToValue, createVars, varsToSMT } from "./javascript.
 import { preamble } from "./defs-smt.js";
 
 export default class Theorem {
-  constructor(vars, pre, body, post, description) {
-    // Array<string>, Array<Expression>, Statement, Expression, string -> Theorem
+  constructor(scope, vars, pre, body, post, description) {
+    // VerificationScope, Array<string>, Array<Expression>, Statement, Expression, string -> Theorem
+    this.scope = scope;
     this.vars = vars;
     this.pre = pre;
     this.body = body;

@@ -33,6 +33,11 @@ class VerificationScope {
     return this.node;
   }
   
+  bodySource() {
+    // -> JSSource
+    throw new Error("not implemented");
+  }
+
   vars() {
     // -> Array<string>
     return findDefs(this.node).concat(this.surroundingVars());
@@ -112,7 +117,7 @@ export class FunctionScope extends VerificationScope {
           theorems = toProve.map(pc => {
             const pc2 = replaceFunctionResult(this.node, pc),
                   desc = this.describe(pc);
-            return new Theorem(params, pre, body, pc2, desc);
+            return new Theorem(this, params, pre, body, pc2, desc);
           });
     return theorems.concat(super.theorems());
   }
@@ -146,7 +151,7 @@ export class TopLevelScope extends VerificationScope {
     const stmts = this.normalizedNode().body.body,
           body = { type: "BlockStatement", body: stmts.slice(0, -1)},
           theorems = this.invariants().map(pc =>
-            new Theorem([], [], body, pc, `initially:\n${stringify(pc)}`));
+            new Theorem(this, [], [], body, pc, `initially:\n${stringify(pc)}`));
     return theorems.concat(super.theorems());
   }
   
@@ -166,4 +171,8 @@ export class TopLevelScope extends VerificationScope {
     return [];
   }
   
+  bodySource() {
+    // -> JSSource
+    return stringify(program(...this.normalizedNode().body.body));
+  }
 }
