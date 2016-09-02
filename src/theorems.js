@@ -3,12 +3,13 @@
 import { stringify } from "lively.ast";
 
 import { assertionToSMT } from "./assertions.js";
-import { statementToSMT, smtToValue } from "./javascript.js";
+import { statementToSMT, smtToValue, createVars, varsToSMT } from "./javascript.js";
 import { preamble } from "./defs-smt.js";
 
 export default class Theorem {
-  constructor(vars, pre, body, post, description) {
-    // Array<string>, Array<Expression>, Statement, Expression, string -> Theorem
+  constructor(scope, vars, pre, body, post, description) {
+    // VerificationScope, Array<string>, Array<Expression>, Statement, Expression, string -> Theorem
+    this.scope = scope;
     this.vars = vars;
     this.pre = pre;
     this.body = body;
@@ -20,31 +21,30 @@ export default class Theorem {
   csystem() {
     // -> SMTInput
     if (this._csystem) return this._csystem;
-
-    const parameters = this.vars.map(v =>
-            `(declare-const ${v} JSVal)`).join('\n'),
+    const vars = createVars(this.vars),
+          [body, nvars] = statementToSMT(this.body, vars),
+          declarations = varsToSMT(nvars),
           requirements = this.pre.map(c =>
-            `(assert (_truthy ${assertionToSMT(c)}))`).join('\n'),
-          [body] = statementToSMT(this.body),
-          post = `(assert (not (_truthy ${assertionToSMT(this.post)})))`;
+            `(assert (_truthy ${assertionToSMT(c, vars)}))`).join('\n'),
+          post = `(assert (not (_truthy ${assertionToSMT(this.post, nvars)})))`;
     
     return this._csystem =
 `${preamble}
 
-; parameters
-${parameters}
-
-; requirements
-${requirements}
+; declarations
+${declarations}
 
 ; body
 ${body}
+
+; requirements
+${requirements}
 
 ; post condition
 ${post}
 
 (check-sat)
-(get-value (${this.vars.join(' ')}))`;
+(get-value (${this.vars.map(v => `${v}_0`).join(' ')} _res_0))`;
   }
   
   result() {
@@ -87,7 +87,7 @@ ${post}
       if (both.length < 2) return;
       const name = both[0].trim(),
             value = both.slice(1, both.length).join(" ").trim();
-      model[name] = smtToValue(value);
+      model[name.substr(0, name.length - 2)] = smtToValue(value);
     });
     return this._model = model;
   }
