@@ -4,26 +4,6 @@ import Visitor from "lively.ast/generated/estree-visitor.js";
 
 import { TopLevelScope, ClassScope, FunctionScope } from "./scopes.js";
 
-class RemoveAssertions extends Visitor {
-  visitExpressionStatement(node, state, path) {
-    // Node, null, Array<Node> -> Node
-    const expr = node.expression;
-    if (expr.type == "CallExpression" &&
-        expr.callee.type == "Identifier" &&
-        ["requires", "ensures", "assert", "invariant"]
-          .includes(expr.callee.name)) {
-      return {type: "EmptyStatement"};
-    }
-    return super.visitExpressionStatement(node, state, path);
-  }
-}
-
-export function removeAssertions(node) {
-  // Node -> Node
-  const ra = new RemoveAssertions();
-  return ra.accept(obj.deepCopy(node), null, []);
-}
-
 class FindScopes extends Visitor {
   visitClassDeclaration(node, state, path) {
     // Node, Array<VerificationScope>, Array<Node> -> Node
@@ -89,6 +69,9 @@ class FindDefs extends Visitor {
 
   visitFunctionDeclaration (node, scope, path) {
     scope.funcDecls.push(node);
+    if (node === scope.node) { // find defs in this function
+      return super.visitFunctionDeclaration(node, scope, path);
+    }
     return node; // do not enter function
   }
 

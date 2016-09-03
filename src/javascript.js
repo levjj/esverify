@@ -136,23 +136,13 @@ function expressionToSMT(expr, vars) {
   switch (expr.type) {
     case 'FunctionExpression':
       return "jsfun"
-    case 'ThisExpression':
-      throw new Error("unsupported");
     case 'ArrayExpression':
       return `(jsarray ${arrayToSMT(expr.elements, vars)})`;
-    case 'ObjectExpression':
-      throw new Error("unsupported");
     case 'UnaryExpression':
       if (expr.operator == 'delete') throw new Error("unsupported");
       return `(${unOpToSMT[expr.operator]} ${getVar(expr.argument.name, vars)})`;
     case 'BinaryExpression':
       return `(${binOpToSMT[expr.operator]} ${getVar(expr.left.name, vars)} ${getVar(expr.right.name, vars)})`;
-    case 'CallExpression':
-      throw new Error("unsupported");
-    case 'NewExpression':
-      throw new Error("unsupported");
-    case 'MemberExpression':
-      throw new Error("unsupported");
     case 'Identifier':
       return getVar(expr.name, vars);
     case 'Literal':
@@ -183,6 +173,7 @@ function assertEq(left, right, vars, pc) {
 export function statementToSMT(stmt, vars = {}, pc = []) {
   // Statement, Vars, Array<SMTInput> -> [SMTInput, Vars, Array<BreakCondition>]
   switch (stmt.type) {
+    case 'Program':
     case 'BlockStatement':
       return stmt.body.reduce(([smt, vars, bc], s) => {
         const breakConds = bc.map(bc => `(and ${bc.cond.join(' ')})`),
@@ -207,22 +198,15 @@ export function statementToSMT(stmt, vars = {}, pc = []) {
       const [smt, nvars, bc] = statementToSMT(stmt.body, vars, []);
       // after this statement, breaks with this label are resolved
       return [smt, nvars, bc.filter(({label}) => label != stmt.label.name)];
-    case 'EmptyStatement': return ["", vars, []];
-    case 'DebuggerStatement': return ["", vars, []];
+    case 'DebuggerStatement':
+    case 'EmptyStatement':
+      return ["", vars, []];
     case 'BreakStatement':
       // break unconditionally
       // (any statements in ablock after break are unreachable)
       return ["", vars, [{label: stmt.label.name, cond: []}]];
     case 'ReturnStatement':
       return assertEq("_res", getVar(stmt.argument.name, vars), vars, pc);
-    case 'ThrowStatement':
-      throw new Error("unsupported");
-    case 'TryStatement':
-      throw new Error("unsupported");
-    case 'WhileStatement':
-      throw new Error("unsupported");
-    case 'ForInStatement':
-      throw new Error("unsupported");
     case 'VariableDeclaration':
       // assign "undefined"
       return stmt.declarations.reduce(([smt, nvars, bc], {id}) => {
@@ -235,7 +219,7 @@ export function statementToSMT(stmt, vars = {}, pc = []) {
         throw new Error("unsupported");
       }
       return assertEq(left.name, expressionToSMT(right, vars), vars, pc);
-    default: throw new Error('Unknown AST node in statement');
+    default: throw new Error("unsupported");
   }
 }
 

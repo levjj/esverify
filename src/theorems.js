@@ -44,7 +44,7 @@ ${requirements}
 ${post}
 
 (check-sat)
-(get-value (${this.vars.map(v => `${v}_0`).join(' ')} _res_0))`;
+(get-value (${Object.keys(nvars).map(v => `${v}_0`).join(' ')}))`;
   }
   
   result() {
