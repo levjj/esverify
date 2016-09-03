@@ -1,4 +1,5 @@
 import { obj } from "lively.lang";
+import { id, funcCall } from "lively.ast/lib/nodes.js";
 import { declarationsOfScope } from "lively.ast/lib/query.js";
 import Visitor from "lively.ast/generated/estree-visitor.js";
 
@@ -57,6 +58,27 @@ class ReplaceFunctionResult extends Visitor {
 export function replaceFunctionResult(func, node) {
   // Node -> Node
   const ra = new ReplaceFunctionResult(func);
+  return ra.accept(obj.deepCopy(node), null, []);
+}
+
+class ReplaceResultFunction extends Visitor {
+  constructor(func) {
+    // FunctionDeclaration -> ReplaceResultFunction
+    this.id = func.id;
+    this.params = func.params;
+  }
+  visitIdentifier(node, state, path) {
+    // Node, null, Array<Node> -> Node
+    if (node.name == "_res") {
+      return funcCall(this.id, ...this.params);
+    }
+    return super.visitIdentifier(node, state, path);
+  }
+}
+
+export function replaceResultFunction(func, node) {
+  // Node -> Node
+  const ra = new ReplaceResultFunction(func);
   return ra.accept(obj.deepCopy(node), null, []);
 }
 

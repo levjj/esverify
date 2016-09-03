@@ -4,7 +4,7 @@ import { arr } from "lively.lang";
 
 import normalizer from "../generated/jswala.js";
 import Theorem from "./theorems.js";
-import { removeAssertions, replaceFunctionResult, findDefs } from "./visitors.js";
+import { removeAssertions, replaceFunctionResult, replaceResultFunction, findDefs } from "./visitors.js";
 
 class VerificationScope {
   
@@ -18,8 +18,8 @@ class VerificationScope {
     this.node = node;
   }
   
-  ownTheorems() {
-    // -> Array<Theorem>
+  assumes() {
+    // -> Array<Expression>
     throw new Error("not implemented");
   }
   
@@ -32,10 +32,25 @@ class VerificationScope {
     // -> JSSource
     throw new Error("not implemented");
   }
-
+  
+  toProve() {
+    // -> Array<Expression>
+    return this.invariants();
+  }
+  
+  describe(post) {
+    // Expression -> string
+    throw new Error("not implemented");
+  }
+  
   theorems() {
     // -> Array<Theorem>
-    return this.ownTheorems().concat(arr.flatmap(this.scopes, s => s.theorems()));
+    const vars = this.surroundingVars(),
+          pre = this.assumes(),
+          body = program(...this.normalizedNode()),
+          theorems = this.toProve().map(pc =>
+            new Theorem(this, vars, pre, body, pc, this.describe(pc)));
+    return theorems.concat(arr.flatmap(this.scopes, s => s.theorems()));
   }
   
   vars() {
@@ -102,11 +117,35 @@ class VerificationScope {
 
 export class FunctionScope extends VerificationScope {
   
+  assumes() {
+    // -> Array<Expression>
+    return this.preConditions().concat(this.parent.invariants());
+  }
+
   body() {
     // -> Array<Statement>
     return this.node.body.body;
   }
   
+  bodySource() {
+    // -> JSSource
+    const {id, params} = this.node;
+    return stringify(funcExpr({id}, params, ...this.normalizedNode()));
+  }
+  
+  toProve() {
+    // -> Array<Expression>
+    return super.toProve().concat(this.postConditions().map(pc => {
+      return replaceFunctionResult(this.node, pc);
+    }));
+  }
+  
+  describe(post) {
+    // Expression -> string
+    const replaced = replaceResultFunction(this.node, post);
+    return `${this.node.id.name}:\n${stringify(replaced)}`;
+  }
+
   surroundingVars() {
     // -> Array<string>
     return super.surroundingVars().concat(this.node.params.map(p => p.name));
@@ -126,30 +165,6 @@ export class FunctionScope extends VerificationScope {
       .map(expr => expr.arguments[0]);
   }
   
-  bodySource() {
-    // -> JSSource
-    const {id, params} = this.node;
-    return stringify(funcExpr({id}, params, ...this.normalizedNode()));
-  }
-
-  ownTheorems() {
-    // -> Array<Theorem>
-    const vars = this.surroundingVars(),
-          pre = this.preConditions().concat(this.parent.invariants()),
-          body = program(...this.normalizedNode()),
-          toProve = this.postConditions().concat(this.invariants());
-    return toProve.map(pc => {
-      const pc2 = replaceFunctionResult(this.node, pc),
-            desc = this.describe(pc);
-      return new Theorem(this, vars, pre, body, pc2, desc);
-    });
-  }
-  
-  describe(post) {
-    // Expression -> string
-    return `${this.node.id.name}:\n${stringify(post)}`;
-  }
-
 }
 
 export class ClassScope extends VerificationScope {
@@ -162,18 +177,21 @@ export class TopLevelScope extends VerificationScope {
     super(null, node);
   }
   
+  describe(post) {
+    // Expression -> string
+    return `initially:\n${stringify(post)}`;
+  }
+
+  assumes() {
+    // -> Array<Expression>
+    return [];
+  }
+  
   body() {
     // -> Array<Statement>
     return this.node.body;
   }
 
-  ownTheorems() {
-    // -> Array<Theorem>
-    const body = program(...this.normalizedNode());
-    return this.invariants().map(pc =>
-      new Theorem(this, [], [], body, pc, `initially:\n${stringify(pc)}`));
-  }
-  
   bodySource() {
     // -> JSSource
     return stringify(program(...this.normalizedNode()));
