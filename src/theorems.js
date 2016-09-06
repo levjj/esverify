@@ -70,6 +70,13 @@ ${post}
     throw new Error("z3 failed to solve problem");
   }
   
+  hasResult() {
+    // -> Bool?
+    const res = this.result();
+    if (!res) return false;
+    return res.startsWith("unsat") || res.startsWith("sat");
+  }
+  
   getModel() {
     // -> { [string]: any }?
     if (this._model) return this._model;

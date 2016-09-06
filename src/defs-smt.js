@@ -124,7 +124,7 @@ export const preamble =
 ; /
 (define-fun _js-divide ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (/ (numv a) (numv b)))
+    (jsnum (div (numv a) (numv b)))
   jsundefined)) ; non-standard!
 
 ; %
