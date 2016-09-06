@@ -6,6 +6,17 @@ import normalizer from "../generated/jswala.js";
 import Theorem from "./theorems.js";
 import { removeAssertions, replaceFunctionResult, replaceResultFunction, findDefs } from "./visitors.js";
 
+function isAssertion(stmt) {
+  // Statement -> boolean
+  return stmt.type == "ExpressionStatement" &&
+         stmt.expression.type == "CallExpression" &&
+         stmt.expression.callee.type == "Identifier" &&
+         (["requires", "ensures", "assert", "invariant"]
+           .includes(stmt.expression.callee.name)) &&
+         stmt.expression.arguments.length === 1;
+}
+
+
 class VerificationScope {
   
   constructor(parent, node) {
@@ -49,8 +60,10 @@ class VerificationScope {
           pre = this.assumes(),
           body = program(...this.normalizedNode()),
           theorems = this.toProve().map(pc =>
-            new Theorem(this, vars, pre, body, pc, this.describe(pc)));
-    return theorems.concat(arr.flatmap(this.scopes, s => s.theorems()));
+            new Theorem(this, vars, pre, body, pc, this.describe(pc))),
+          partials = this.immediates().map(([pc, part]) =>
+            new Theorem(this, vars, pre, program(...this.normalize(part)), pc, `assert:\n${stringify(pc)}`));
+    return theorems.concat(partials).concat(arr.flatmap(this.scopes, s => s.theorems()));
   }
   
   vars() {
@@ -63,51 +76,47 @@ class VerificationScope {
     return this.parent ? this.parent.vars() : [];
   }
   
-  normalizedNode() {
-    // -> Array<Statement>
+  normalize(statements) {
+    // Array<Statement> -> Array<Statement>
     // normalize function body to SSA-like language
     const decls = this.surroundingVars().map(v => varDecl(v)),
-          stmts = decls.concat([exprStmt(funcExpr({}, [], ...this.statements()))]),
+          stmts = decls.concat([exprStmt(funcExpr({}, [], ...statements))]),
           iife = program(exprStmt(funcExpr({}, [], ...stmts))),
           normalized = normalizer.normalize(iife, {unify_ret: true}),
           niife = normalized.body[0].expression.callee.body.body[1].expression.right.body.body;
     return niife[1].body.body[0].expression.right.body.body;
   }
   
+  normalizedNode() {
+    // -> Array<Statement>
+    return this.normalize(this.statements());
+  }
+  
   statements() {
     // -> Array<Statement>
-    return this.body()
-      .filter(stmt =>
-        stmt.type != "ExpressionStatement" ||
-        stmt.expression.type != "CallExpression" ||
-        stmt.expression.callee.type != "Identifier" ||
-        !(["requires", "ensures", "assert", "invariant"]
-          .includes(stmt.expression.callee.name)));
+    return this.body().filter(stmt => !isAssertion(stmt));
   }
   
   assertions() {
     // -> Array<Expression>
-    return this.body()
-      .filter(stmt =>
-        stmt.type == "ExpressionStatement" &&
-        stmt.expression.type == "CallExpression" &&
-        stmt.expression.callee.type == "Identifier" &&
-        (["requires", "ensures", "assert", "invariant"]
-          .includes(stmt.expression.callee.name)) &&
-        stmt.expression.arguments.length === 1)
-      .map(stmt => stmt.expression);
+    return this.body().filter(isAssertion).map(stmt => stmt.expression);
+  }
+  
+  upToExpr(expr) {
+    return arr.takeWhile(this.body(), stmt => stmt.expression !== expr)
+              .filter(stmt => !isAssertion(stmt));
   }
 
-  immediate() {
-    // -> Array<Expression>
+  immediates() {
+    // -> Array<[Expression, Array<Statement>]>
     return this.assertions()
       .filter(expr => expr.callee.name == "assert")
-      .map(expr => expr.arguments[0]);
+      .map(expr => [expr.arguments[0], this.upToExpr(expr)]);
   }
   
   invariants() {
     // -> Array<Expression>
-    const pi = this.parent ? this.parent.invariants() : null;
+    const pi = this.parent ? this.parent.invariants() : [];
     return pi.concat(this.assertions()
       .filter(expr => expr.callee.name == "invariant")
       .map(expr => expr.arguments[0]));
