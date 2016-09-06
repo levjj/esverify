@@ -1,4 +1,7 @@
+import { parse } from "lively.ast";
 import { arr } from "lively.lang";
+import { assertionToSMT } from "./assertions.js";
+import { assumesStrings } from "./visitors.js";
 
 /*
 
@@ -124,6 +127,15 @@ export function varsToSMT(vars) {
   return smt;
 }
 
+function incByOne(vars, nvars) {
+  // Vars, Vars -> Vars
+  const res = {};
+  for (const v in vars) {
+    res[v] = nvars[v] > vars[v] ? vars[v] + 1 : vars[v];
+  }
+  return res;
+}
+
 function arrayToSMT(elements, vars) {
   // Array<Identifier>, Vars -> SMTInput
   if (elements.length === 0) return "empty";
@@ -162,12 +174,16 @@ function expressionToSMT(expr, vars) {
 // type BreakLabel = string;
 // type BreakCondition = {cond: Antedecents, label: BreakLabel}
 
+function assert(cond, vars, pc) {
+  // VarName, SMTInput, Vars, Array<SMTInput> -> [SMTInput, Array<BreakCondition>, Vars]
+  if (pc.length == 0) return [`(assert ${cond})\n`, vars, []];
+  return [`(assert (=> (and ${pc.join(' ')}) ${cond}))\n`, vars, []];
+}
+
 function assertEq(left, right, vars, pc) {
   // VarName, SMTInput, Vars, Array<SMTInput> -> [SMTInput, Array<BreakCondition>, Vars]
-  const nvars = incVar(left, vars),
-        eq = `(= ${getVar(left, nvars)} ${right})`;
-  if (pc.length == 0) return [`(assert ${eq})\n`, nvars, []];
-  return [`(assert (=> (and ${pc.join(' ')}) ${eq}))\n`, nvars, []];
+  const nvars = incVar(left, vars);
+  return assert(`(= ${getVar(left, nvars)} ${right})`, nvars, pc);
 }
 
 export function statementToSMT(stmt, vars = {}, pc = []) {
@@ -213,6 +229,14 @@ export function statementToSMT(stmt, vars = {}, pc = []) {
         const [ssmt, nvars2, sbc] = assertEq(id.name, "jsundefined", nvars, pc);
         return [smt + ssmt, nvars2, bc.concat(sbc)];
       }, ["", vars, []]);
+    case 'WhileStatement':
+      const [, lvars] = statementToSMT(stmt.body, vars, pc); // ignore loop body
+      const wvars = incByOne(vars, lvars); // but increment changed vars
+      let wsmt = `(and (not (_truthy ${getVar(stmt.test.name, wvars)}))`;
+      assumesStrings(stmt.body).forEach(str => {
+        wsmt += ` (_truthy ${assertionToSMT(parse(str).body[0].expression, wvars)})`;
+      });
+      return assert(wsmt + ')', wvars, pc);
     case 'ExpressionStatement':
       const {left, right} = stmt.expression;
       if (left.type == 'MemberExpression') {

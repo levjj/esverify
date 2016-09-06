@@ -4,18 +4,7 @@ import { arr } from "lively.lang";
 
 import normalizer from "../generated/jswala.js";
 import Theorem from "./theorems.js";
-import { removeAssertions, replaceFunctionResult, replaceResultFunction, findDefs } from "./visitors.js";
-
-function isAssertion(stmt) {
-  // Statement -> boolean
-  return stmt.type == "ExpressionStatement" &&
-         stmt.expression.type == "CallExpression" &&
-         stmt.expression.callee.type == "Identifier" &&
-         (["requires", "ensures", "assert", "invariant"]
-           .includes(stmt.expression.callee.name)) &&
-         stmt.expression.arguments.length === 1;
-}
-
+import { isAssertion, removeAssertions, replaceFunctionResult, replaceResultFunction, pruneLoops, findDefs } from "./visitors.js";
 
 class VerificationScope {
   
@@ -27,6 +16,11 @@ class VerificationScope {
     }
     this.scopes = []; // Array<VerificationScope>
     this.node = node;
+  }
+  
+  requires() {
+    // -> Array<Expression>
+    throw new Error("not implemented");
   }
   
   assumes() {
@@ -54,6 +48,11 @@ class VerificationScope {
     throw new Error("not implemented");
   }
   
+  describeReq() {
+    // -> string
+    return "assert";
+  }
+  
   theorems() {
     // -> Array<Theorem>
     const vars = this.surroundingVars(),
@@ -61,8 +60,8 @@ class VerificationScope {
           body = program(...this.normalizedNode()),
           theorems = this.toProve().map(pc =>
             new Theorem(this, vars, pre, body, pc, this.describe(pc))),
-          partials = this.immediates().map(([pc, part]) =>
-            new Theorem(this, vars, pre, program(...this.normalize(part)), pc, `assert:\n${stringify(pc)}`));
+          partials = this.immediates().concat(this.subRequirements()).map(([type, pc, part]) =>
+            new Theorem(this, vars, pre, program(...this.normalize(part)), pc, `${type}:\n${stringify(pc)}`));
     return theorems.concat(partials).concat(arr.flatmap(this.scopes, s => s.theorems()));
   }
   
@@ -80,7 +79,7 @@ class VerificationScope {
     // Array<Statement> -> Array<Statement>
     // normalize function body to SSA-like language
     const decls = this.surroundingVars().map(v => varDecl(v)),
-          stmts = decls.concat([exprStmt(funcExpr({}, [], ...statements))]),
+          stmts = decls.concat([exprStmt(funcExpr({}, [], ...pruneLoops(statements)))]),
           iife = program(exprStmt(funcExpr({}, [], ...stmts))),
           normalized = normalizer.normalize(iife, {unify_ret: true}),
           niife = normalized.body[0].expression.callee.body.body[1].expression.right.body.body;
@@ -103,7 +102,14 @@ class VerificationScope {
   }
   
   upToExpr(expr) {
+    // Expression -> Array<Statement>
     return arr.takeWhile(this.body(), stmt => stmt.expression !== expr)
+              .filter(stmt => !isAssertion(stmt));
+  }
+  
+  upToStmt(stmt) {
+    // Statement -> Array<Statement>
+    return arr.takeWhile(this.body(), s => s !== stmt)
               .filter(stmt => !isAssertion(stmt));
   }
 
@@ -111,7 +117,13 @@ class VerificationScope {
     // -> Array<[Expression, Array<Statement>]>
     return this.assertions()
       .filter(expr => expr.callee.name == "assert")
-      .map(expr => [expr.arguments[0], this.upToExpr(expr)]);
+      .map(expr => ["assert", expr.arguments[0], this.upToExpr(expr)]);
+  }
+  
+  subRequirements() {
+    return arr.flatmap(
+      this.scopes,
+      scope => scope.requires().map(expr => [scope.describeReq(), expr, this.upToStmt(scope.node)]));
   }
   
   invariants() {
@@ -125,6 +137,11 @@ class VerificationScope {
 }
 
 export class FunctionScope extends VerificationScope {
+  
+  requires() {
+    // -> Array<Expression>
+    return [];
+  }
   
   assumes() {
     // -> Array<Expression>
@@ -179,6 +196,40 @@ export class FunctionScope extends VerificationScope {
 export class ClassScope extends VerificationScope {
 }
 
+export class LoopScope extends VerificationScope {
+  
+  requires() {
+    // -> Array<Expression>
+    return this.invariants();
+  }
+
+  assumes() {
+    // -> Array<Expression>
+    return this.invariants().concat([this.node.test]);
+  }
+  
+  body() {
+    // -> Array<Statement>
+    return this.node.body.body;
+  }
+  
+  bodySource() {
+    // -> JSSource
+    return stringify(program(...this.normalizedNode()));
+  }
+  
+  describe(post) {
+    // Expression -> string
+    return `loop invariant:\n${stringify(post)}`;
+  }
+  
+  describeReq() {
+    // -> string
+    return "loop entry";
+  }
+
+}
+
 export class TopLevelScope extends VerificationScope {
   
   constructor(node) {
@@ -186,9 +237,9 @@ export class TopLevelScope extends VerificationScope {
     super(null, node);
   }
   
-  describe(post) {
-    // Expression -> string
-    return `initially:\n${stringify(post)}`;
+  requires() {
+    // -> Array<Expression>
+    return [];
   }
 
   assumes() {
@@ -205,4 +256,10 @@ export class TopLevelScope extends VerificationScope {
     // -> JSSource
     return stringify(program(...this.normalizedNode()));
   }
+  
+  describe(post) {
+    // Expression -> string
+    return `initially:\n${stringify(post)}`;
+  }
+  
 }

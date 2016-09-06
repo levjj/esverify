@@ -202,20 +202,20 @@ describe("verify", () => {
       expect(theorems).to.have.length(3);
     });
     
-    it("invariant holds on entry", async () => {
-      expect(theorems[0].description).to.be.eql("loop entry:\ni <= 5");
+    it("results in final state", async () => {
+      expect(theorems[0].description).to.be.eql("assert:\ni === 5");
       await theorems[0].solve();
       expect(theorems[0].isSatisfiable()).to.be.true;
     });
     
-    it("invariant maintained by loop", async () => {
-      expect(theorems[1].description).to.be.eql("loop invariant:\ni <= 5");
+    it("invariant holds on entry", async () => {
+      expect(theorems[1].description).to.be.eql("loop entry:\ni <= 5");
       await theorems[1].solve();
       expect(theorems[1].isSatisfiable()).to.be.true;
     });
     
-    it("results in final state", async () => {
-      expect(theorems[2].description).to.be.eql("initially:\ni === 5");
+    it("invariant maintained by loop", async () => {
+      expect(theorems[2].description).to.be.eql("loop invariant:\ni <= 5");
       await theorems[2].solve();
       expect(theorems[2].isSatisfiable()).to.be.true;
     });
