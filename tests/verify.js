@@ -221,4 +221,68 @@ describe("verify", () => {
     });
 
   });
+  
+  describe("sum", () => {
+    
+    const code = (() => {
+      function sumTo(n) {
+        requires(typeof n == "number");
+        requires(n >= 0);
+        
+        let i = 0, s = 0;
+      
+        while (i < n) {
+          invariant(i <= n);
+          invariant(s == (i + 1) * i / 2);
+          i++;
+          s = s + i;
+        }
+        
+        return s;
+        
+        ensures(sumTo(n) == (n + 1) * n / 2);
+      }
+    }).toString();
+    
+    let theorems;
+    
+    beforeEach(() => {
+      theorems = theoremsInSource(code.substring(14, code.length - 2));
+    });
+
+    it("finds all theorem", () => {
+      expect(theorems).to.have.length(5);
+    });
+    
+    it("verifies post condition", async () => {
+      expect(theorems[0].description).to.be.eql("sumTo:\nsumTo(n) == (n + 1) * n / 2");
+      await theorems[0].solve();
+      expect(theorems[0].isSatisfiable()).to.be.true;
+    });
+    
+    it("bound invariant holds on loop entry", async () => {
+      expect(theorems[1].description).to.be.eql("loop entry:\ni <= n");
+      await theorems[1].solve();
+      expect(theorems[1].isSatisfiable()).to.be.true;
+    });
+    
+    it("equality invariant holds on loop entry", async () => {
+      expect(theorems[2].description).to.be.eql("loop entry:\ns == (i + 1) * i / 2");
+      await theorems[2].solve();
+      expect(theorems[2].isSatisfiable()).to.be.true;
+    });
+    
+    it("counter invariant maintained by loop", async () => {
+      expect(theorems[3].description).to.be.eql("loop invariant:\ni <= n");
+      await theorems[3].solve();
+      expect(theorems[3].isSatisfiable()).to.be.true;
+    });
+
+    it("equality invariant maintained by loop", async () => {
+      expect(theorems[4].description).to.be.eql("loop invariant:\ns == (i + 1) * i / 2");
+      await theorems[4].solve();
+      expect(theorems[4].isSatisfiable()).to.be.true;
+    });
+
+  });
 });
