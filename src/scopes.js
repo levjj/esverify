@@ -1,10 +1,9 @@
 import { stringify } from "lively.ast";
-import { exprStmt, funcExpr, funcDecl, funcCall, program, varDecl } from "lively.ast/lib/nodes.js";
+import { funcExpr } from "lively.ast/lib/nodes.js";
 import { arr } from "lively.lang";
 
-import normalizer from "../generated/jswala.js";
 import Theorem from "./theorems.js";
-import { isAssertion, removeAssertions, replaceFunctionResult, replaceResultFunction, pruneLoops, findDefs } from "./visitors.js";
+import { isAssertion, replaceFunctionResult, replaceResultFunction, findDefs } from "./visitors.js";
 
 class VerificationScope {
   
@@ -33,11 +32,6 @@ class VerificationScope {
     throw new Error("not implemented");
   }
   
-  bodySource() {
-    // -> JSSource
-    throw new Error("not implemented");
-  }
-  
   toProve() {
     // -> Array<Expression>
     return this.invariants();
@@ -57,11 +51,11 @@ class VerificationScope {
     // -> Array<Theorem>
     const vars = this.surroundingVars(),
           pre = this.assumes(),
-          body = program(...this.normalizedNode()),
+          body = this.statements(),
           theorems = this.toProve().map(pc =>
-            new Theorem(this, vars, pre, body, pc, this.describe(pc))),
+            new Theorem(vars, pre, body, pc, this.describe(pc))),
           partials = this.immediates().concat(this.subRequirements()).map(([type, pc, part]) =>
-            new Theorem(this, vars, pre, program(...this.normalize(part)), pc, `${type}:\n${stringify(pc)}`));
+            new Theorem(vars, pre, part, pc, `${type}:\n${stringify(pc)}`));
     return theorems.concat(partials).concat(arr.flatmap(this.scopes, s => s.theorems()));
   }
   
@@ -73,22 +67,6 @@ class VerificationScope {
   surroundingVars() {
     // -> Array<string>
     return this.parent ? this.parent.vars() : [];
-  }
-  
-  normalize(statements) {
-    // Array<Statement> -> Array<Statement>
-    // normalize function body to SSA-like language
-    const decls = this.surroundingVars().map(v => varDecl(v)),
-          stmts = decls.concat([exprStmt(funcExpr({}, [], ...pruneLoops(statements)))]),
-          iife = program(exprStmt(funcExpr({}, [], ...stmts))),
-          normalized = normalizer.normalize(iife, {unify_ret: true}),
-          niife = normalized.body[0].expression.callee.body.body[1].expression.right.body.body;
-    return niife[1].body.body[0].expression.right.body.body;
-  }
-  
-  normalizedNode() {
-    // -> Array<Statement>
-    return this.normalize(this.statements());
   }
   
   statements() {
@@ -213,11 +191,6 @@ export class LoopScope extends VerificationScope {
     return this.node.body.body;
   }
   
-  bodySource() {
-    // -> JSSource
-    return stringify(program(...this.normalizedNode()));
-  }
-  
   describe(post) {
     // Expression -> string
     return `loop invariant:\n${stringify(post)}`;
@@ -252,11 +225,6 @@ export class TopLevelScope extends VerificationScope {
     return this.node.body;
   }
 
-  bodySource() {
-    // -> JSSource
-    return stringify(program(...this.normalizedNode()));
-  }
-  
   describe(post) {
     // Expression -> string
     return `initially:\n${stringify(post)}`;
