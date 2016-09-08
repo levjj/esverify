@@ -44,7 +44,7 @@ ${requirements}
 ${post}
 
 (check-sat)
-(get-value (${this.vars.map(v => `${v}_0`).join(' ')} _res_0))`;
+(get-value (${Object.keys(nvars).map(v => `${v}_0`).join(' ')}))`;
   }
   
   result() {
@@ -68,6 +68,13 @@ ${post}
     if (res.startsWith("unsat")) return true;
     if (res.startsWith("sat")) return false;
     throw new Error("z3 failed to solve problem");
+  }
+  
+  hasResult() {
+    // -> Bool?
+    const res = this.result();
+    if (!res) return false;
+    return res.startsWith("unsat") || res.startsWith("sat");
   }
   
   getModel() {

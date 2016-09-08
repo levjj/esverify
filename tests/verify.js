@@ -114,35 +114,175 @@ describe("verify", () => {
       expect(theorems[1].isSatisfiable()).to.be.true;
     });
     
-    it("increment increments", async () => {
-      expect(theorems[2].description).to.be.eql("increment:\ncounter > old(counter)");
+    it("increment maintains invariants", async () => {
+      expect(theorems[2].description).to.be.eql("increment:\ntypeof counter == 'number'");
       await theorems[2].solve();
       expect(theorems[2].isSatisfiable()).to.be.true;
-    });
-        
-    it("increment maintains invariants", async () => {
-      expect(theorems[3].description).to.be.eql("increment:\ntypeof counter == 'number'");
+      expect(theorems[3].description).to.be.eql("increment:\ncounter >= 0");
       await theorems[3].solve();
       expect(theorems[3].isSatisfiable()).to.be.true;
-      expect(theorems[4].description).to.be.eql("increment:\ncounter >= 0");
+    });
+    
+    it("increment increments", async () => {
+      expect(theorems[4].description).to.be.eql("increment:\ncounter > old(counter)");
       await theorems[4].solve();
       expect(theorems[4].isSatisfiable()).to.be.true;
     });
-    
-    it("decrement decrements", async () => {
-      expect(theorems[5].description).to.be.eql("decrement:\nold(counter) > 0 ? counter < old(counter) : counter === old(counter)");
-      await theorems[5].solve();
-      expect(theorems[5].isSatisfiable()).to.be.true;
-    });
 
     it("decrement maintains invariants", async () => {
-      expect(theorems[6].description).to.be.eql("decrement:\ntypeof counter == 'number'");
+      expect(theorems[5].description).to.be.eql("decrement:\ntypeof counter == 'number'");
+      await theorems[5].solve();
+      expect(theorems[5].isSatisfiable()).to.be.true;
+      expect(theorems[6].description).to.be.eql("decrement:\ncounter >= 0");
       await theorems[6].solve();
       expect(theorems[6].isSatisfiable()).to.be.true;
-      expect(theorems[7].description).to.be.eql("decrement:\ncounter >= 0");
+    });
+    
+    it("decrement decrements", async () => {
+      expect(theorems[7].description).to.be.eql("decrement:\nold(counter) > 0 ? counter < old(counter) : counter === old(counter)");
       await theorems[7].solve();
       expect(theorems[7].isSatisfiable()).to.be.true;
     });
+
+  });
+  
+  describe("simple steps", () => {
     
+    const code = (() => {
+      let i = 0;
+      assert(i < 1);
+      i = 3;
+      assert(i < 2);
+    }).toString();
+    
+    let theorems;
+    
+    beforeEach(() => {
+      theorems = theoremsInSource(code.substring(14, code.length - 2));
+    });
+
+    it("finds all theorem", () => {
+      expect(theorems).to.have.length(2);
+    });
+    
+    it("verifies first assertion", async () => {
+      expect(theorems[0].description).to.be.eql("assert:\ni < 1");
+      await theorems[0].solve();
+      expect(theorems[0].isSatisfiable()).to.be.true;
+    });
+
+    it("does not verify second assertion", async () => {
+      expect(theorems[1].description).to.be.eql("assert:\ni < 2");
+      await theorems[1].solve();
+      expect(theorems[1].isSatisfiable()).to.be.false;
+    });
+    
+  });
+  
+  describe("loop", () => {
+    
+    const code = (() => {
+      let i = 0;
+
+      while (i < 5) {
+        invariant(i <= 5);
+        i++;
+      }
+      
+      assert(i === 5);
+    }).toString();
+    
+    let theorems;
+    
+    beforeEach(() => {
+      theorems = theoremsInSource(code.substring(14, code.length - 2));
+    });
+
+    it("finds all theorem", () => {
+      expect(theorems).to.have.length(3);
+    });
+    
+    it("results in final state", async () => {
+      expect(theorems[0].description).to.be.eql("assert:\ni === 5");
+      await theorems[0].solve();
+      expect(theorems[0].isSatisfiable()).to.be.true;
+    });
+    
+    it("invariant holds on entry", async () => {
+      expect(theorems[1].description).to.be.eql("loop entry:\ni <= 5");
+      await theorems[1].solve();
+      expect(theorems[1].isSatisfiable()).to.be.true;
+    });
+    
+    it("invariant maintained by loop", async () => {
+      expect(theorems[2].description).to.be.eql("loop invariant:\ni <= 5");
+      await theorems[2].solve();
+      expect(theorems[2].isSatisfiable()).to.be.true;
+    });
+
+  });
+  
+  describe("sum", () => {
+    
+    const code = (() => {
+      function sumTo(n) {
+        requires(typeof n == "number");
+        requires(n >= 0);
+        
+        let i = 0, s = 0;
+      
+        while (i < n) {
+          invariant(i <= n);
+          invariant(s == (i + 1) * i / 2);
+          i++;
+          s = s + i;
+        }
+        
+        return s;
+        
+        ensures(sumTo(n) == (n + 1) * n / 2);
+      }
+    }).toString();
+    
+    let theorems;
+    
+    beforeEach(() => {
+      theorems = theoremsInSource(code.substring(14, code.length - 2));
+    });
+
+    it("finds all theorem", () => {
+      expect(theorems).to.have.length(5);
+    });
+    
+    it("verifies post condition", async () => {
+      expect(theorems[0].description).to.be.eql("sumTo:\nsumTo(n) == (n + 1) * n / 2");
+      await theorems[0].solve();
+      expect(theorems[0].isSatisfiable()).to.be.true;
+    });
+    
+    it("bound invariant holds on loop entry", async () => {
+      expect(theorems[1].description).to.be.eql("loop entry:\ni <= n");
+      await theorems[1].solve();
+      expect(theorems[1].isSatisfiable()).to.be.true;
+    });
+    
+    it("equality invariant holds on loop entry", async () => {
+      expect(theorems[2].description).to.be.eql("loop entry:\ns == (i + 1) * i / 2");
+      await theorems[2].solve();
+      expect(theorems[2].isSatisfiable()).to.be.true;
+    });
+    
+    it("counter invariant maintained by loop", async () => {
+      expect(theorems[3].description).to.be.eql("loop invariant:\ni <= n");
+      await theorems[3].solve();
+      expect(theorems[3].isSatisfiable()).to.be.true;
+    });
+
+    it("equality invariant maintained by loop", async () => {
+      expect(theorems[4].description).to.be.eql("loop invariant:\ns == (i + 1) * i / 2");
+      await theorems[4].solve();
+      expect(theorems[4].isSatisfiable()).to.be.true;
+    });
+
   });
 });

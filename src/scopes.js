@@ -1,10 +1,10 @@
 import { stringify } from "lively.ast";
-import { exprStmt, funcExpr, funcCall, program, varDecl } from "lively.ast/lib/nodes.js";
+import { exprStmt, funcExpr, funcDecl, funcCall, program, varDecl } from "lively.ast/lib/nodes.js";
 import { arr } from "lively.lang";
 
 import normalizer from "../generated/jswala.js";
 import Theorem from "./theorems.js";
-import { removeAssertions, replaceFunctionResult, findDefs } from "./visitors.js";
+import { isAssertion, removeAssertions, replaceFunctionResult, replaceResultFunction, pruneLoops, findDefs } from "./visitors.js";
 
 class VerificationScope {
   
@@ -18,26 +18,53 @@ class VerificationScope {
     this.node = node;
   }
   
-  invariants() {
+  requires() {
     // -> Array<Expression>
-    return this.parent.invariants();
+    throw new Error("not implemented");
   }
   
-  theorems() {
-    // -> Array<Theorem>
-    return arr.flatmap(this.scopes, s => s.theorems());
+  assumes() {
+    // -> Array<Expression>
+    throw new Error("not implemented");
   }
   
-  nodeAsProgram() {
-    // -> Node
-    return this.node;
+  body() {
+    // -> Array<Statement>
+    throw new Error("not implemented");
   }
   
   bodySource() {
     // -> JSSource
     throw new Error("not implemented");
   }
-
+  
+  toProve() {
+    // -> Array<Expression>
+    return this.invariants();
+  }
+  
+  describe(post) {
+    // Expression -> string
+    throw new Error("not implemented");
+  }
+  
+  describeReq() {
+    // -> string
+    return "assert";
+  }
+  
+  theorems() {
+    // -> Array<Theorem>
+    const vars = this.surroundingVars(),
+          pre = this.assumes(),
+          body = program(...this.normalizedNode()),
+          theorems = this.toProve().map(pc =>
+            new Theorem(this, vars, pre, body, pc, this.describe(pc))),
+          partials = this.immediates().concat(this.subRequirements()).map(([type, pc, part]) =>
+            new Theorem(this, vars, pre, program(...this.normalize(part)), pc, `${type}:\n${stringify(pc)}`));
+    return theorems.concat(partials).concat(arr.flatmap(this.scopes, s => s.theorems()));
+  }
+  
   vars() {
     // -> Array<string>
     return findDefs(this.node).concat(this.surroundingVars());
@@ -45,134 +72,194 @@ class VerificationScope {
   
   surroundingVars() {
     // -> Array<string>
-    return this.parent.vars();
+    return this.parent ? this.parent.vars() : [];
+  }
+  
+  normalize(statements) {
+    // Array<Statement> -> Array<Statement>
+    // normalize function body to SSA-like language
+    const decls = this.surroundingVars().map(v => varDecl(v)),
+          stmts = decls.concat([exprStmt(funcExpr({}, [], ...pruneLoops(statements)))]),
+          iife = program(exprStmt(funcExpr({}, [], ...stmts))),
+          normalized = normalizer.normalize(iife, {unify_ret: true}),
+          niife = normalized.body[0].expression.callee.body.body[1].expression.right.body.body;
+    return niife[1].body.body[0].expression.right.body.body;
   }
   
   normalizedNode() {
     // -> Array<Statement>
-    // normalize function body to SSA-like language
-    const prog = removeAssertions(this.nodeAsProgram()),
-          stmts = this.surroundingVars().map(v => varDecl(v)).concat(prog.body),
-          iife = program(exprStmt(funcCall(funcExpr({}, [], ...stmts)))),
-          normalized = normalizer.normalize(iife, {unify_ret: true}),
-          origProg = normalized.body[0].expression.callee.body;
-    // extract statements in function
-    return origProg.body[1].expression.right;
+    return this.normalize(this.statements());
+  }
+  
+  statements() {
+    // -> Array<Statement>
+    return this.body().filter(stmt => !isAssertion(stmt));
+  }
+  
+  assertions() {
+    // -> Array<Expression>
+    return this.body().filter(isAssertion).map(stmt => stmt.expression);
+  }
+  
+  upToExpr(expr) {
+    // Expression -> Array<Statement>
+    return arr.takeWhile(this.body(), stmt => stmt.expression !== expr)
+              .filter(stmt => !isAssertion(stmt));
+  }
+  
+  upToStmt(stmt) {
+    // Statement -> Array<Statement>
+    return arr.takeWhile(this.body(), s => s !== stmt)
+              .filter(stmt => !isAssertion(stmt));
+  }
+
+  immediates() {
+    // -> Array<[Expression, Array<Statement>]>
+    return this.assertions()
+      .filter(expr => expr.callee.name == "assert")
+      .map(expr => ["assert", expr.arguments[0], this.upToExpr(expr)]);
+  }
+  
+  subRequirements() {
+    return arr.flatmap(
+      this.scopes,
+      scope => scope.requires().map(expr => [scope.describeReq(), expr, this.upToStmt(scope.node)]));
+  }
+  
+  invariants() {
+    // -> Array<Expression>
+    const pi = this.parent ? this.parent.invariants() : [];
+    return pi.concat(this.assertions()
+      .filter(expr => expr.callee.name == "invariant")
+      .map(expr => expr.arguments[0]));
   }
   
 }
 
 export class FunctionScope extends VerificationScope {
-
-  assertions() {
+  
+  requires() {
     // -> Array<Expression>
-    return this.node.body.body
-      .filter(stmt =>
-        stmt.type == "ExpressionStatement" &&
-        stmt.expression.type == "CallExpression" &&
-        stmt.expression.callee.type == "Identifier" &&
-        (["requires", "ensures", "assert", "invariant"]
-          .includes(stmt.expression.callee.name)));
+    return [];
   }
   
+  assumes() {
+    // -> Array<Expression>
+    return this.preConditions().concat(this.parent.invariants());
+  }
+
+  body() {
+    // -> Array<Statement>
+    return this.node.body.body;
+  }
+  
+  bodySource() {
+    // -> JSSource
+    const {id, params} = this.node;
+    return stringify(funcExpr({id}, params, ...this.normalizedNode()));
+  }
+  
+  toProve() {
+    // -> Array<Expression>
+    return super.toProve().concat(this.postConditions().map(pc => {
+      return replaceFunctionResult(this.node, pc);
+    }));
+  }
+  
+  describe(post) {
+    // Expression -> string
+    const replaced = replaceResultFunction(this.node, post);
+    return `${this.node.id.name}:\n${stringify(replaced)}`;
+  }
+
+  surroundingVars() {
+    // -> Array<string>
+    return super.surroundingVars().concat(this.node.params.map(p => p.name));
+  }
+
   preConditions() {
     // -> Array<Expression>
     return this.assertions()
-      .filter(stmt => stmt.expression.callee.name == "requires")
-      .map(stmt => stmt.expression.arguments[0])
-      .map(expr => replaceFunctionResult(this.node, expr));
-  }
-  
-  nodeAsProgram() {
-    // -> Node
-    // TODO add surrounding vars
-    return program(this.node);
-  }
-  
-  normalizedNode() {
-    // -> Node
-    return super.normalizedNode().body.body[1].expression.right;
+      .filter(expr => expr.callee.name == "requires")
+      .map(expr => expr.arguments[0]);
   }
   
   postConditions() {
     // -> Array<Expression>
     return this.assertions()
-      .filter(stmt => stmt.expression.callee.name == "ensures")
-      .map(stmt => stmt.expression.arguments[0]);
+      .filter(expr => expr.callee.name == "ensures")
+      .map(expr => expr.arguments[0]);
   }
   
-  bodySource() {
-    // -> JSSource
-    const body = this.normalizedNode();
-    body.id = this.node.id;
-    return stringify(body);
-  }
-
-  theorems() {
-    // -> Array<Theorem>
-    const params = this.node.params.map(p => p.name).concat(this.surroundingVars()),
-          pre = this.preConditions().concat(this.parent.invariants()),
-          body = this.normalizedNode().body,
-          toProve = this.postConditions().concat(this.invariants()),
-          theorems = toProve.map(pc => {
-            const pc2 = replaceFunctionResult(this.node, pc),
-                  desc = this.describe(pc);
-            return new Theorem(this, params, pre, body, pc2, desc);
-          });
-    return theorems.concat(super.theorems());
-  }
-  
-  invariants() {
-    // -> Array<Expression>
-    return super.invariants().concat(this.assertions()
-      .filter(stmt => stmt.expression.callee.name == "invariant")
-      .map(stmt => stmt.expression.arguments[0]));
-  }
-  
-  describe(post) {
-    // Expression -> string
-    return `${this.node.id.name}:\n${stringify(post)}`;
-  }
-
 }
 
 export class ClassScope extends VerificationScope {
 }
 
-export class TopLevelScope extends VerificationScope {
+export class LoopScope extends VerificationScope {
   
-  constructor(node) {
-    // Node -> VerificationScope
-    super(null, node);
-  }
-  
-  theorems() {
-    // -> Array<Theorem>
-    const stmts = this.normalizedNode().body.body,
-          body = { type: "BlockStatement", body: stmts.slice(0, -1)},
-          theorems = this.invariants().map(pc =>
-            new Theorem(this, [], [], body, pc, `initially:\n${stringify(pc)}`));
-    return theorems.concat(super.theorems());
-  }
-  
-  invariants() {
+  requires() {
     // -> Array<Expression>
-    return this.node.body
-      .filter(stmt =>
-        stmt.type == "ExpressionStatement" &&
-        stmt.expression.type == "CallExpression" &&
-        stmt.expression.callee.type == "Identifier" &&
-        stmt.expression.callee.name == "invariant")
-      .map(stmt => stmt.expression.arguments[0]);
+    return this.invariants();
+  }
+
+  assumes() {
+    // -> Array<Expression>
+    return this.invariants().concat([this.node.test]);
   }
   
-  surroundingVars() {
-    // -> Array<string>
-    return [];
+  body() {
+    // -> Array<Statement>
+    return this.node.body.body;
   }
   
   bodySource() {
     // -> JSSource
-    return stringify(program(...this.normalizedNode().body.body));
+    return stringify(program(...this.normalizedNode()));
   }
+  
+  describe(post) {
+    // Expression -> string
+    return `loop invariant:\n${stringify(post)}`;
+  }
+  
+  describeReq() {
+    // -> string
+    return "loop entry";
+  }
+
+}
+
+export class TopLevelScope extends VerificationScope {
+  
+  constructor(node) {
+    // Program -> VerificationScope
+    super(null, node);
+  }
+  
+  requires() {
+    // -> Array<Expression>
+    return [];
+  }
+
+  assumes() {
+    // -> Array<Expression>
+    return [];
+  }
+  
+  body() {
+    // -> Array<Statement>
+    return this.node.body;
+  }
+
+  bodySource() {
+    // -> JSSource
+    return stringify(program(...this.normalizedNode()));
+  }
+  
+  describe(post) {
+    // Expression -> string
+    return `initially:\n${stringify(post)}`;
+  }
+  
 }
