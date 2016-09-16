@@ -38,7 +38,7 @@ describe("verify", () => {
     
     it("can be verified", async () => {
       await theorems[0].solve();
-      expect(theorems[0].isSatisfiable()).to.be.true;
+      expect(theorems[0].result().status).to.be.eql("sat");
     });
   });
   
@@ -64,7 +64,7 @@ describe("verify", () => {
 
     it("can not be verified", async () => {
       await theorems[0].solve();
-      expect(theorems[0].isSatisfiable()).to.be.false;
+      expect(theorems[0].result().status).to.be.eql("unsat");
     });
     
     it("returns counter-example", async () => {
@@ -108,40 +108,40 @@ describe("verify", () => {
     it("is initialized correctly", async () => {
       expect(theorems[0].description).to.be.eql("initially:\ntypeof counter == 'number'");
       await theorems[0].solve();
-      expect(theorems[0].isSatisfiable()).to.be.true;
+      expect(theorems[0].result().status).to.be.eql("sat");
       expect(theorems[1].description).to.be.eql("initially:\ncounter >= 0");
       await theorems[1].solve();
-      expect(theorems[1].isSatisfiable()).to.be.true;
+      expect(theorems[1].result().status).to.be.eql("sat");
     });
     
     it("increment maintains invariants", async () => {
       expect(theorems[2].description).to.be.eql("increment:\ntypeof counter == 'number'");
       await theorems[2].solve();
-      expect(theorems[2].isSatisfiable()).to.be.true;
+      expect(theorems[2].result().status).to.be.eql("sat");
       expect(theorems[3].description).to.be.eql("increment:\ncounter >= 0");
       await theorems[3].solve();
-      expect(theorems[3].isSatisfiable()).to.be.true;
+      expect(theorems[3].result().status).to.be.eql("sat");
     });
     
     it("increment increments", async () => {
       expect(theorems[4].description).to.be.eql("increment:\ncounter > old(counter)");
       await theorems[4].solve();
-      expect(theorems[4].isSatisfiable()).to.be.true;
+      expect(theorems[4].result().status).to.be.eql("sat");
     });
 
     it("decrement maintains invariants", async () => {
       expect(theorems[5].description).to.be.eql("decrement:\ntypeof counter == 'number'");
       await theorems[5].solve();
-      expect(theorems[5].isSatisfiable()).to.be.true;
+      expect(theorems[5].result().status).to.be.eql("sat");
       expect(theorems[6].description).to.be.eql("decrement:\ncounter >= 0");
       await theorems[6].solve();
-      expect(theorems[6].isSatisfiable()).to.be.true;
+      expect(theorems[6].result().status).to.be.eql("sat");
     });
     
     it("decrement decrements", async () => {
       expect(theorems[7].description).to.be.eql("decrement:\nold(counter) > 0 ? counter < old(counter) : counter === old(counter)");
       await theorems[7].solve();
-      expect(theorems[7].isSatisfiable()).to.be.true;
+      expect(theorems[7].result().status).to.be.eql("sat");
     });
 
   });
@@ -168,13 +168,13 @@ describe("verify", () => {
     it("verifies first assertion", async () => {
       expect(theorems[0].description).to.be.eql("assert:\ni < 1");
       await theorems[0].solve();
-      expect(theorems[0].isSatisfiable()).to.be.true;
+      expect(theorems[0].result().status).to.be.eql("sat");
     });
 
     it("does not verify second assertion", async () => {
       expect(theorems[1].description).to.be.eql("assert:\ni < 2");
       await theorems[1].solve();
-      expect(theorems[1].isSatisfiable()).to.be.false;
+      expect(theorems[1].result().status).to.be.eql("unsat");
     });
     
   });
@@ -205,19 +205,19 @@ describe("verify", () => {
     it("results in final state", async () => {
       expect(theorems[0].description).to.be.eql("assert:\ni === 5");
       await theorems[0].solve();
-      expect(theorems[0].isSatisfiable()).to.be.true;
+      expect(theorems[0].result().status).to.be.eql("sat");
     });
     
     it("invariant holds on entry", async () => {
       expect(theorems[1].description).to.be.eql("loop entry:\ni <= 5");
       await theorems[1].solve();
-      expect(theorems[1].isSatisfiable()).to.be.true;
+      expect(theorems[1].result().status).to.be.eql("sat");
     });
     
     it("invariant maintained by loop", async () => {
       expect(theorems[2].description).to.be.eql("loop invariant:\ni <= 5");
       await theorems[2].solve();
-      expect(theorems[2].isSatisfiable()).to.be.true;
+      expect(theorems[2].result().status).to.be.eql("sat");
     });
 
   });
@@ -257,31 +257,31 @@ describe("verify", () => {
     it("verifies post condition", async () => {
       expect(theorems[0].description).to.be.eql("sumTo:\nsumTo(n) == (n + 1) * n / 2");
       await theorems[0].solve();
-      expect(theorems[0].isSatisfiable()).to.be.true;
+      expect(theorems[0].result().status).to.be.eql("sat");
     });
     
     it("bound invariant holds on loop entry", async () => {
       expect(theorems[1].description).to.be.eql("loop entry:\ni <= n");
       await theorems[1].solve();
-      expect(theorems[1].isSatisfiable()).to.be.true;
+      expect(theorems[1].result().status).to.be.eql("sat");
     });
     
     it("equality invariant holds on loop entry", async () => {
       expect(theorems[2].description).to.be.eql("loop entry:\ns == (i + 1) * i / 2");
       await theorems[2].solve();
-      expect(theorems[2].isSatisfiable()).to.be.true;
+      expect(theorems[2].result().status).to.be.eql("sat");
     });
     
     it("counter invariant maintained by loop", async () => {
       expect(theorems[3].description).to.be.eql("loop invariant:\ni <= n");
       await theorems[3].solve();
-      expect(theorems[3].isSatisfiable()).to.be.true;
+      expect(theorems[3].result().status).to.be.eql("sat");
     });
 
     it("equality invariant maintained by loop", async () => {
       expect(theorems[4].description).to.be.eql("loop invariant:\ns == (i + 1) * i / 2");
       await theorems[4].solve();
-      expect(theorems[4].isSatisfiable()).to.be.true;
+      expect(theorems[4].result().status).to.be.eql("sat");
     });
 
   });
