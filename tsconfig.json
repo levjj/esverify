@@ -1,0 +1,17 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "declaration": false,
+    "module": "commonjs",
+    "noImplicitAny": true,
+    "preserveConstEnums": true,
+    "removeComments": false,
+    "sourceMap": true,
+    "outDir": "build",
+    "target": "es6",
+    "strictNullChecks": true
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}

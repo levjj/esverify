@@ -1,8 +1,11 @@
-/* global describe, beforeEach, it */
+/// <reference path="../typings/mocha/mocha.d.ts" />
+/// <reference path="../typings/chai/chai.d.ts" />
+import { expect, use } from "chai";
+import * as chaiSubset from "chai-subset";
+use(chaiSubset);
 
-import { expect } from "mocha-es6";
-
-import { theoremsInSource } from "../index.js";
+import theoremsInSource from "../index";
+import Theorem from "../src/theorems";
 
 describe("verify", () => {
   var requires, ensures, invariant, assert, old; // do not rewrite assertions
@@ -22,10 +25,12 @@ describe("verify", () => {
       }
     }).toString();
     
-    let theorems;
+    let theorems: Array<Theorem>;
     
     beforeEach(() => {
-      theorems = theoremsInSource(code.substring(14, code.length - 2));
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
     });
 
     it("finds a theorem", () => {
@@ -56,10 +61,12 @@ describe("verify", () => {
       }
     }).toString();
     
-    let theorems;
+    let theorems: Array<Theorem>;
     
     beforeEach(() => {
-      theorems = theoremsInSource(code.substring(14, code.length - 2));
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
     });
 
     it("can not be verified", async () => {
@@ -95,10 +102,12 @@ describe("verify", () => {
       }
     }).toString();
     
-    let theorems;
+    let theorems: Array<Theorem>;
     
     beforeEach(() => {
-      theorems = theoremsInSource(code.substring(14, code.length - 2));
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
     });
 
     it("finds all theorem", () => {
@@ -155,10 +164,12 @@ describe("verify", () => {
       assert(i < 2);
     }).toString();
     
-    let theorems;
+    let theorems: Array<Theorem>;
     
     beforeEach(() => {
-      theorems = theoremsInSource(code.substring(14, code.length - 2));
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
     });
 
     it("finds all theorem", () => {
@@ -192,10 +203,12 @@ describe("verify", () => {
       assert(i === 5);
     }).toString();
     
-    let theorems;
+    let theorems: Array<Theorem>;
     
     beforeEach(() => {
-      theorems = theoremsInSource(code.substring(14, code.length - 2));
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
     });
 
     it("finds all theorem", () => {
@@ -244,10 +257,12 @@ describe("verify", () => {
       }
     }).toString();
     
-    let theorems;
+    let theorems: Array<Theorem>;
     
     beforeEach(() => {
-      theorems = theoremsInSource(code.substring(14, code.length - 2));
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
     });
 
     it("finds all theorem", () => {

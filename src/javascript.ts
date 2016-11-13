@@ -1,10 +1,13 @@
 import { parse } from "lively.ast";
 import { arr } from "lively.lang";
-import { assertionToSMT } from "./assertions.js";
-import { assumesStrings } from "./visitors.js";
+
+/// <reference path="../typings/mozilla-spidermonkey-parser-api.d.ts"/>
+import { Syntax } from "spiderMonkeyParserAPI";
+import { SMTInput, SMTOutput, VarName, Vars } from "../index";
+import { assertionToSMT } from "./assertions";
+import { assumesStrings } from "./visitors";
 
 /*
-
 Stmt = var x1, x2, ..., xn;
      | x = (function f(y1, ..., yn) { Stmt+ return x; });
      | x = LITERAL;
@@ -37,9 +40,9 @@ Stmt = var x1, x2, ..., xn;
 Prop = STRING : y
      | get p() { Stmt+ }
      | set p(x) { Stmt+ }
-
 */
-const unOpToSMT = {
+
+const unOpToSMT: {[unop: string]: string} = {
   "typeof": "_js-typeof",
   "-": "_js-negative",
   "+":"_js-positive",
@@ -48,7 +51,7 @@ const unOpToSMT = {
   "void": "_js-void"
 };
 
-const binOpToSMT = {
+const binOpToSMT: {[binop: string]: string} = {
   "==": "_js-eq", // non-standard
   "!=": "_js-neq", // non-standard
   "===": "_js-eq", // non-standard
@@ -72,31 +75,24 @@ const binOpToSMT = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-// type VarName = string;
-// type Vars = { [VarName]: number }  // latest assigned value
-
-export function createVars(names = []) {
-  // Array<VarName> -> Vars
-  return names.reduce((vars, n) => {
+export function createVars(names: Array<VarName> = []): Vars {
+  return names.reduce((vars: Vars, n: VarName) => {
     vars[n] = 0;
     return vars;
   }, {});
 }
 
-function incVar(v, vars) {
-  // VarName, Vars -> Vars
-  if (!(v in vars)) return {...vars, [v]: 0};
-  return {...vars, [v]: vars[v] + 1};
+function incVar(v: VarName, vars: Vars): Vars {
+  if (!(v in vars)) return Object.assign({}, vars, {[v]: 0});
+  return Object.assign({}, vars, {[v]: vars[v] + 1});
 }
 
-export function getVar(v, vars) {
-  // VarName, Vars -> SMTInput
+export function getVar(v: VarName, vars: Vars): SMTInput {
   if (!(v in vars)) return v + "_0";
   return v + "_" + vars[v];
 }
 
-function phiVars(pc, myVars, altVars) {
-    // Array<SMTInput>, Vars, Vars -> SMTInput
+function phiVars(pc: Array<SMTInput>, myVars: Vars, altVars: Vars): SMTInput {
   let smt = '';
   for (const v in altVars) {
     if (myVars[v] < altVars[v]) {
@@ -106,9 +102,8 @@ function phiVars(pc, myVars, altVars) {
   return smt;
 }
 
-function joinVars(vars1, vars2) {
-  // Vars, Vars -> [SMTInput, Vars]
-  const res = {};
+function joinVars(vars1: Vars, vars2: Vars): Vars {
+  const res: Vars = {};
   const allKeys = arr.uniq(Object.keys(vars1).concat(Object.keys(vars2)));
   for (const v of allKeys) {
     res[v] = v in vars1 ? (v in vars2 ? Math.max(vars1[v], vars2[v]) : vars1[v]) : vars2[v];
@@ -116,8 +111,7 @@ function joinVars(vars1, vars2) {
   return res;
 }
 
-export function varsToSMT(vars) {
-  // Vars -> SMTInput
+export function varsToSMT(vars: Vars): SMTInput {
   let smt = '';
   for (const v in vars) {
     for (let i = 0; i <= vars[v]; i++) {
@@ -127,24 +121,21 @@ export function varsToSMT(vars) {
   return smt;
 }
 
-function incByOne(vars, nvars) {
-  // Vars, Vars -> Vars
-  const res = {};
+function incByOne(vars: Vars, nvars: Vars): Vars {
+  const res: Vars = {};
   for (const v in vars) {
     res[v] = nvars[v] > vars[v] ? vars[v] + 1 : vars[v];
   }
   return res;
 }
 
-function arrayToSMT(elements, vars) {
-  // Array<Identifier>, Vars -> SMTInput
+function arrayToSMT(elements: Array<Syntax.Identifier>, vars: Vars): SMTInput {
   if (elements.length === 0) return "empty";
   const [head, ...tail] = elements;
   return `(cons ${getVar(head.name, vars)} ${arrayToSMT(tail, vars)})`;
 }
 
-function expressionToSMT(expr, vars) {
-  // Expression, Vars -> SMTInput
+function expressionToSMT(expr: Syntax.Expression, vars: Vars): SMTInput {
   switch (expr.type) {
     case 'FunctionExpression':
       return "jsfun"
@@ -170,24 +161,21 @@ function expressionToSMT(expr, vars) {
   }
 }
 
-// type Antedecents = Array<SMTInput>
-// type BreakLabel = string;
-// type BreakCondition = {cond: Antedecents, label: BreakLabel}
+type Antedecents = Array<SMTInput>;
+type BreakLabel = string;
+type BreakCondition = {cond: Antedecents, label: BreakLabel};
 
-function assert(cond, vars, pc) {
-  // VarName, SMTInput, Vars, Array<SMTInput> -> [SMTInput, Array<BreakCondition>, Vars]
+function assert(cond: VarName, vars: Vars, pc: Array<SMTInput>): [SMTInput, Vars, Array<BreakCondition>] {
   if (pc.length == 0) return [`(assert ${cond})\n`, vars, []];
   return [`(assert (=> (and ${pc.join(' ')}) ${cond}))\n`, vars, []];
 }
 
-function assertEq(left, right, vars, pc) {
-  // VarName, SMTInput, Vars, Array<SMTInput> -> [SMTInput, Array<BreakCondition>, Vars]
+function assertEq(left: VarName, right: SMTInput, vars: Vars, pc: Array<SMTInput>): [SMTInput, Vars, Array<BreakCondition>] {
   const nvars = incVar(left, vars);
   return assert(`(= ${getVar(left, nvars)} ${right})`, nvars, pc);
 }
 
-export function statementToSMT(stmt, vars = {}, pc = []) {
-  // Statement, Vars, Array<SMTInput> -> [SMTInput, Vars, Array<BreakCondition>]
+export function statementToSMT(stmt: Syntax.Statement, vars: Vars = {}, pc: Array<SMTInput> = []): [SMTInput, Vars, Array<BreakCondition>] {
   switch (stmt.type) {
     case 'Program':
     case 'BlockStatement':
@@ -247,20 +235,22 @@ export function statementToSMT(stmt, vars = {}, pc = []) {
   }
 }
 
-function smtToArray(smt) {
-  // SMTOutput -> Array<any>
+function smtToArray(smt: SMTOutput): Array<any> {
   const s = smt.trim();
   if (s == "empty") return [];
-  const [_, h, t] = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
+  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
+  if (!m) throw new Error("Cannot parse output!");
+  const [_, h, t] = m;
   return [smtToValue(h)].concat(smtToArray(t));
 }
 
-export function smtToValue(smt) {
-  // SMTOutput -> any
+export function smtToValue(smt: SMTOutput): any {
   const s = smt.trim();
   if (s == "jsundefined") return undefined;
   if (s == "jsnull") return null;
-  const [_, tag, v] = s.match(/^\((\w+)\ (.*)\)$/);
+  const m = s.match(/^\((\w+)\ (.*)\)$/);
+  if (!m) throw new Error("Cannot parse output!");
+  const [_, tag, v] = m;
   switch (tag) {
     case "jsbool": return v == "true";
     case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;

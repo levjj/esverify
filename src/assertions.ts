@@ -1,19 +1,8 @@
-/*
-AExpression = Identifier (name: string)
-            | Literal (value: undefined | null | boolean | number | string)
-            | ArrayExpression (elements: Array<AExpression>),
-            | UnaryExpression (operator: "+" | "-",
-                               argument: AExpression)
-            | BinaryExpression (operator: "=",
-                                left: AExpression,
-                                right: AExpression)
-            | CallExpression (callee: Identifier,
-                              params: Array<Identifier>)
-*/
+import { SMTInput, SMTOutput, AExpression, Vars } from "../index";
 
-import { getVar } from "./javascript.js";
+import { getVar } from "./javascript";
 
-const unOpToSMT = {
+const unOpToSMT: {[unop: string]: string} = {
   "typeof": "_js-typeof",
   "-": "_js-negative",
   "+":"_js-positive",
@@ -22,7 +11,7 @@ const unOpToSMT = {
   "void": "_js-void"
 };
 
-const binOpToSMT = {
+const binOpToSMT: {[binop: string]: string} = {
   "==": "_js-eq", // non-standard
   "!=": "_js-neq", // non-standard
   "===": "_js-eq", // non-standard
@@ -46,15 +35,13 @@ const binOpToSMT = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-function arrayToSMT(elements, vars) {
-  // Array<AExpression>, Vars -> SMTInput
+function arrayToSMT(elements: Array<AExpression>, vars: Vars): SMTInput {
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
   return `(cons ${assertionToSMT(head, vars)} ${arrayToSMT(tail, vars)})`;
 }
 
-export function assertionToSMT(expr, vars = {}) {
-  // AExpression, Vars -> SMTInput
+export function assertionToSMT(expr: AExpression, vars: Vars = {}): SMTInput {
   switch (expr.type) {
     case "Identifier": return getVar(expr.name, vars);
     case "Literal":
