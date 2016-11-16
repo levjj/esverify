@@ -10,9 +10,8 @@ import { Syntax } from "spiderMonkeyParserAPI";
 
 import { VarName, JSSource, SMTInput, SMTOutput, AExpression } from "../index";
 
-import * as normalizer from "../generated/jswala.js";
 import { pruneLoops } from "./visitors";
-import { assertionToSMT } from "./assertions";
+import { expressionToSMT } from "./assertions";
 import { statementToSMT, smtToValue, createVars, varsToSMT } from "./javascript";
 import { preamble } from "./defs-smt";
 
@@ -95,8 +94,8 @@ export default class Theorem {
           [body, nvars] = statementToSMT(this.normalizedBody(), vars),
           declarations = varsToSMT(nvars),
           requirements = this.pre.map(c =>
-            `(assert (_truthy ${assertionToSMT(<AExpression>c, vars)}))`).join('\n'),
-          post = `(assert (not (_truthy ${assertionToSMT(<AExpression>this.post, nvars)})))`;
+            `(assert (_truthy ${expressionToSMT(<AExpression>c, vars)}))`).join('\n'),
+          post = `(assert (not (_truthy ${expressionToSMT(<AExpression>this.post, nvars)})))`;
     
     return this._smtin =
 `${preamble}

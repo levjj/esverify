@@ -1,13 +1,48 @@
-import { SMTInput, SMTOutput, AExpression, Vars } from "../index";
+import { SMTInput } from "../index";
 
-import { getVar } from "./javascript";
+export namespace ASyntax {
+  interface Identifier { type: "Identifier"; name: string; version: number; }
+  interface Literal { type: "Literal";
+                      value: undefined | null | boolean | number | string; }
+  interface ArrayExpression { type: "ArrayExpression";
+                              elements: Array<Expression>; }
+  type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
+  interface UnaryExpression { type: "UnaryExpression";
+                              operator: UnaryOperator;
+                              argument: Expression; }
+  type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
+                      | "<<" | ">>" | ">>>" | "+" | "-" | "*" | "/" | "%"
+                      | "|" | "^" | "&";
+  interface BinaryExpression { type: "BinaryExpression";
+                               operator: BinaryOperator;
+                               left: Expression;
+                               right: Expression; }
+  interface ConditionalExpression { type: "ConditionalExpression";
+                                    test: Proposition;
+                                    consequent: Expression;
+                                    alternate: Expression; }
+  export type Expression = Identifier
+                         | Literal
+                         | ArrayExpression
+                         | UnaryExpression
+                         | BinaryExpression
+                         | ConditionalExpression;
+
+  interface Truthy { type: "Truthy"; expr: Expression; }
+  interface Implies { type: "Implies"; cond: Proposition; cons: Proposition; }
+  interface And { type: "And"; clauses: Array<Proposition>; }
+
+  export type Proposition = Truthy
+                          | Implies
+                          | And;
+}
 
 const unOpToSMT: {[unop: string]: string} = {
-  "typeof": "_js-typeof",
   "-": "_js-negative",
   "+":"_js-positive",
   "!": "_js-not",
   "~": "_js-bnot",
+  "typeof": "_js-typeof",
   "void": "_js-void"
 };
 
@@ -35,15 +70,17 @@ const binOpToSMT: {[binop: string]: string} = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-function arrayToSMT(elements: Array<AExpression>, vars: Vars): SMTInput {
+function arrayToSMT(elements: Array<ASyntax.Expression>): SMTInput {
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
-  return `(cons ${assertionToSMT(head, vars)} ${arrayToSMT(tail, vars)})`;
+  const h = head || {type: "Literal", value: "undefined"};
+  return `(cons ${expressionToSMT(h)} ${arrayToSMT(tail)})`;
 }
 
-export function assertionToSMT(expr: AExpression, vars: Vars = {}): SMTInput {
+export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
   switch (expr.type) {
-    case "Identifier": return getVar(expr.name, vars);
+    case "Identifier":
+      return expr.name + " " + expr.version;
     case "Literal":
       if (expr.value === undefined) return `jsundefined`;
       if (expr.value === null) return `jsnull`;
@@ -54,29 +91,30 @@ export function assertionToSMT(expr: AExpression, vars: Vars = {}): SMTInput {
         default: throw new Error("unsupported");
       }
     case 'ArrayExpression':
-      return `(jsarray ${arrayToSMT(expr.elements, vars)})`;
+      return `(jsarray ${arrayToSMT(expr.elements)})`;
     case "UnaryExpression":
-      const arg = assertionToSMT(expr.argument, vars),
+      const arg = expressionToSMT(expr.argument),
             op = unOpToSMT[expr.operator];
       return `(${op} ${arg})`;
     case "BinaryExpression":
-      const left = assertionToSMT(expr.left, vars),
-            right = assertionToSMT(expr.right, vars),
+      const left = expressionToSMT(expr.left),
+            right = expressionToSMT(expr.right),
             binop = binOpToSMT[expr.operator];
       return `(${binop} ${left} ${right})`;
     case "ConditionalExpression":
-      const test = assertionToSMT(expr.test, vars),
-            then = assertionToSMT(expr.consequent, vars),
-            elze = assertionToSMT(expr.alternate, vars);
-      return `(ite (_truthy ${test}) ${then} ${elze})`;
-    case "CallExpression":
-      if (expr.callee.type == "Identifier" &&
-        expr.callee.name == "old" &&
-        expr.arguments.length == 1) {
-        return assertionToSMT(expr.arguments[0], {});
-      }
-      throw new Error("unsupported");
+      const test = propositionToSMT(expr.test),
+            then = expressionToSMT(expr.consequent),
+            elze = expressionToSMT(expr.alternate);
+      return `(ite ${test} ${then} ${elze})`;
     default:
       throw new Error("unsupported");
+  }
+}
+
+export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
+  switch (prop.type) {
+    case "Truthy": return `(_truthy ${expressionToSMT(prop.expr)})`;
+    case "Implies": return `(=> ${prop.cond} ${prop.cons})`;
+    case "And": return `(and ${prop.clauses.join(' ')})`;
   }
 }

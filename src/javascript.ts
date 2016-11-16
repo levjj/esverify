@@ -1,261 +1,429 @@
-import { parse } from "lively.ast";
-import { arr } from "lively.lang";
-
 /// <reference path="../typings/mozilla-spidermonkey-parser-api.d.ts"/>
 import { Syntax } from "spiderMonkeyParserAPI";
-import { SMTInput, SMTOutput, VarName, Vars } from "../index";
-import { assertionToSMT } from "./assertions";
-import { assumesStrings } from "./visitors";
 
-/*
-Stmt = var x1, x2, ..., xn;
-     | x = (function f(y1, ..., yn) { Stmt+ return x; });
-     | x = LITERAL;
-     | x = null;
-     | x = this;
-     | x = [ y1, ..., yn ];
-     | x = { Prop* };
-     | x = y;
-     | x = y[z];
-     | x[y] = z;
-     | x = delete y;
-     | x = delete y[z];
-     | x = UNOP y;
-     | x = y BINOP z;
-     | x = f(y1, ..., yn);
-     | x = z[f](y1, ..., yn);
-     | x = new f(y1, ..., yn);
-     | break l;
-     | throw x;
-     | ;
-     | debugger;
-     | l: Stmt
-     | if (x) { Stmt+ } else { }
-     | if (x) { } else { Stmt+ }
-     | while(x) { Stmt+ }
-     | for (x in y) { Stmt+ }
-     | try { Stmt+ } catch (x) { Stmt+ }
-     | try { Stmt+ } finally { Stmt+ }
+export namespace JSyntax {
+  export interface Identifier { type: "Identifier"; name: string; }
+  export interface OldIdentifier { type: "OldIdentifier"; name: string; }
+  export interface Literal { type: "Literal";
+                             value: undefined | null | boolean | number | string; }
+  export interface ArrayExpression { type: "ArrayExpression";
+                                     elements: Array<Expression>; }
+  export type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
+  export interface UnaryExpression { type: "UnaryExpression";
+                                     operator: UnaryOperator;
+                                     argument: Expression; }
+  export type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
+                             | "<<" | ">>" | ">>>" | "+" | "-" | "*" | "/" | "%"
+                             | "|" | "^" | "&";
+  export interface BinaryExpression { type: "BinaryExpression";
+                                      operator: BinaryOperator;
+                                      left: Expression;
+                                      right: Expression; }
+  export type LogicalOperator = "||" | "&&";
+  export interface LogicalExpression { type: "LogicalExpression";
+                                       operator: LogicalOperator;
+                                       left: Expression;
+                                       right: Expression; }
+  export interface ConditionalExpression { type: "ConditionalExpression";
+                                           test: Expression;
+                                           consequent: Expression;
+                                           alternate: Expression; }
+  export interface AssignmentExpression { type: "AssignmentExpression";
+                                          left: Identifier;
+                                          right: Expression; }
+  export interface SequenceExpression { type: "SequenceExpression";
+                                        expressions: Expression[]; }
+  export interface CallExpression { type: "CallExpression";
+                                    callee: Expression;
+                                    arguments: Array<Expression>; }
+  export interface FunctionExpression { type: "FunctionExpression";
+                                        params: Array<Identifier>;
+                                        body: Statement[]; }
+  export type Expression = Identifier
+                         | OldIdentifier
+                         | Literal
+                         | ArrayExpression
+                         | UnaryExpression
+                         | BinaryExpression
+                         | LogicalExpression
+                         | ConditionalExpression
+                         | AssignmentExpression
+                         | SequenceExpression
+                         | CallExpression
+                         | FunctionExpression;
+  export interface VariableDeclaration { type: "VariableDeclaration";
+                                         id: Identifier;
+                                         init: Expression;
+                                         kind: "let" | "const"; }
+  export interface BlockStatement { type: "BlockStatement";
+                                    body: Statement[]; }
+  export interface ExpressionStatement { type: "ExpressionStatement";
+                                         expression: Expression; }
+  export interface AssertStatement { type: "AssertStatement";
+                                         expression: Expression; }
+  export interface IfStatement { type: "IfStatement";
+                                 test: Expression;
+                                 consequent: Statement[];
+                                 alternate: Statement[]; }
+  export interface ReturnStatement { type: "ReturnStatement";
+                                     argument?: Expression; }
+  export interface WhileStatement { type: "WhileStatement";
+                                    invariants: Array<Expression>;
+                                    test: Expression;
+                                    body: Statement[]; }
+  export interface DebuggerStatement { type: "DebuggerStatement"; }
+       
+  export type Statement = VariableDeclaration
+                        | BlockStatement
+                        | ExpressionStatement
+                        | AssertStatement
+                        | IfStatement
+                        | ReturnStatement
+                        | WhileStatement
+                        | DebuggerStatement;
 
-Prop = STRING : y
-     | get p() { Stmt+ }
-     | set p(x) { Stmt+ }
-*/
+  export interface FunctionDeclaration { type: "FunctionDeclaration";
+                                         id: Identifier;
+                                         params: Array<Identifier>;
+                                         requires: Array<Expression>;
+                                         ensures: Array<Expression>;
+                                         body: Statement[]; }
+  export type TopLevel = VariableDeclaration
+                       | BlockStatement
+                       | ExpressionStatement
+                       | AssertStatement
+                       | IfStatement
+                       | ReturnStatement
+                       | WhileStatement
+                       | DebuggerStatement
+                       | FunctionDeclaration;
 
-const unOpToSMT: {[unop: string]: string} = {
-  "typeof": "_js-typeof",
-  "-": "_js-negative",
-  "+":"_js-positive",
-  "!": "_js-not",
-  "~": "_js-bnot",
-  "void": "_js-void"
-};
-
-const binOpToSMT: {[binop: string]: string} = {
-  "==": "_js-eq", // non-standard
-  "!=": "_js-neq", // non-standard
-  "===": "_js-eq", // non-standard
-  "!==": "_js-neq", // non-standard
-  "<": "_js_lt",
-  "<=": "_js_leq",
-  ">": "_js_gt",
-  ">=": "_js-geq",
-  "+": "_js-plus",
-  "-": "_js-minus",
-  "*": "_js-multiply",
-  "/": "_js-divide",
-  "%": "_js-mod",
-  "<<": "_js-lshift",
-  ">>": "_js-rshift",
-  ">>>": "_js-rzshift",
-  "|": "_js-bor",
-  "^": "_js-bxor",
-  "&": "_js-band",
-  "in": "_js-in", // unsupported
-  "instanceof": "_js-instanceof" // unsupported
-};
-
-export function createVars(names: Array<VarName> = []): Vars {
-  return names.reduce((vars: Vars, n: VarName) => {
-    vars[n] = 0;
-    return vars;
-  }, {});
+  export type Program = { body: Array<TopLevel>, invariants: Array<Expression> };
 }
 
-function incVar(v: VarName, vars: Vars): Vars {
-  if (!(v in vars)) return Object.assign({}, vars, {[v]: 0});
-  return Object.assign({}, vars, {[v]: vars[v] + 1});
+function flatMap<A,B>(a: Array<A>, f: (a: A) => Array<B>): Array<B> {
+  return a.map(f).reduce((a,b) => a.concat(b));
 }
 
-export function getVar(v: VarName, vars: Vars): SMTInput {
-  if (!(v in vars)) return v + "_0";
-  return v + "_" + vars[v];
-}
-
-function phiVars(pc: Array<SMTInput>, myVars: Vars, altVars: Vars): SMTInput {
-  let smt = '';
-  for (const v in altVars) {
-    if (myVars[v] < altVars[v]) {
-      smt += `(assert (=> (and ${pc.join(' ')}) (= ${getVar(v, altVars)} ${getVar(v, myVars)})))\n`;
+function findPseudoCalls(type: string, stmts: Array<Syntax.Statement>): Array<JSyntax.Expression> {
+  return flatMap(stmts, stmt => {
+    if (stmt.type == "ExpressionStatement" &&
+        stmt.expression.type == "CallExpression" &&
+        stmt.expression.callee.type == "Identifier" &&
+        stmt.expression.callee.name == type &&
+        stmt.expression.arguments.length == 1) {
+      return [expressionAsJavaScript(stmt.expression.arguments[0])];
     }
-  }
-  return smt;
+    return [];
+  });
 }
 
-function joinVars(vars1: Vars, vars2: Vars): Vars {
-  const res: Vars = {};
-  const allKeys = arr.uniq(Object.keys(vars1).concat(Object.keys(vars2)));
-  for (const v of allKeys) {
-    res[v] = v in vars1 ? (v in vars2 ? Math.max(vars1[v], vars2[v]) : vars1[v]) : vars2[v];
-  }
-  return res;
-}
-
-export function varsToSMT(vars: Vars): SMTInput {
-  let smt = '';
-  for (const v in vars) {
-    for (let i = 0; i <= vars[v]; i++) {
-      smt += `(declare-const ${v}_${i} JSVal)\n`;
+function withoutPseudoCalls(type: string, stmts: Array<Syntax.Statement>): Array<Syntax.Statement> {
+  return flatMap(stmts, stmt => {
+    if (stmt.type == "ExpressionStatement" &&
+        stmt.expression.type == "CallExpression" &&
+        stmt.expression.callee.type == "Identifier" &&
+        stmt.expression.callee.name == type &&
+        stmt.expression.arguments.length == 1) {
+      return [];
     }
-  }
-  return smt;
+    return [stmt];
+  });
 }
 
-function incByOne(vars: Vars, nvars: Vars): Vars {
-  const res: Vars = {};
-  for (const v in vars) {
-    res[v] = nvars[v] > vars[v] ? vars[v] + 1 : vars[v];
-  }
-  return res;
+function patternAsIdentifier(node: Syntax.Pattern): JSyntax.Identifier {
+  if (node.type != "Identifier") throw new Error("Identifier expected:\n" + JSON.stringify(node));
+  return node;
 }
 
-function arrayToSMT(elements: Array<Syntax.Identifier>, vars: Vars): SMTInput {
-  if (elements.length === 0) return "empty";
-  const [head, ...tail] = elements;
-  return `(cons ${getVar(head.name, vars)} ${arrayToSMT(tail, vars)})`;
-}
-
-function expressionToSMT(expr: Syntax.Expression, vars: Vars): SMTInput {
-  switch (expr.type) {
-    case 'FunctionExpression':
-      return "jsfun"
-    case 'ArrayExpression':
-      return `(jsarray ${arrayToSMT(expr.elements, vars)})`;
-    case 'UnaryExpression':
-      if (expr.operator == 'delete') throw new Error("unsupported");
-      return `(${unOpToSMT[expr.operator]} ${getVar(expr.argument.name, vars)})`;
-    case 'BinaryExpression':
-      return `(${binOpToSMT[expr.operator]} ${getVar(expr.left.name, vars)} ${getVar(expr.right.name, vars)})`;
-    case 'Identifier':
-      return getVar(expr.name, vars);
-    case 'Literal':
-      if (expr.value === undefined) return "jsundefined";
-      if (expr.value === null) return "jsnull";
-      switch (typeof expr.value) {
-        case "boolean": return `(jsbool ${expr.value})`;
-        case "number": return `(jsnum ${expr.value})`;
-        case "string": return `(jsstr "${expr.value}")`;
-        default: throw new Error("unsupported");
-      }
-    default: throw new Error("unsupported");
+function unaryOp(op: Syntax.UnaryOperator): JSyntax.UnaryOperator {
+  switch (op) {
+    case "-":
+    case "+":
+    case "!":
+    case "~":
+    case "typeof":
+    case "void":
+      return op;
+    default:
+      throw new Error("unsupported");
   }
 }
 
-type Antedecents = Array<SMTInput>;
-type BreakLabel = string;
-type BreakCondition = {cond: Antedecents, label: BreakLabel};
-
-function assert(cond: VarName, vars: Vars, pc: Array<SMTInput>): [SMTInput, Vars, Array<BreakCondition>] {
-  if (pc.length == 0) return [`(assert ${cond})\n`, vars, []];
-  return [`(assert (=> (and ${pc.join(' ')}) ${cond}))\n`, vars, []];
+function binaryOp(op: Syntax.BinaryOperator): JSyntax.BinaryOperator {
+  switch (op) {
+    case "==":
+    case "!=":
+    case "===":
+    case "!==":
+    case "<":
+    case "<=":
+    case ">":
+    case ">=":
+    case "<<":
+    case ">>":
+    case ">>>":
+    case "+":
+    case "-":
+    case "*":
+    case "/":
+    case "%":
+    case "|":
+    case "^":
+    case "&":
+      return op;
+    default:
+      throw new Error("unsupported");
+  }
 }
 
-function assertEq(left: VarName, right: SMTInput, vars: Vars, pc: Array<SMTInput>): [SMTInput, Vars, Array<BreakCondition>] {
-  const nvars = incVar(left, vars);
-  return assert(`(= ${getVar(left, nvars)} ${right})`, nvars, pc);
+export function programAsJavaScript(program: Syntax.Program): JSyntax.Program {
+  return {
+    body: flatMap(withoutPseudoCalls("invariant", program.body), topLevelAsJavaScript),
+    invariants: findPseudoCalls("invariant", program.body)
+  };
 }
 
-export function statementToSMT(stmt: Syntax.Statement, vars: Vars = {}, pc: Array<SMTInput> = []): [SMTInput, Vars, Array<BreakCondition>] {
+export function topLevelAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.TopLevel> {
   switch (stmt.type) {
-    case 'Program':
-    case 'BlockStatement':
-      return stmt.body.reduce(([smt, vars, bc], s) => {
-        const breakConds = bc.map(bc => `(and ${bc.cond.join(' ')})`),
-              newPC = breakConds.length == 0 ? pc : pc.concat(
-                [`(not (or ${breakConds.join(' ')}))`]),
-              [ssmt, nvars, sbc] = statementToSMT(s, vars, newPC);
-        return [smt + ssmt, nvars, bc.concat(sbc)];
-      }, ["", vars, []]);
-    case 'IfStatement':
-      const tst = `(_truthy ${getVar(stmt.test.name, vars)})`,
-            [smt1, nvars1, bc1] = statementToSMT(stmt.consequent, vars, pc.concat([tst])),
-            [smt2, nvars2, bc2] = statementToSMT(stmt.alternate, vars, pc.concat([`(not ${tst})`])),
-            thenBreakConds = bc1.map(({label, cond}) =>
-              ({label, cond: cond.concat([tst])})),
-            elseBreakConds = bc2.map(({label, cond}) =>
-              ({label, cond: cond.concat([`(not ${tst})`])})),
-            smt1phi = phiVars(pc.concat([tst]), nvars1, nvars2),
-            smt2phi = phiVars(pc.concat([`(not ${tst})`]), nvars2, nvars1),
-            nvars3 = joinVars(nvars1, nvars2);
-      return [smt1 + smt1phi + smt2 + smt2phi, nvars3, thenBreakConds.concat(elseBreakConds)];
-    case 'LabeledStatement':
-      const [smt, nvars, bc] = statementToSMT(stmt.body, vars, []);
-      // after this statement, breaks with this label are resolved
-      return [smt, nvars, bc.filter(({label}) => label != stmt.label.name)];
-    case 'DebuggerStatement':
-    case 'EmptyStatement':
-      return ["", vars, []];
-    case 'BreakStatement':
-      // break unconditionally
-      // (any statements in ablock after break are unreachable)
-      return ["", vars, [{label: stmt.label.name, cond: []}]];
-    case 'ReturnStatement':
-      return assertEq("_res", getVar(stmt.argument.name, vars), vars, pc);
-    case 'VariableDeclaration':
-      // assign "undefined"
-      return stmt.declarations.reduce(([smt, nvars, bc], {id}) => {
-        const [ssmt, nvars2, sbc] = assertEq(id.name, "jsundefined", nvars, pc);
-        return [smt + ssmt, nvars2, bc.concat(sbc)];
-      }, ["", vars, []]);
-    case 'WhileStatement':
-      const [, lvars] = statementToSMT(stmt.body, vars, pc); // ignore loop body
-      const wvars = incByOne(vars, lvars); // but increment changed vars
-      let wsmt = `(and (not (_truthy ${getVar(stmt.test.name, wvars)}))`;
-      assumesStrings(stmt.body).forEach(str => {
-        wsmt += ` (_truthy ${assertionToSMT(parse(str).body[0].expression, wvars)})`;
-      });
-      return assert(wsmt + ')', wvars, pc);
-    case 'ExpressionStatement':
-      const {left, right} = stmt.expression;
-      if (left.type == 'MemberExpression') {
-        throw new Error("unsupported");
-      }
-      return assertEq(left.name, expressionToSMT(right, vars), vars, pc);
-    default: throw new Error("unsupported");
+    case "FunctionDeclaration": {
+      if (stmt.defaults.length > 0) throw new Error("defaults not supported");
+      if (stmt.rest) throw new Error("Rest arguments not supported");
+      if (stmt.body.type != "BlockStatement") throw new Error("unsupported");
+      if (stmt.generator) throw new Error("generators not supported");
+      return [{
+        type: "FunctionDeclaration",
+        id: stmt.id,
+        params: stmt.params.map(patternAsIdentifier),
+        requires: findPseudoCalls("requires", stmt.body.body),
+        ensures: findPseudoCalls("ensures", stmt.body.body),
+        body: flatMap(withoutPseudoCalls("requires",
+                      withoutPseudoCalls("ensures", stmt.body.body)), statementAsJavaScript)
+      }];
+    }
+    case "ExpressionStatement":
+    case "EmptyStatement":
+    case "VariableDeclaration":
+    case "BlockStatement":
+    case "IfStatement":
+    case "WhileStatement":
+    case "DebuggerStatement":
+      return statementAsJavaScript(stmt);
+    default:
+      throw new Error("Not supported:\n" + JSON.stringify(stmt));
   }
 }
 
-function smtToArray(smt: SMTOutput): Array<any> {
-  const s = smt.trim();
-  if (s == "empty") return [];
-  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
-  const [_, h, t] = m;
-  return [smtToValue(h)].concat(smtToArray(t));
+function statementAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.Statement> {
+  function assert(cond: boolean) { if (!cond) throw new Error("Not supported:\n" + JSON.stringify(stmt)); }
+  switch (stmt.type) {
+    case "EmptyStatement":
+      return [];
+    case "VariableDeclaration":
+      assert(stmt.kind == "let" || stmt.kind == "const");
+      return stmt.declarations.map(decl => {
+        assert(decl.id.type == "Identifier");
+        const d: JSyntax.VariableDeclaration = {
+          type: "VariableDeclaration",
+          kind: stmt.kind == "let" ? "let" : "const",
+          id: patternAsIdentifier(decl.id),
+          init: decl.init ? expressionAsJavaScript(decl.init) : {type: "Literal", value: undefined}
+        };
+        return d;
+      });
+    case "BlockStatement":
+      return [{
+        type: "BlockStatement",
+        body: flatMap(stmt.body, statementAsJavaScript)
+      }];
+    case "ExpressionStatement":
+      if (stmt.expression.type == "CallExpression" &&
+          stmt.expression.callee.type == "Identifier" &&
+          stmt.expression.callee.name == "assert" &&
+          stmt.expression.arguments.length == 1) {
+        return [{
+          type: "AssertStatement", expression: expressionAsJavaScript(stmt.expression.arguments[0])
+        }];
+      }
+      return [{
+        type: "ExpressionStatement", expression: expressionAsJavaScript(stmt.expression)
+      }]
+    case "IfStatement":
+      return [{
+        type: "IfStatement",
+        test: expressionAsJavaScript(stmt.test),
+        consequent: stmt.consequent.type == "BlockStatement"
+                ? flatMap(stmt.consequent.body, statementAsJavaScript)
+                : statementAsJavaScript(stmt.consequent),
+        alternate: stmt.alternate ? (stmt.alternate.type == "BlockStatement"
+                ? flatMap(stmt.alternate.body, statementAsJavaScript)
+                : statementAsJavaScript(stmt.alternate)) : []
+      }];
+    case "WhileStatement":
+      const stmts: Array<Syntax.Statement> = stmt.body.type == "BlockStatement" ? stmt.body.body : [stmt];
+      return [{
+        type: "WhileStatement",
+        invariants: findPseudoCalls("invariant", stmts),
+        test: expressionAsJavaScript(stmt.test),
+        body: flatMap(withoutPseudoCalls("invariant", stmts), statementAsJavaScript)
+      }];
+    case "DebuggerStatement":
+      return [stmt];
+    default:
+      throw new Error("Not supported:\n" + JSON.stringify(stmt));
+  }
 }
 
-export function smtToValue(smt: SMTOutput): any {
-  const s = smt.trim();
-  if (s == "jsundefined") return undefined;
-  if (s == "jsnull") return null;
-  const m = s.match(/^\((\w+)\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
-  const [_, tag, v] = m;
-  switch (tag) {
-    case "jsbool": return v == "true";
-    case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
-    case "jsstr": return v.substr(1, v.length - 2);
-    case "jsarr": return smtToArray(v);
-    default: throw new Error("unsupported");
+function assignUpdate(left: JSyntax.Identifier, op: JSyntax.BinaryOperator, right: Syntax.Expression): JSyntax.AssignmentExpression {
+  return {
+    type: "AssignmentExpression",
+    left,
+    right: {
+      type: "BinaryExpression",
+      left,
+      operator: "+",
+      right: expressionAsJavaScript(right)
+    }
+  };
+}
+
+function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
+  function assert(cond: boolean) { if (!cond) throw new Error("Not supported:\n" + JSON.stringify(expr)); }
+  switch (expr.type) {
+    case "ThisExpression":
+    case "ObjectExpression":
+      throw new Error("not supported");
+    case "ArrayExpression":
+      return {
+        type: "ArrayExpression",
+        elements: expr.elements.map(expressionAsJavaScript)
+      };
+    case "FunctionExpression":
+      if (expr.id) throw new Error("named function expressions not supported");
+      if (expr.defaults.length > 0) throw new Error("defaults not supported");
+      if (expr.rest) throw new Error("Rest arguments not supported");
+      if (expr.body.type != "BlockStatement") throw new Error("unsupported");
+      if (expr.generator) throw new Error("generators not supported");
+      return {
+        type: "FunctionExpression",
+        params: expr.params.map(patternAsIdentifier),
+        body: flatMap(expr.body.body, statementAsJavaScript)
+      };
+    case "ArrowExpression":
+      if (expr.defaults.length > 0) throw new Error("defaults not supported");
+      if (expr.rest) throw new Error("Rest arguments not supported");
+      if (expr.body.type != "BlockStatement") throw new Error("unsupported");
+      if (expr.generator) throw new Error("generators not supported");
+      return {
+        type: "FunctionExpression",
+        params: expr.params.map(patternAsIdentifier),
+        body: flatMap(expr.body.body, statementAsJavaScript)
+      };
+    case "SequenceExpression":
+      return {
+        type: "SequenceExpression",
+        expressions: expr.expressions.map(expressionAsJavaScript)
+      };
+    case "UnaryExpression":
+      return {
+        type: "UnaryExpression",
+        operator: unaryOp(expr.operator),
+        argument: expressionAsJavaScript(expr.argument)
+      };
+    case "BinaryExpression":
+      return {
+        type: "BinaryExpression",
+        operator: binaryOp(expr.operator),
+        left: expressionAsJavaScript(expr.left),
+        right: expressionAsJavaScript(expr.right)
+      };
+    case "AssignmentExpression":
+      if (expr.left.type != "Identifier") throw new Error("only identifiers can be assigned");
+      switch (expr.operator) {
+        case "=":
+          return {
+            type: "AssignmentExpression",
+            left: expr.left,
+            right: expressionAsJavaScript(expr.right)
+          };
+        case "+=": return assignUpdate(expr.left, "+", expr.right);
+        case "-=": return assignUpdate(expr.left, "-", expr.right);
+        case "*=": return assignUpdate(expr.left, "*", expr.right);
+        case "/=": return assignUpdate(expr.left, "/", expr.right);
+        case "%=": return assignUpdate(expr.left, "%", expr.right);
+        case "<<=": return assignUpdate(expr.left, "<<", expr.right);
+        case ">>=": return assignUpdate(expr.left, ">>", expr.right);
+        case ">>>=": return assignUpdate(expr.left, ">>>", expr.right);
+        case "|=": return assignUpdate(expr.left, "|", expr.right);
+        case "^=": return assignUpdate(expr.left, "^", expr.right);
+        case "&=": return assignUpdate(expr.left, "&", expr.right);
+        default: throw new Error("unknown operator");
+      }
+    case "UpdateExpression":
+      if (expr.argument.type != "Identifier") throw new Error("only identifiers can be assigned");
+      const one: Syntax.Literal = { type: "Literal", value: 1 },
+            oneE: JSyntax.Literal = { type: "Literal", value: 1 };
+      if (expr.prefix) {
+        if (expr.operator == "++") {
+          return assignUpdate(expr.argument, "+", one);
+        }
+        return assignUpdate(expr.argument, "-", one);
+      } else {
+        if (expr.operator == "++") {
+          return {
+            type: "SequenceExpression",
+            expressions: [
+              assignUpdate(expr.argument, "+", one),
+              { type: "BinaryExpression", operator: "-", left: expr.argument, right: oneE }
+            ]
+          };
+        };
+        return {
+          type: "SequenceExpression",
+          expressions: [
+            assignUpdate(expr.argument, "-", one),
+            { type: "BinaryExpression", operator: "+", left: expr.argument, right: oneE }
+          ]
+        };
+      }
+    case "LogicalExpression":
+      return {
+        type: "LogicalExpression",
+        operator: expr.operator == "||" ? "||" : "&&",
+        left: expressionAsJavaScript(expr.left),
+        right: expressionAsJavaScript(expr.right)
+      };
+    case "ConditionalExpression":
+      return {
+        type: "ConditionalExpression",
+        test: expressionAsJavaScript(expr.test),
+        consequent: expressionAsJavaScript(expr.consequent),
+        alternate: expressionAsJavaScript(expr.alternate)
+      };
+    case "CallExpression":
+      if (expr.callee.type == "Identifier" &&
+          expr.callee.name == "old" &&
+          expr.arguments.length == 1 &&
+          expr.arguments[0].type == "Identifier") {
+        return { type: "OldIdentifier", name: (<Syntax.Identifier>expr.arguments[0]).name };
+      }
+      return {
+        type: "CallExpression",
+        callee: expressionAsJavaScript(expr.callee),
+        arguments: expr.arguments.map(expressionAsJavaScript)
+      };
+    case "Identifier":
+      if (expr.name == "undefined") {
+        return { type: "Literal", value: undefined };
+      }
+      return expr;
+    case "Literal":
+      if (expr.value instanceof RegExp) throw new Error("regular expressions not supported");
+      return {
+        type: "Literal",
+        value: expr.value
+      };
+    default:
+      throw new Error("unsupported");
   }
 }

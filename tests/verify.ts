@@ -41,7 +41,7 @@ describe("verify", () => {
       expect(theorems[0].description).to.be.eql("max:\nmax(a, b) >= a");
     });
     
-    it("can be verified", async () => {
+    it.only("can be verified", async () => {
       await theorems[0].solve();
       expect(theorems[0].result().status).to.be.eql("sat");
     });
@@ -297,6 +297,47 @@ describe("verify", () => {
       expect(theorems[4].description).to.be.eql("loop invariant:\ns == (i + 1) * i / 2");
       await theorems[4].solve();
       expect(theorems[4].result().status).to.be.eql("sat");
+    });
+
+  });
+  
+  
+  describe("calls in code", () => {
+    
+    const code = (() => {
+      function inc(n) {
+        ensures(inc(n) == n + 1);
+        return n + 1;
+      }
+      
+      function test() {
+        ensures(test() == 2);
+        return inc(inc(0));
+      }
+    }).toString();
+    
+    let theorems: Array<Theorem>;
+    
+    beforeEach(() => {
+      const t = theoremsInSource(code.substring(14, code.length - 2));
+      if (!t) throw new Error("failed to find theorems");
+      theorems = t;
+    });
+
+    it("find all theorem", () => {
+      expect(theorems).to.have.length(2);
+    });
+    
+    it("verifies callee", async () => {
+      expect(theorems[0].description).to.be.eql("inc:\ninc(n) == n + 1");
+      await theorems[0].solve();
+      expect(theorems[0].result().status).to.be.eql("sat");
+    });
+    
+    it("verifies caller", async () => {
+      expect(theorems[1].description).to.be.eql("test:\ntest() == 2");
+      await theorems[1].solve();
+      expect(theorems[1].result().status).to.be.eql("sat");
     });
 
   });

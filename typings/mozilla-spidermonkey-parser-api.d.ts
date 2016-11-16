@@ -8,23 +8,6 @@ declare module "spiderMonkeyParserAPI" {
     // NOTE if property can hold null, that property to be optional.
 
     module Syntax {
-        /**
-         * By default, Reflect.parse() produces Node objects, which are plain JavaScript objects (i.e., their prototype derives from the standard Object prototype).
-         * All node types implement the following interface:
-         */
-        interface Node {
-            /**
-             * The type field is a string representing the AST variant type.
-             * Each subtype of Node is documented below with the specific string of its type field.
-             * You can use this field to determine which interface a node implements.
-             */
-            type: string;
-            /**
-             * The loc field represents the source location information of the node.
-             * If the parser produced no information about the node's source location, the field is null; otherwise it is an object consisting of a start position (the position of the first character of the parsed source region) and an end position (the position of the first character after the parsed source region):
-             */
-            loc?: SourceLocation;
-        }
 
         interface SourceLocation {
             source?: string;
@@ -43,219 +26,238 @@ declare module "spiderMonkeyParserAPI" {
         /**
          * A complete program source tree.
          */
-        interface Program extends Node {
+        interface Program {
             type: "Program";
             body: Statement[];
-        }
-
-        /**
-         * A function declaration or expression.
-         * The body of the function may be a block statement, or in the case of an expression closure, an expression.
-         * If the generator flag is true, the function is a generator function, i.e., contains a yield expression in its body (other than in a nested function).
-         * If the expression flag is true, the function is an expression closure and the body field is an expression.
-         */
-        interface Function extends Node {
-            id?: Identifier;
-            params: Pattern[];
-            defaults: Expression[];
-            rest?: Identifier;
-            body?: BlockStatement | Expression;
-            generator: boolean;
-            expression: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * Any statement.
          */
-        interface Statement extends Node {
-        }
+        type Statement = EmptyStatement
+                       | BlockStatement
+                       | ExpressionStatement
+                       | IfStatement
+                       | LabeledStatement
+                       | BreakStatement
+                       | ContinueStatement
+                       | WithStatement
+                       | SwitchStatement
+                       | ReturnStatement
+                       | ThrowStatement
+                       | TryStatement
+                       | WhileStatement
+                       | DoWhileStatement
+                       | ForStatement
+                       | ForInStatement
+                       | ForOfStatement
+                       | LetStatement
+                       | DebuggerStatement
+                       | VariableDeclaration
+                       | ClassDeclaration
+                       | FunctionDeclaration
 
         /**
          * An empty statement, i.e., a solitary semicolon.
          */
-        interface EmptyStatement extends Statement {
+        interface EmptyStatement {
             type: "EmptyStatement";
+            loc?: SourceLocation;
         }
 
         /**
          * A block statement, i.e., a sequence of statements surrounded by braces.
          */
-        interface BlockStatement extends Statement {
+        interface BlockStatement {
             type: "BlockStatement";
             body: Statement[];
+            loc?: SourceLocation;
         }
 
-        interface ExpressionStatement extends Statement {
+        interface ExpressionStatement {
             type: "ExpressionStatement";
             expression: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * An if statement.
          */
-        interface IfStatement extends Statement {
+        interface IfStatement {
             type: "IfStatement";
             test: Expression;
             consequent: Statement;
             alternate?: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A labeled statement, i.e., a statement prefixed by a break/continue label.
          */
-        interface LabeledStatement extends Statement {
+        interface LabeledStatement {
             type: "LabeledStatement";
             label: Identifier;
             body: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A break statement.
          */
-        interface BreakStatement extends Statement {
+        interface BreakStatement {
             type: "BreakStatement";
             label?: Identifier;
+            loc?: SourceLocation;
         }
 
         /**
          * A continue statement.
          */
-        interface ContinueStatement extends Statement {
+        interface ContinueStatement {
             type: "ContinueStatement";
             label?: Identifier;
+            loc?: SourceLocation;
         }
 
         /**
          * A with statement.
          */
-        interface WithStatement extends Statement {
+        interface WithStatement {
             type: "WithStatement";
             object: Expression;
             body: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A switch statement.
          * The lexical flag is metadata indicating whether the switch statement contains any unnested let declarations (and therefore introduces a new lexical scope).
          */
-        interface SwitchStatement extends Statement {
+        interface SwitchStatement {
             type: "SwitchStatement";
             discriminant: Expression;
             cases: SwitchCase[];
             lexical: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A return statement.
          */
-        interface ReturnStatement extends Statement {
+        interface ReturnStatement {
             type: "ReturnStatement";
             argument?: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A throw statement.
          */
-        interface ThrowStatement extends Statement {
+        interface ThrowStatement {
             type: "ThrowStatement";
             argument: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A try statement.
          */
-        interface TryStatement extends Statement {
+        interface TryStatement {
             type: "TryStatement";
             block: BlockStatement;
             handler?: CatchClause;
             guardedHandlers: CatchClause[];
             finalizer?: BlockStatement;
+            loc?: SourceLocation;
         }
 
         /**
          * A while statement.
          */
-        interface WhileStatement extends Statement {
+        interface WhileStatement {
             type: "WhileStatement";
             test: Expression;
             body: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A do/while statement.
          */
-        interface DoWhileStatement extends Statement {
+        interface DoWhileStatement {
             type: "DoWhileStatement";
             body: Statement;
             test: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A for statement.
          */
-        interface ForStatement extends Statement {
+        interface ForStatement {
             type: "ForStatement";
             init?: VariableDeclaration | Expression;
             test?: Expression;
             update?: Expression;
             body: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A for/in statement, or, if each is true, a for each/in statement.
          */
-        interface ForInStatement extends Statement {
+        interface ForInStatement {
             type: "ForInStatement";
             left: VariableDeclaration | Expression;
             right: Expression;
             body: Statement;
             each: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A for/of statement.
          */
-        interface ForOfStatement extends Statement {
+        interface ForOfStatement {
             type: "ForOfStatement";
             left: VariableDeclaration | Expression;
             right: Expression;
             body: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A let statement.
          */
-        interface LetStatement extends Statement {
+        interface LetStatement {
             type: "LetStatement";
             head: VariableDeclarator[];
             body: Statement;
+            loc?: SourceLocation;
         }
 
         /**
          * A debugger statement.
          */
-        interface DebuggerStatement extends Statement {
+        interface DebuggerStatement {
             type: "DebuggerStatement";
-        }
-
-        /**
-         * Any declaration node. Note that declarations are considered statements; this is because declarations can appear in any statement context in the language recognized by the SpiderMonkey parser.
-         */
-        interface Declaration extends Statement {
+            loc?: SourceLocation;
         }
 
         /**
          * A function declaration.
          */
-        interface ClassDeclaration extends Declaration {
+        interface ClassDeclaration {
             type: "ClassDeclaration";
             id: Identifier; // Note: The id field cannot be null.
+            loc?: SourceLocation;
         }
 
         /**
          * A function declaration.
          */
-        interface FunctionDeclaration extends Function, Declaration {
+        interface FunctionDeclaration {
             type: "FunctionDeclaration";
             id: Identifier; // Note: The id field cannot be null.
             params: Pattern[];
@@ -264,71 +266,95 @@ declare module "spiderMonkeyParserAPI" {
             body: BlockStatement | Expression;
             generator: boolean;
             expression: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A variable declaration, via one of var, let, or const.
          */
-        interface VariableDeclaration extends Declaration {
+        interface VariableDeclaration {
             type: "VariableDeclaration";
             declarations: VariableDeclarator[];
             kind: string; // "var" | "let" | "const";
+            loc?: SourceLocation;
         }
 
         /**
          * A variable declarator.
          */
-        interface VariableDeclarator extends Node {
+        interface VariableDeclarator {
             type: "VariableDeclarator";
             id: Pattern; // Note: The id field cannot be null.
             init?: Expression;
+            loc?: SourceLocation;
         }
 
-        /**
-         * Any expression node.
-         * Since the left-hand side of an assignment may be any expression in general, an expression can also be a pattern.
-         */
-        interface Expression extends Node, Pattern {
-        }
+        export type Expression = ThisExpression
+                               | ArrayExpression
+                               | ObjectExpression
+                               | FunctionExpression
+                               | ArrowExpression
+                               | SequenceExpression
+                               | UnaryExpression
+                               | BinaryExpression
+                               | AssignmentExpression
+                               | UpdateExpression
+                               | LogicalExpression
+                               | ConditionalExpression
+                               | NewExpression
+                               | CallExpression
+                               | MemberExpression
+                               | YieldExpression
+                               | ComprehensionExpression
+                               | GeneratorExpression
+                               | GraphExpression
+                               | GraphIndexExpression
+                               | LetExpression
+                               | Identifier
+                               | Literal;
 
         /**
          * A this expression.
          */
-        interface ThisExpression extends Expression {
+        interface ThisExpression {
             type: "ThisExpression";
+            loc?: SourceLocation;
         }
 
         /**
          * An array expression.
          */
-        interface ArrayExpression extends Expression {
+        interface ArrayExpression {
             type: "ArrayExpression";
             elements: Expression[]; // [ Expression | null ];
+            loc?: SourceLocation;
         }
 
         /**
          * An object expression.
          */
-        interface ObjectExpression extends Expression {
+        interface ObjectExpression {
             type: "ObjectExpression";
             properties: Property[];
+            loc?: SourceLocation;
         }
 
         /**
          * A literal property in an object expression can have either a string or number as its value.
          * Ordinary property initializers have a kind value "init"; getters and setters have the kind values "get" and "set", respectively.
          */
-        interface Property extends Node {
+        interface Property {
             type: "Property";
             key: Literal | Identifier;
             value: Expression;
             kind: "init" | "get" | "set";
+            loc?: SourceLocation;
         }
 
         /**
          * A function expression.
          */
-        interface FunctionExpression extends Function, Expression {
+        interface FunctionExpression {
             type: "FunctionExpression";
             id?: Identifier;
             params: Pattern[];
@@ -337,12 +363,13 @@ declare module "spiderMonkeyParserAPI" {
             body: BlockStatement | Expression;
             generator: boolean;
             expression: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A fat arrow function expression, i.e., `let foo = (bar) => { ... body ... }`.
          */
-        interface ArrowExpression extends Function, Expression {
+        interface ArrowExpression {
             type: "ArrowExpression";
             params: Pattern[];
             defaults: Expression[];
@@ -350,92 +377,102 @@ declare module "spiderMonkeyParserAPI" {
             body: BlockStatement | Expression;
             generator: boolean;
             expression: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A sequence expression, i.e., a comma-separated sequence of expressions.
          */
-        interface SequenceExpression extends Expression {
+        interface SequenceExpression {
             type: "SequenceExpression";
             expressions: Expression[];
+            loc?: SourceLocation;
         }
 
         /**
          * A unary operator expression.
          */
-        interface UnaryExpression extends Expression {
+        interface UnaryExpression {
             type: "UnaryExpression";
             operator: UnaryOperator;
             prefix: boolean;
             argument: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A binary operator expression.
          */
-        interface BinaryExpression extends Expression {
+        interface BinaryExpression {
             type: "BinaryExpression";
             operator: BinaryOperator;
             left: Expression;
             right: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * An assignment operator expression.
          */
-        interface AssignmentExpression extends Expression {
+        interface AssignmentExpression {
             type: "AssignmentExpression";
             operator: AssignmentOperator;
             left: Expression;
             right: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * An update (increment or decrement) operator expression.
          */
-        interface UpdateExpression extends Expression {
+        interface UpdateExpression {
             type: "UpdateExpression";
             operator: UpdateOperator;
             argument: Expression;
             prefix: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A logical operator expression.
          */
-        interface LogicalExpression extends Expression {
+        interface LogicalExpression {
             type: "LogicalExpression";
             operator: LogicalOperator;
             left: Expression;
             right: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A conditional expression, i.e., a ternary ?/: expression.
          */
-        interface ConditionalExpression extends Expression {
+        interface ConditionalExpression {
             type: "ConditionalExpression";
             test: Expression;
             alternate: Expression;
             consequent: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A new expression.
          */
-        interface NewExpression extends Expression {
+        interface NewExpression {
             type: "NewExpression";
             callee: Expression;
             arguments: Expression[];
+            loc?: SourceLocation;
         }
 
         /**
          * A function or method call expression.
          */
-        interface CallExpression extends Expression {
+        interface CallExpression {
             type: "CallExpression";
             callee: Expression;
             arguments: Expression[];
+            loc?: SourceLocation;
         }
 
         /**
@@ -443,19 +480,21 @@ declare module "spiderMonkeyParserAPI" {
          * If computed === true, the node corresponds to a computed e1[e2] expression and property is an Expression.
          * If computed === false, the node corresponds to a static e1.x expression and property is an Identifier.
          */
-        interface MemberExpression extends Expression {
+        interface MemberExpression {
             type: "MemberExpression";
             object: Expression;
             property: Identifier | Expression;
             computed: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * A yield expression.
          */
-        interface YieldExpression extends Expression {
+        interface YieldExpression {
             type: "YieldExpression";
             argument?: Expression;
+            loc?: SourceLocation;
         }
 
         /**
@@ -463,48 +502,53 @@ declare module "spiderMonkeyParserAPI" {
          * The blocks array corresponds to the sequence of for and for each blocks.
          * The optional filter expression corresponds to the final if clause, if present.
          */
-        interface ComprehensionExpression extends Expression {
+        interface ComprehensionExpression {
             type: "ComprehensionExpression";
             body: Expression;
             blocks: ComprehensionBlock[];
             filter?: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A generator expression.
          * As with array comprehensions, the blocks array corresponds to the sequence of for and for each blocks, and the optional filter expression corresponds to the final if clause, if present.
          */
-        interface GeneratorExpression extends Expression {
+        interface GeneratorExpression {
             type: "GeneratorExpression";
             body: Expression;
             blocks: ComprehensionBlock[];
             filter?: Expression;
+            loc?: SourceLocation;
         }
 
         /**
          * A graph expression, aka "sharp literal," such as #1={ self: #1# }.
          */
-        interface GraphExpression extends Expression {
+        interface GraphExpression {
             type: "GraphExpression";
             index: number; // uint32;
             expression: Literal;
+            loc?: SourceLocation;
         }
 
         /**
          * A graph index expression, aka "sharp variable," such as #1#.
          */
-        interface GraphIndexExpression extends Expression {
+        interface GraphIndexExpression {
             type: "GraphIndexExpression";
             index: number; // uint32;
+            loc?: SourceLocation;
         }
 
         /**
          * A let expression.
          */
-        interface LetExpression extends Expression {
+        interface LetExpression {
             type: "LetExpression";
             head: VariableDeclarator[];
             body: Expression;
+            loc?: SourceLocation;
         }
 
         /**
@@ -515,70 +559,78 @@ declare module "spiderMonkeyParserAPI" {
          * Since the left-hand side of an assignment can in general be any expression, in an assignment context, a pattern can be any expression.
          * In binding positions (such as function parameters, variable declarations, and catch headers), patterns can only be identifiers in the base case, not arbitrary expressions.
          */
-        interface Pattern extends Node {
-        }
+        export type Pattern = ObjectPattern
+                            | ArrayPattern
+                            | Identifier;
 
         /**
          * An object-destructuring pattern. A literal property in an object pattern can have either a string or number as its value.
          */
-        interface ObjectPattern extends Pattern {
+        interface ObjectPattern {
             type: "ObjectPattern";
             properties: {key: Literal | Identifier; value: Pattern;}[]; // [ { key: Literal | Identifier, value: Pattern } ];
+            loc?: SourceLocation;
         }
 
         /**
          * An array-destructuring pattern.
          */
-        interface ArrayPattern extends Pattern {
+        interface ArrayPattern {
             type: "ArrayPattern";
             elements: Pattern[]; // [ Pattern | null ];
+            loc?: SourceLocation;
         }
 
         /**
          * A case (if test is an Expression) or default (if test === null) clause in the body of a switch statement.
          */
-        interface SwitchCase extends Node {
+        interface SwitchCase {
             type: "SwitchCase";
             test?: Expression;
             consequent: Statement[];
+            loc?: SourceLocation;
         }
 
         /**
          * A catch clause following a try block.
          * The optional guard property corresponds to the optional expression guard on the bound variable.
          */
-        interface CatchClause extends Node {
+        interface CatchClause {
             type: "CatchClause";
             param: Pattern;
             guard?: Expression;
             body: BlockStatement;
+            loc?: SourceLocation;
         }
 
         /**
          * A for or for each block in an array comprehension or generator expression.
          */
-        interface ComprehensionBlock extends Node {
+        interface ComprehensionBlock {
             type: "ComprehensionBlock";
             left: Pattern;
             right: Expression;
             each: boolean;
+            loc?: SourceLocation;
         }
 
         /**
          * An identifier.
          * Note that an identifier may be an expression or a destructuring pattern.
          */
-        interface Identifier extends Node, Expression, Pattern {
+        interface Identifier {
             type: "Identifier";
             name: string;
+            loc?: SourceLocation;
         }
 
         /**
          * A literal token. Note that a literal can be an expression.
          */
-        interface Literal extends Node, Expression {
+        interface Literal {
             type: "Literal";
             value?: string | boolean | number | RegExp;
+            loc?: SourceLocation;
         }
 
         /**

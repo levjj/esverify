@@ -6,27 +6,27 @@ const { declarationsOfScope } = query;
 import * as Visitor from "../generated/estree-visitor.js";
 
 /// <reference path="../typings/mozilla-spidermonkey-parser-api.d.ts"/>
-import { Syntax } from "spiderMonkeyParserAPI"
+import { JSyntax } from "./javascript";
 import { VerificationScope, TopLevelScope, LoopScope, ClassScope, FunctionScope } from "./scopes";
 
 class FindScopes extends Visitor {
-  visitClassDeclaration(node: Syntax.Node, state: Array<VerificationScope>, path: Array<Syntax.Node>): Syntax.Node {
+  visitClassDeclaration(node: JSyntax.Node, state: Array<VerificationScope>, path: Array<JSyntax.Node>): Syntax.Node {
     throw new Error("not supported");
   }
-  visitArrowFunctionExpression(node: Syntax.FunctionExpression, state: Array<VerificationScope>, path: Array<Syntax.Node>): Syntax.Node {
+  visitArrowFunctionExpression(node: JSyntax.FunctionExpression, state: Array<VerificationScope>, path: Array<Syntax.Node>): JSyntax.Node {
     throw new Error("not supported");
   }
-  visitFunctionExpression(node: Syntax.FunctionExpression, state: Array<VerificationScope>, path: Array<Syntax.Node>): Syntax.Node {
+  visitFunctionExpression(node: JSyntax.FunctionExpression, state: Array<VerificationScope>, path: Array<Syntax.Node>): JSyntax.Node {
     throw new Error("not supported");
   }
-  visitFunctionDeclaration(node: Syntax.FunctionDeclaration, state: Array<VerificationScope>, path: Array<Syntax.Node>): Syntax.Node {
+  visitFunctionDeclaration(node: JSyntax.FunctionDeclaration, state: Array<VerificationScope>, path: Array<Syntax.Node>): JSyntax.Node {
     const newScope = new FunctionScope(state[0], node);
     state.unshift(newScope);
     super.visitFunctionDeclaration(node, state, path);
     state.shift();
     return node;
   }
-  visitWhileStatement(node: Syntax.WhileStatement, state: Array<VerificationScope>, path: Array<Syntax.Node>): Syntax.Node {
+  visitWhileStatement(node: JSyntax.WhileStatement, state: Array<VerificationScope>, path: Array<Syntax.Node>): JSyntax.Node {
     const newScope = new LoopScope(state[0], node);
     state.unshift(newScope);
     super.visitWhileStatement(node, state, path);
@@ -35,7 +35,15 @@ class FindScopes extends Visitor {
   }
 }
 
-export function findScopes(node: Syntax.Node): TopLevelScope {
+function normalize() {
+  const stmts = [exprStmt(funcExpr({}, [], ...pruneLoops(this.body)))],
+        iife = program(exprStmt(funcExpr({}, [], ...stmts))),
+        normalized = normalizer.normalize(iife, {unify_ret: true}),
+        niife = normalized.body[0].expression.callee.body.body[1].expression.right.body.body;
+  return program(...niife[1].body.body[0].expression.right.body.body);
+}
+
+export function findScopes(node: Syntax.Program): TopLevelScope {
   const fs = new FindScopes(),
         state = new TopLevelScope(node);
   fs.accept(node, [state], []);
@@ -151,47 +159,6 @@ export function findDefs(node: Syntax.Node) {
   return declarationsOfScope(scope).map((id: Syntax.Identifier) => id.name);
 }
 
-class AssumesStrings extends Visitor {
-  
-  visitExpressionStatement(node: Syntax.ExpressionStatement, strings: Array<string>, path: Array<Syntax.Node>): Syntax.Node {
-    if (node.expression.type == "AssignmentExpression" &&
-        node.expression.right.type == "Literal" &&
-        typeof(node.expression.right.value) == "string" &&
-        node.expression.right.value.startsWith("@assume:")) {
-      strings.push(node.expression.right.value.substr(8));
-    }
-    return super.visitExpressionStatement(node, strings, path);
-  }
-
-  visitFunctionDeclaration(node: Syntax.FunctionDeclaration, strings: Array<string>, path: Array<Syntax.Node>): Syntax.Node {
-    return node; // do not enter function
-  }
-
-  visitFunctionExpression(node: Syntax.FunctionExpression, strings: Array<string>, path: Array<Syntax.Node>): Syntax.Node {
-    return node; // do not enter function
-  }
-
-  visitArrowFunctionExpression(node: Syntax.FunctionExpression, strings: Array<string>, path: Array<Syntax.Node>): Syntax.Node {
-    return node; // do not enter function
-  }
-  
-  visitWhileStatement(node: Syntax.WhileStatement, strings: Array<string>, path: Array<Syntax.Node>): Syntax.Node {
-    return node; // do not enter loop
-  }
-
-  visitClassDeclaration(node: Syntax.ClassDeclaration, strings: Array<string>, path: Array<Syntax.Node>): Syntax.Node {
-
-    return node; // do not enter class
-  }
-}
-
-export function assumesStrings(node: Syntax.Node): Array<string> {
-  const fd = new AssumesStrings(),
-        strings = [];
-  fd.accept(node, strings, []);
-  return strings;
-}
-
 export function isAssertion(stmt: Syntax.Statement): boolean {
   return stmt.type == "ExpressionStatement" &&
          stmt.expression.type == "CallExpression" &&
@@ -201,8 +168,8 @@ export function isAssertion(stmt: Syntax.Statement): boolean {
          stmt.expression.arguments.length === 1;
 }
 
-class PruneLoops extends Visitor {
-  visitExpressionStatement(node: Syntax.ExpressionStatement, state: null, path: Array<Syntax.Node>): Syntax.Node {
+class FindInvariants extends Visitor {
+  visitExpressionStatement(node: JSyntax.ExpressionStatement, state: Array<JSyntax.CallExpression>, path: Array<Syntax.Node>): Syntax.Node {
     if (isAssertion(node)) {
       if (node.expression.callee.name == "invariant") {
         return exprStmt(literal(`@assume:${stringify(node.expression.arguments[0])}`));
@@ -220,7 +187,9 @@ class PruneLoops extends Visitor {
   }
 }
 
-export function pruneLoops(stmts: Array<Syntax.Statement>): Array<Syntax.Statement> {
-  const pl = new PruneLoops();
-  return stmts.map(stmt => pl.accept(obj.deepCopy(stmt), null, []));
+export function findInvariants(stmt: JSyntax.Statement): Array<JSyntax.CallExpression> {
+  const fi = new FindInvariants(),
+        inv = [];
+  fi.accept(stmt, inv, []);
+  return inv;
 }

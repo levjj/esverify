@@ -2,6 +2,7 @@ import { stringify } from "lively.ast";
 import { nodes } from "lively.ast";
 const { funcExpr } = nodes;
 import { arr } from "lively.lang";
+import * as normalizer from "../generated/jswala.js";
 
 /// <reference path="../typings/mozilla-spidermonkey-parser-api.d.ts"/>
 import { Syntax } from "spiderMonkeyParserAPI";
