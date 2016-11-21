@@ -1,7 +1,8 @@
-import { SMTInput } from "../index";
+import { Vars, SMTInput } from "./vc";
+import { flatMap } from "./util";
 
 export namespace ASyntax {
-  interface Identifier { type: "Identifier"; name: string; version: number; }
+  export interface Identifier { type: "Identifier"; name: string; version: number; }
   interface Literal { type: "Literal";
                       value: undefined | null | boolean | number | string; }
   interface ArrayExpression { type: "ArrayExpression";
@@ -28,13 +29,21 @@ export namespace ASyntax {
                          | BinaryExpression
                          | ConditionalExpression;
 
-  interface Truthy { type: "Truthy"; expr: Expression; }
-  interface Implies { type: "Implies"; cond: Proposition; cons: Proposition; }
-  interface And { type: "And"; clauses: Array<Proposition>; }
+  export interface Truthy { type: "Truthy"; expr: Expression; }
+  export interface And { type: "And"; clauses: Array<Proposition>; }
+  export interface Or { type: "Or"; clauses: Array<Proposition>; }
+  export interface Eq { type: "Eq"; left: Expression, right: Expression; }
+  export interface Not { type: "Not"; arg: Proposition; }
+  export interface True { type: "True"; }
+  export interface False { type: "False"; }
 
   export type Proposition = Truthy
-                          | Implies
-                          | And;
+                          | And
+                          | Or
+                          | Eq
+                          | Not
+                          | True
+                          | False;
 }
 
 const unOpToSMT: {[unop: string]: string} = {
@@ -70,6 +79,58 @@ const binOpToSMT: {[binop: string]: string} = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
+export const tru: ASyntax.Proposition = { type: "True" };
+export const fls: ASyntax.Proposition = { type: "False" };
+
+export function truthy(expr: ASyntax.Expression): ASyntax.Proposition {
+  return { type: "Truthy", expr };
+}
+
+export function implies(cond: ASyntax.Proposition, cons: ASyntax.Proposition): ASyntax.Proposition {
+  return or(not(cond), cons);
+}
+
+export function and(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
+  const clauses: Array<ASyntax.Proposition> = flatMap(props,
+    c => c.type == "And" ? c.clauses : [c]) 
+    .filter(c => c.type != "True");
+  if (clauses.find(c => c.type == "False")) return fls;
+  if (clauses.length == 0) return tru;
+  if (clauses.length == 1) return clauses[0];
+  return { type: "And", clauses };
+}
+
+export function or(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
+  const clauses: Array<ASyntax.Proposition> = flatMap(props,
+    c => c.type == "Or" ? c.clauses : [c]) 
+    .filter(c => c.type != "False");
+  if (clauses.find(c => c.type == "True")) return tru;
+  if (clauses.length == 0) return fls;
+  if (clauses.length == 1) return clauses[0];
+  return { type: "Or", clauses };
+}
+
+export function eq(left: ASyntax.Expression, right: ASyntax.Expression): ASyntax.Proposition {
+  return { type: "Eq", left, right };
+}
+
+export function not(arg: ASyntax.Proposition): ASyntax.Proposition {
+  if (arg.type == "True") return fls;
+  if (arg.type == "False") return tru;
+  if (arg.type == "Not") return arg.arg;
+  return { type: "Not", arg };
+}
+
+export function varsToSMT(vars: Vars): SMTInput {
+  let smt = '';
+  for (const v in vars) {
+    for (let i = 0; i <= vars[v]; i++) {
+      smt += `(declare-const ${v}_${i} JSVal)\n`;
+    }
+  }
+  return smt;
+}
+
 function arrayToSMT(elements: Array<ASyntax.Expression>): SMTInput {
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
@@ -80,7 +141,7 @@ function arrayToSMT(elements: Array<ASyntax.Expression>): SMTInput {
 export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
   switch (expr.type) {
     case "Identifier":
-      return expr.name + " " + expr.version;
+      return expr.name + "_" + expr.version;
     case "Literal":
       if (expr.value === undefined) return `jsundefined`;
       if (expr.value === null) return `jsnull`;
@@ -96,11 +157,12 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
       const arg = expressionToSMT(expr.argument),
             op = unOpToSMT[expr.operator];
       return `(${op} ${arg})`;
-    case "BinaryExpression":
+    case "BinaryExpression": {
       const left = expressionToSMT(expr.left),
             right = expressionToSMT(expr.right),
             binop = binOpToSMT[expr.operator];
       return `(${binop} ${left} ${right})`;
+    }
     case "ConditionalExpression":
       const test = propositionToSMT(expr.test),
             then = expressionToSMT(expr.consequent),
@@ -114,7 +176,37 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
 export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
   switch (prop.type) {
     case "Truthy": return `(_truthy ${expressionToSMT(prop.expr)})`;
-    case "Implies": return `(=> ${prop.cond} ${prop.cons})`;
-    case "And": return `(and ${prop.clauses.join(' ')})`;
+    case "And": {
+      const clauses: Array<SMTInput> = flatMap(prop.clauses,
+        c => c.type == "And" ? c.clauses : [c]) 
+        .map(propositionToSMT)
+        .filter(s => s != `true`);
+      if (clauses.find(s => s == `false`)) return `false`;
+      if (clauses.length == 0) return `true`;
+      if (clauses.length == 1) return clauses[0];
+      return `(and ${clauses.join(' ')})`;
+    }
+    case "Or": {
+      const clauses: Array<SMTInput> = flatMap(prop.clauses,
+        c => c.type == "Or" ? c.clauses : [c]) 
+        .map(propositionToSMT)
+        .filter(s => s != `false`);
+      if (clauses.find(s => s == `true`)) return `true`;
+      if (clauses.length == 0) return `false`;
+      if (clauses.length == 1) return clauses[0];
+      return `(or ${clauses.join(' ')})`;
+    }
+    case "Eq":
+      const left: SMTInput = expressionToSMT(prop.left);
+      const right: SMTInput = expressionToSMT(prop.right);
+      if (left == right) return `true`;
+      return `(= ${left} ${right})`;
+    case "Not":
+      const arg: SMTInput = propositionToSMT(prop.arg);
+      if (arg == "true") return `false`;
+      if (arg == "false") return `true`;
+      return `(not ${arg})`;
+    case "True": return `true`;
+    case "False": return `false`;
   }
 }

@@ -261,7 +261,7 @@ declare module "spiderMonkeyParserAPI" {
             type: "FunctionDeclaration";
             id: Identifier; // Note: The id field cannot be null.
             params: Pattern[];
-            defaults: Expression[];
+            defaults?: Expression[];
             rest?: Identifier;
             body: BlockStatement | Expression;
             generator: boolean;
@@ -358,7 +358,7 @@ declare module "spiderMonkeyParserAPI" {
             type: "FunctionExpression";
             id?: Identifier;
             params: Pattern[];
-            defaults: Expression[];
+            defaults?: Expression[];
             rest?: Identifier;
             body: BlockStatement | Expression;
             generator: boolean;
@@ -372,7 +372,7 @@ declare module "spiderMonkeyParserAPI" {
         interface ArrowExpression {
             type: "ArrowExpression";
             params: Pattern[];
-            defaults: Expression[];
+            defaults?: Expression[];
             rest?: Identifier;
             body: BlockStatement | Expression;
             generator: boolean;

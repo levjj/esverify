@@ -1,9 +1,18 @@
 /// <reference path="../typings/mozilla-spidermonkey-parser-api.d.ts"/>
 import { Syntax } from "spiderMonkeyParserAPI";
+import { flatMap } from "./util";
 
 export namespace JSyntax {
-  export interface Identifier { type: "Identifier"; name: string; }
-  export interface OldIdentifier { type: "OldIdentifier"; name: string; }
+  export type Declaration = { type: "Unresolved" }
+                          | { type: "Var"; decl: JSyntax.VariableDeclaration }
+                          | { type: "Func"; decl: JSyntax.FunctionDeclaration }
+                          | { type: "Param";
+                              func: JSyntax.FunctionDeclaration | JSyntax.FunctionExpression;
+                              decl: JSyntax.Identifier };
+
+  export interface Identifier { type: "Identifier"; name: string;
+                                decl: Declaration; refs: Array<Identifier>; isWrittenTo: boolean }
+  export interface OldIdentifier { type: "OldIdentifier"; id: Identifier; version?: number }
   export interface Literal { type: "Literal";
                              value: undefined | null | boolean | number | string; }
   export interface ArrayExpression { type: "ArrayExpression";
@@ -60,17 +69,17 @@ export namespace JSyntax {
   export interface ExpressionStatement { type: "ExpressionStatement";
                                          expression: Expression; }
   export interface AssertStatement { type: "AssertStatement";
-                                         expression: Expression; }
+                                     expression: Expression; }
   export interface IfStatement { type: "IfStatement";
                                  test: Expression;
-                                 consequent: Statement[];
-                                 alternate: Statement[]; }
+                                 consequent: BlockStatement;
+                                 alternate: BlockStatement; }
   export interface ReturnStatement { type: "ReturnStatement";
-                                     argument?: Expression; }
+                                     argument: Expression; }
   export interface WhileStatement { type: "WhileStatement";
                                     invariants: Array<Expression>;
                                     test: Expression;
-                                    body: Statement[]; }
+                                    body: BlockStatement; }
   export interface DebuggerStatement { type: "DebuggerStatement"; }
        
   export type Statement = VariableDeclaration
@@ -87,7 +96,7 @@ export namespace JSyntax {
                                          params: Array<Identifier>;
                                          requires: Array<Expression>;
                                          ensures: Array<Expression>;
-                                         body: Statement[]; }
+                                         body: BlockStatement; }
   export type TopLevel = VariableDeclaration
                        | BlockStatement
                        | ExpressionStatement
@@ -99,10 +108,6 @@ export namespace JSyntax {
                        | FunctionDeclaration;
 
   export type Program = { body: Array<TopLevel>, invariants: Array<Expression> };
-}
-
-function flatMap<A,B>(a: Array<A>, f: (a: A) => Array<B>): Array<B> {
-  return a.map(f).reduce((a,b) => a.concat(b));
 }
 
 function findPseudoCalls(type: string, stmts: Array<Syntax.Statement>): Array<JSyntax.Expression> {
@@ -133,7 +138,13 @@ function withoutPseudoCalls(type: string, stmts: Array<Syntax.Statement>): Array
 
 function patternAsIdentifier(node: Syntax.Pattern): JSyntax.Identifier {
   if (node.type != "Identifier") throw new Error("Identifier expected:\n" + JSON.stringify(node));
-  return node;
+  return {
+    type: "Identifier",
+    name: node.name,
+    refs: [],
+    decl: { type: "Unresolved" },
+    isWrittenTo: false
+  };
 }
 
 function unaryOp(op: Syntax.UnaryOperator): JSyntax.UnaryOperator {
@@ -178,29 +189,42 @@ function binaryOp(op: Syntax.BinaryOperator): JSyntax.BinaryOperator {
 }
 
 export function programAsJavaScript(program: Syntax.Program): JSyntax.Program {
-  return {
+  const prog: JSyntax.Program = {
     body: flatMap(withoutPseudoCalls("invariant", program.body), topLevelAsJavaScript),
     invariants: findPseudoCalls("invariant", program.body)
   };
+  resolveProgram(prog);
+  return prog;
 }
 
-export function topLevelAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.TopLevel> {
+function topLevelAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.TopLevel> {
   switch (stmt.type) {
     case "FunctionDeclaration": {
-      if (stmt.defaults.length > 0) throw new Error("defaults not supported");
+      if (stmt.defaults && stmt.defaults.length > 0) throw new Error("defaults not supported");
       if (stmt.rest) throw new Error("Rest arguments not supported");
       if (stmt.body.type != "BlockStatement") throw new Error("unsupported");
       if (stmt.generator) throw new Error("generators not supported");
-      return [{
+      const params: Array<JSyntax.Identifier> = stmt.params.map(patternAsIdentifier);
+      if (!distinct(params)) throw new Error("parameter names must be distinct");
+      const id: JSyntax.Identifier = { type: "Identifier", name: stmt.id.name,
+        refs: [], isWrittenTo: false, decl: { type: "Unresolved" } };
+      const fd: JSyntax.FunctionDeclaration = {
         type: "FunctionDeclaration",
-        id: stmt.id,
-        params: stmt.params.map(patternAsIdentifier),
+        id,
+        params,
         requires: findPseudoCalls("requires", stmt.body.body),
         ensures: findPseudoCalls("ensures", stmt.body.body),
-        body: flatMap(withoutPseudoCalls("requires",
-                      withoutPseudoCalls("ensures", stmt.body.body)), statementAsJavaScript)
-      }];
+        body: {
+          type: "BlockStatement",
+          body: flatMap(withoutPseudoCalls("requires",
+                        withoutPseudoCalls("ensures", stmt.body.body)), statementAsJavaScript)
+        }
+      };
+      fd.id.decl = { type: "Func", decl: fd };
+      return [fd];
     }
+    case "ReturnStatement":
+      throw new Error("top level return not allowed");
     case "ExpressionStatement":
     case "EmptyStatement":
     case "VariableDeclaration":
@@ -252,12 +276,18 @@ function statementAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.Statement>
       return [{
         type: "IfStatement",
         test: expressionAsJavaScript(stmt.test),
-        consequent: stmt.consequent.type == "BlockStatement"
+        consequent: {
+          type: "BlockStatement",
+          body: stmt.consequent.type == "BlockStatement"
                 ? flatMap(stmt.consequent.body, statementAsJavaScript)
-                : statementAsJavaScript(stmt.consequent),
-        alternate: stmt.alternate ? (stmt.alternate.type == "BlockStatement"
+                : statementAsJavaScript(stmt.consequent)
+        },
+        alternate: {
+          type: "BlockStatement",
+          body: stmt.alternate ? (stmt.alternate.type == "BlockStatement"
                 ? flatMap(stmt.alternate.body, statementAsJavaScript)
                 : statementAsJavaScript(stmt.alternate)) : []
+        }
       }];
     case "WhileStatement":
       const stmts: Array<Syntax.Statement> = stmt.body.type == "BlockStatement" ? stmt.body.body : [stmt];
@@ -265,10 +295,17 @@ function statementAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.Statement>
         type: "WhileStatement",
         invariants: findPseudoCalls("invariant", stmts),
         test: expressionAsJavaScript(stmt.test),
-        body: flatMap(withoutPseudoCalls("invariant", stmts), statementAsJavaScript)
+        body: {
+          type: "BlockStatement",
+          body: flatMap(withoutPseudoCalls("invariant", stmts), statementAsJavaScript)
+        }
       }];
     case "DebuggerStatement":
       return [stmt];
+    case "ReturnStatement":
+      return [{
+        type: "ReturnStatement",
+        argument: stmt.argument ? expressionAsJavaScript(stmt.argument) : { type: "Literal", value: undefined }}];
     default:
       throw new Error("Not supported:\n" + JSON.stringify(stmt));
   }
@@ -281,10 +318,19 @@ function assignUpdate(left: JSyntax.Identifier, op: JSyntax.BinaryOperator, righ
     right: {
       type: "BinaryExpression",
       left,
-      operator: "+",
+      operator: op,
       right: expressionAsJavaScript(right)
     }
   };
+}
+
+function distinct(params: Array<JSyntax.Identifier>): boolean {
+  for (let i = 0; i < params.length - 1; i++) {
+    for (let j = i + 1; j < params.length; j++) {
+      if (params[i].name == params[j].name) return false;      
+    }
+  }
+  return true;
 }
 
 function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
@@ -300,17 +346,19 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       };
     case "FunctionExpression":
       if (expr.id) throw new Error("named function expressions not supported");
-      if (expr.defaults.length > 0) throw new Error("defaults not supported");
+      if (expr.defaults && expr.defaults.length > 0) throw new Error("defaults not supported");
       if (expr.rest) throw new Error("Rest arguments not supported");
       if (expr.body.type != "BlockStatement") throw new Error("unsupported");
       if (expr.generator) throw new Error("generators not supported");
+      const params: Array<JSyntax.Identifier> = expr.params.map(patternAsIdentifier);
+      if (!distinct(params)) throw new Error("parameter names must be distinct");
       return {
         type: "FunctionExpression",
-        params: expr.params.map(patternAsIdentifier),
+        params,
         body: flatMap(expr.body.body, statementAsJavaScript)
       };
     case "ArrowExpression":
-      if (expr.defaults.length > 0) throw new Error("defaults not supported");
+      if (expr.defaults && expr.defaults.length > 0) throw new Error("defaults not supported");
       if (expr.rest) throw new Error("Rest arguments not supported");
       if (expr.body.type != "BlockStatement") throw new Error("unsupported");
       if (expr.generator) throw new Error("generators not supported");
@@ -339,53 +387,58 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       };
     case "AssignmentExpression":
       if (expr.left.type != "Identifier") throw new Error("only identifiers can be assigned");
+      const to: JSyntax.Identifier = { type: "Identifier", name: expr.left.name,
+        refs: [], isWrittenTo: true, decl: { type: "Unresolved" } };
       switch (expr.operator) {
         case "=":
           return {
             type: "AssignmentExpression",
-            left: expr.left,
+            left: to,
             right: expressionAsJavaScript(expr.right)
           };
-        case "+=": return assignUpdate(expr.left, "+", expr.right);
-        case "-=": return assignUpdate(expr.left, "-", expr.right);
-        case "*=": return assignUpdate(expr.left, "*", expr.right);
-        case "/=": return assignUpdate(expr.left, "/", expr.right);
-        case "%=": return assignUpdate(expr.left, "%", expr.right);
-        case "<<=": return assignUpdate(expr.left, "<<", expr.right);
-        case ">>=": return assignUpdate(expr.left, ">>", expr.right);
-        case ">>>=": return assignUpdate(expr.left, ">>>", expr.right);
-        case "|=": return assignUpdate(expr.left, "|", expr.right);
-        case "^=": return assignUpdate(expr.left, "^", expr.right);
-        case "&=": return assignUpdate(expr.left, "&", expr.right);
+        case "+=": return assignUpdate(to, "+", expr.right);
+        case "-=": return assignUpdate(to, "-", expr.right);
+        case "*=": return assignUpdate(to, "*", expr.right);
+        case "/=": return assignUpdate(to, "/", expr.right);
+        case "%=": return assignUpdate(to, "%", expr.right);
+        case "<<=": return assignUpdate(to, "<<", expr.right);
+        case ">>=": return assignUpdate(to, ">>", expr.right);
+        case ">>>=": return assignUpdate(to, ">>>", expr.right);
+        case "|=": return assignUpdate(to, "|", expr.right);
+        case "^=": return assignUpdate(to, "^", expr.right);
+        case "&=": return assignUpdate(to, "&", expr.right);
         default: throw new Error("unknown operator");
       }
-    case "UpdateExpression":
+    case "UpdateExpression": {
       if (expr.argument.type != "Identifier") throw new Error("only identifiers can be assigned");
-      const one: Syntax.Literal = { type: "Literal", value: 1 },
+      const to: JSyntax.Identifier = { type: "Identifier", name: expr.argument.name, refs: [],
+                                       isWrittenTo: true, decl: { type: "Unresolved" } },
+            one: Syntax.Literal = { type: "Literal", value: 1 },
             oneE: JSyntax.Literal = { type: "Literal", value: 1 };
       if (expr.prefix) {
         if (expr.operator == "++") {
-          return assignUpdate(expr.argument, "+", one);
+          return assignUpdate(to, "+", one);
         }
-        return assignUpdate(expr.argument, "-", one);
+        return assignUpdate(to, "-", one);
       } else {
         if (expr.operator == "++") {
           return {
             type: "SequenceExpression",
             expressions: [
-              assignUpdate(expr.argument, "+", one),
-              { type: "BinaryExpression", operator: "-", left: expr.argument, right: oneE }
+              assignUpdate(to, "+", one),
+              { type: "BinaryExpression", operator: "-", left: to, right: oneE }
             ]
           };
         };
         return {
           type: "SequenceExpression",
           expressions: [
-            assignUpdate(expr.argument, "-", one),
-            { type: "BinaryExpression", operator: "+", left: expr.argument, right: oneE }
+            assignUpdate(to, "-", one),
+            { type: "BinaryExpression", operator: "+", left: to, right: oneE }
           ]
         };
       }
+    }
     case "LogicalExpression":
       return {
         type: "LogicalExpression",
@@ -405,7 +458,11 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
           expr.callee.name == "old" &&
           expr.arguments.length == 1 &&
           expr.arguments[0].type == "Identifier") {
-        return { type: "OldIdentifier", name: (<Syntax.Identifier>expr.arguments[0]).name };
+        return {
+          type: "OldIdentifier",
+          id: { type: "Identifier", name: (<Syntax.Identifier>expr.arguments[0]).name,
+                refs: [], isWrittenTo: false, decl: { type: "Unresolved" } }
+        };
       }
       return {
         type: "CallExpression",
@@ -416,7 +473,8 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       if (expr.name == "undefined") {
         return { type: "Literal", value: undefined };
       }
-      return expr;
+      return { type: "Identifier", name: expr.name, refs: [],
+               isWrittenTo: false, decl: { type: "Unresolved" } };
     case "Literal":
       if (expr.value instanceof RegExp) throw new Error("regular expressions not supported");
       return {
@@ -427,3 +485,229 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       throw new Error("unsupported");
   }
 }
+
+type Scope = { [varname: string]: JSyntax.Declaration };
+type Scopes = Array<Scope>;
+
+function defSymbol(scopes: Scopes, sym: JSyntax.Identifier, decl: JSyntax.Declaration) {
+  // TODO enable shadowing
+  for (let i = scopes.length - 1; i >= 0; i--) {
+    if (sym.name in scopes[i]) throw new Error(`${sym.name} already defined`);  
+  }
+
+  const last = scopes[scopes.length - 1];
+  if (sym.name in last) throw new Error(`${sym.name} already defined`);
+  last[sym.name] = decl;
+}
+
+function useSymbol(scopes: Scopes, sym: JSyntax.Identifier, write: boolean = false) {
+  function lookup(): JSyntax.Declaration {
+    for (let i = scopes.length - 1; i >= 0; i--) {
+      if (sym.name in scopes[i]) return scopes[i][sym.name];  
+    }
+    throw new Error("undefined variable " + sym);
+  }
+  const decl = lookup();
+  sym.decl = decl;
+  switch (decl.type) {
+    case "Var":
+      decl.decl.id.refs.push(sym);
+      if (write) {
+        if (decl.decl.kind == "const") {
+          throw new Error("assignment to const");
+        }
+        decl.decl.id.isWrittenTo = true;
+      }
+      break;
+    case "Func":
+      decl.decl.id.refs.push(sym);
+      if (write) {
+        throw new Error("assignment to function declaration");
+      }
+      break;
+    case "Param":
+      decl.decl.refs.push(sym);
+      if (write) {
+        throw new Error("assignment to function parameter");
+      }
+      break;
+  }
+}
+
+function resolveProgram(prog: JSyntax.Program) {
+  const scopes: Scopes = [{}];
+  prog.body.forEach(stmt => resolveTopLevel(scopes, stmt));
+  prog.invariants.forEach(inv => resolveExpression(scopes, inv));
+}
+
+function resolveTopLevel(scopes: Scopes, stmt: JSyntax.TopLevel) {
+  if (stmt.type == "FunctionDeclaration") {
+    defSymbol(scopes, stmt.id, { type: "Func", decl: stmt });
+    scopes.push({});
+    stmt.params.forEach(p => defSymbol(scopes, p, { type: "Param", func: stmt, decl: p }));
+    stmt.requires.forEach(r => resolveExpression(scopes, r));
+    stmt.ensures.forEach(r => resolveExpression(scopes, r, true));
+    stmt.body.body.forEach(s => resolveStament(scopes, s));
+    scopes.pop();
+    return;
+  }
+  return resolveStament(scopes, stmt); 
+}
+
+function resolveStament(scopes: Scopes, stmt: JSyntax.Statement) {
+  switch (stmt.type) {
+    case "VariableDeclaration":
+      defSymbol(scopes, stmt.id, { type: "Var", decl: stmt });
+      resolveExpression(scopes, stmt.init);
+      break;
+    case "BlockStatement":
+      scopes.push({});
+      stmt.body.forEach(s => resolveStament(scopes, s));
+      scopes.pop();
+      break;
+    case "ExpressionStatement":
+      resolveExpression(scopes, stmt.expression);
+      break;
+    case "AssertStatement":
+      resolveExpression(scopes, stmt.expression);
+      break;
+    case "IfStatement":
+      resolveExpression(scopes, stmt.test);
+      scopes.push({});
+      stmt.consequent.body.forEach(s => resolveStament(scopes, s));
+      scopes.pop();
+      scopes.push({});
+      stmt.alternate.body.forEach(s => resolveStament(scopes, s));
+      scopes.pop();
+      break;
+    case "ReturnStatement":
+      resolveExpression(scopes, stmt.argument);
+      break;
+    case "WhileStatement":
+      resolveExpression(scopes, stmt.test);
+      scopes.push({});
+      stmt.invariants.forEach(i => resolveExpression(scopes, i));
+      stmt.body.body.forEach(s => resolveStament(scopes, s));
+      scopes.pop();
+      break;
+    case "DebuggerStatement":
+      break;
+  }
+}
+
+function resolveExpression(scopes: Scopes, expr: JSyntax.Expression, allowOld: boolean = false) {
+  switch (expr.type) {
+    case "Identifier":
+      useSymbol(scopes, expr);
+      break;
+    case "OldIdentifier":
+      if (!allowOld) throw new Error("old() is only allows in function post conditions");
+      useSymbol(scopes, expr.id);
+    case "Literal":
+      break;
+    case "ArrayExpression":
+      expr.elements.forEach(e => resolveExpression(scopes, e, allowOld));
+      break;
+    case "UnaryExpression":
+      resolveExpression(scopes, expr.argument, allowOld);
+      break;
+    case "BinaryExpression":
+      resolveExpression(scopes, expr.left, allowOld);
+      resolveExpression(scopes, expr.right, allowOld);
+      break;
+    case "LogicalExpression":
+      resolveExpression(scopes, expr.left, allowOld);
+      resolveExpression(scopes, expr.right, allowOld);
+      break;
+    case "ConditionalExpression":
+      resolveExpression(scopes, expr.test, allowOld);
+      resolveExpression(scopes, expr.consequent, allowOld);
+      resolveExpression(scopes, expr.alternate, allowOld);
+      break;
+    case "AssignmentExpression":
+      resolveExpression(scopes, expr.right, allowOld);
+      useSymbol(scopes, expr.left, true);
+      break;
+    case "SequenceExpression":
+      expr.expressions.forEach(e => resolveExpression(scopes, e, allowOld));
+      break;
+    case "CallExpression":
+      expr.arguments.forEach(e => resolveExpression(scopes, e, allowOld));
+      resolveExpression(scopes, expr.callee);
+      break;
+    case "FunctionExpression":
+      scopes.push({});
+      expr.params.forEach(p => defSymbol(scopes, p, { type: "Param", func: expr, decl: p }));
+      expr.body.forEach(s => resolveStament(scopes, s));
+      scopes.pop();
+      break;
+  }
+}
+
+export function stringifyExpr(expr: JSyntax.Expression): string {
+  switch (expr.type) {
+    case "Identifier":
+      return expr.name;
+    case "OldIdentifier":
+      return `old(${expr.id.name})`;
+    case "Literal":
+      return expr.value === undefined ? "undefined" : JSON.stringify(expr.value);
+    case "ArrayExpression":
+      return `[${expr.elements.map(stringifyExpr).join(', ')}]`;
+    case "UnaryExpression":
+      switch (expr.operator) {
+        case "typeof":
+        case "void":
+          return `${expr.operator}(${stringifyExpr(expr.argument)})`;
+        default: 
+          return `${expr.operator}${stringifyExpr(expr.argument)}`;
+      }
+    case "BinaryExpression":
+      return `(${stringifyExpr(expr.left)} ${expr.operator} ${stringifyExpr(expr.right)})`;
+    case "LogicalExpression":
+      return `${stringifyExpr(expr.left)} ${expr.operator} ${stringifyExpr(expr.right)}`;
+    case "ConditionalExpression":
+      return `${stringifyExpr(expr.test)} ? ${stringifyExpr(expr.consequent)} : ${stringifyExpr(expr.alternate)}`;
+    case "AssignmentExpression":
+      return `${expr.left.name} = ${stringifyExpr(expr.right)}`;
+    case "SequenceExpression":
+      return `${expr.expressions.map(stringifyExpr).join(', ')}`;
+    case "CallExpression":
+      return `${stringifyExpr(expr.callee)}(${expr.arguments.map(stringifyExpr).join(', ')})`;
+    case "FunctionExpression":
+      throw new Error("not implemented yet");
+  }
+}
+
+export function stringifyStmt(stmt: JSyntax.TopLevel, indent: number = 0): string {
+  function ind(s: string):string { let d = ""; for (let i = 0; i < indent; i++) d += "  "; return d + s; }
+  switch (stmt.type) {
+    case "VariableDeclaration":
+      return ind(`${stmt.kind} ${stmt.id.name} = ${stringifyExpr(stmt.init)};\n`);
+    case "BlockStatement":
+      return ind("{\n") + stmt.body.map(s => stringifyStmt(s, indent + 1)).join("") + ind("}\n");
+    case "ExpressionStatement":
+      return ind(`${stringifyExpr(stmt.expression)};\n`);
+    case "AssertStatement":
+      return ind(`assert(${stringifyExpr(stmt.expression)});\n`);
+    case "IfStatement":
+      return ind(`if (${stringifyExpr(stmt.test)}) {\n`) +
+             stmt.consequent.body.map(s => stringifyStmt(s, indent + 1)).join("") +
+             ind("} else {\n") +
+             stmt.alternate.body.map(s => stringifyStmt(s, indent + 1)).join("") +
+             ind("}\n");
+    case "ReturnStatement":
+      return ind(`return ${stringifyExpr(stmt.argument)};\n`);
+    case "WhileStatement":
+      return ind(`while (${stringifyExpr(stmt.test)}) {\n`) +
+             stmt.body.body.map(s => stringifyStmt(s, indent + 1)).join("") +
+             ind("}\n");
+    case "DebuggerStatement":
+      return ind(`debugger;\n`);
+    case "FunctionDeclaration":
+      return ind(`function ${stmt.id.name} (${stmt.params.map(p => p.name).join(", ")}) {\n`) +
+             stmt.body.body.map(s => stringifyStmt(s, indent + 1)).join("") +
+             ind("}\n");
+  }
+}
+

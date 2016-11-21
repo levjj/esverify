@@ -1,25 +1,18 @@
-import { parse } from 'lively.ast';
-
+import { parse } from "esprima";
+import { Syntax } from "spiderMonkeyParserAPI";
 import { programAsJavaScript } from "./src/javascript";
-import { findScopes } from './src/visitors';
-import Theorem from "./src/theorems";
+import VerificationCondition, { vcProgram } from "./src/vc";
 
-export type JSSource = string;
-export type SMTInput = string;
-export type SMTOutput = string;
-
-
-export type VarName = string;
-export type Vars = { [varName: string]: number; };  // latest assigned value
-
-export default function theoremsInSource(src: JSSource): Array<Theorem> | null {
+export function verifyAST(node: Syntax.Program): Array<VerificationCondition> | null {
   try {
-    const ast = parse(src),
-          prog = programAsJavaScript(ast),
-          topLevel = findScopes(ast);
-    return topLevel.theorems();
+    const prog = programAsJavaScript(node);
+    return vcProgram(prog);
   } catch (e) {
     console.error(e);
     return null;
   }
+}
+
+export function verify(src: string): Array<VerificationCondition> | null {
+  return verifyAST(parse(src));
 }
