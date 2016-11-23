@@ -1,12 +1,13 @@
 import { parse } from "esprima";
 import { Syntax } from "spiderMonkeyParserAPI";
 import { programAsJavaScript } from "./src/javascript";
-import VerificationCondition, { vcProgram } from "./src/vc";
+import VerificationCondition from "./src/vc";
+import { transformProgram } from "./src/transform";
 
 export function verifyAST(node: Syntax.Program): Array<VerificationCondition> | null {
   try {
     const prog = programAsJavaScript(node);
-    return vcProgram(prog);
+    return transformProgram(prog);
   } catch (e) {
     console.error(e);
     return null;

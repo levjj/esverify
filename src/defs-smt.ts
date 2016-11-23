@@ -1,5 +1,14 @@
-export const preamble =
-`; Values in JavaScript
+import { SMTInput, Vars } from "./vc";
+
+export default function preamble(unintFuns: Vars) {
+  const fnConstrs: Array<SMTInput> = Object.keys(unintFuns).map(f => {
+    let s = `(fn_${f} `;
+    for (let i = 0; i < unintFuns[f]; i++) s += ` (fn_${f}_${i} JSVal)`; 
+    return s + ")\n";
+  });
+
+  return `
+; Values in JavaScript
 (declare-datatypes () (
   (JSVal
     (jsnum (numv Int))
@@ -9,7 +18,7 @@ export const preamble =
     jsundefined
     (jsarray (items JSValList))
     (jsobj (props JSPropList))
-    jsfun)
+    ${fnConstrs.join("")}jsfun)
   (JSValList empty (cons (car JSVal) (cdr JSValList)))
   (JSProp (prop (key (List Int)) (val JSVal)))
   (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
@@ -170,3 +179,4 @@ export const preamble =
   jsundefined)) ; non-standard!
 
 `;
+}

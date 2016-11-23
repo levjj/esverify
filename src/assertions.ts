@@ -1,4 +1,4 @@
-import { Vars, SMTInput } from "./vc";
+import { Vars, SMTInput, SMTOutput } from "./vc";
 import { flatMap } from "./util";
 
 export namespace ASyntax {
@@ -208,5 +208,30 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
       return `(not ${arg})`;
     case "True": return `true`;
     case "False": return `false`;
+  }
+}
+
+function smtToArray(smt: SMTOutput): Array<any> {
+  const s = smt.trim();
+  if (s == "empty") return [];
+  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
+  if (!m) throw new Error("Cannot parse output!");
+  const [_, h, t] = m;
+  return [smtToValue(h)].concat(smtToArray(t));
+}
+
+export function smtToValue(smt: SMTOutput): any {
+  const s = smt.trim();
+  if (s == "jsundefined") return undefined;
+  if (s == "jsnull") return null;
+  const m = s.match(/^\((\w+)\ (.*)\)$/);
+  if (!m) throw new Error("Cannot parse output!");
+  const [_, tag, v] = m;
+  switch (tag) {
+    case "jsbool": return v == "true";
+    case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
+    case "jsstr": return v.substr(1, v.length - 2);
+    case "jsarr": return smtToArray(v);
+    default: throw new Error("unsupported");
   }
 }

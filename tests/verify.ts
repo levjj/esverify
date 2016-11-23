@@ -303,14 +303,14 @@ describe("verify", () => {
     
     const code = (() => {
       function inc(n) {
-        ensures(inc(n) == n + 1);
+        requires(typeof(n) == "number");
         return n + 1;
+        ensures(inc(n) > n);
       }
-      
-      function test() {
-        ensures(test() == 2);
-        return inc(inc(0));
-      }
+
+      let i = 3;
+      let j = inc(i);
+      assert(j > 3);
     }).toString();
     
     let vcs: Array<VerificationCondition>;
@@ -325,14 +325,20 @@ describe("verify", () => {
       expect(vcs).to.have.length(2);
     });
     
-    it("verifies callee", async () => {
-      expect(vcs[0].description).to.be.eql("inc:\ninc(n) == (n + 1)");
+    it("verifies inc", async () => {
+      expect(vcs[0].description).to.be.eql("inc:\n(inc(n) > n)");
       await vcs[0].solve();
       expect(vcs[0].result().status).to.be.eql("sat");
     });
     
-    it("verifies caller", async () => {
-      expect(vcs[1].description).to.be.eql("test:\ntest() == 2");
+    it("verifies precondition", async () => {
+      expect(vcs[0].description).to.be.eql('inc:\n(typeof(i) == "number")');
+      await vcs[0].solve();
+      expect(vcs[0].result().status).to.be.eql("sat");
+    });
+    
+    it("verifies assertion", async () => {
+      expect(vcs[1].description).to.be.eql("assert:\n(j > 3)");
       await vcs[1].solve();
       expect(vcs[1].result().status).to.be.eql("sat");
     });

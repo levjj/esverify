@@ -2,13 +2,10 @@
 
 /// <reference path="../typings/isomorphic-fetch/isomorphic-fetch.d.ts"/>
 
-import { createVars } from "./transform";
 import { varsToSMT, expressionToSMT, propositionToSMT } from "./assertions";
-import { preamble } from "./defs-smt";
-import { pushAll } from "./util";
-import { JSyntax, stringifyExpr, stringifyStmt } from "./javascript";
-import { smtToValue, havocVars, assignedInExpr, assignedInStmt, assignedInFun, transformProgram, transformTopLevel, transformStatement, transformExpression, replaceFunctionResult, replaceOld } from "./transform";
-import { ASyntax, tru, truthy, and, not } from "./assertions";
+import preamble from "./defs-smt";
+import { JSyntax, stringifyStmt } from "./javascript";
+import { ASyntax, smtToValue } from "./assertions";
 
 export type SMTInput = string;
 export type SMTOutput = string;
@@ -24,158 +21,6 @@ type Result = { status: "unverified" }
             | { status: "unsat", model: Model, error: Error }
             | { status: "failed", error: Error }
             | { status: "notest", model: Model };
-
-function vcStatement(vars: Vars, prop: ASyntax.Proposition, stmt: JSyntax.Statement): Array<VerificationCondition> {
-  const vars2 = Object.assign({}, vars);
-  const vcs: Array<VerificationCondition> = [];
-  switch (stmt.type) {
-    case "BlockStatement":
-      let vars3 = vars2, p3 = prop;
-      for (const s of stmt.body) {
-        pushAll(vcs, vcStatement(vars3, p3, s));
-        const state = transformStatement(vars3, s);
-        vars3 = state[0];
-        p3 = and(p3, state[1], not(state[2]));
-      }
-      break;
-    case "AssertStatement": {
-      const [,,post] = transformExpression(vars2, stmt.expression, true);
-      vcs.push(new VerificationCondition(vars2, prop, truthy(post), "assert:\n" + stringifyExpr(stmt.expression)));
-      break;
-    }
-    case "IfStatement": {
-      const [vars3, p3, v] = transformExpression(vars2, stmt.test);
-      pushAll(vcs, vcStatement(vars3, and(prop, p3, truthy(v)), stmt.consequent));
-      pushAll(vcs, vcStatement(vars3, and(prop, p3, not(truthy(v))), stmt.alternate));
-      break;
-    }
-    case "WhileStatement": {
-      // invariants on entry
-      for (const inv of stmt.invariants) {
-        const [,,post] = transformExpression(vars2, inv, true);
-        vcs.push(new VerificationCondition(vars2, prop, truthy(post), "invariant on entry:\n" + stringifyExpr(inv)));
-      }
-
-      // havoc changed variables
-      const vars3 = havocVars(vars2, v => assignedInExpr(v, stmt.test) || assignedInStmt(v, stmt.body));
-
-      // assume invariants
-      const [vars4, prop4, v4] = transformExpression(vars3, stmt.test);
-      let pre4 = and(prop, prop4, truthy(v4));
-      for (const inv of stmt.invariants) {
-        const [,,post] = transformExpression(vars4, inv, true);
-        pre4 = and(pre4, truthy(post));
-      }
-
-      // internal assertions
-      pushAll(vcs, vcStatement(vars4, pre4, stmt.body));
-
-      // ensure invariants maintained
-      const [vars5, prop5] = transformStatement(vars4, stmt.body);
-      for (const inv of stmt.invariants) {
-        const [,,post] = transformExpression(vars5, inv, true);
-        vcs.push(new VerificationCondition(vars5, and(pre4, prop5), truthy(post),
-                 "invariant maintained:\n" + stringifyExpr(inv),
-                 vars4, stmt.body.body.concat([{ type: "AssertStatement", expression: inv }])));
-      }
-      break;
-    }
-    case "ReturnStatement":
-    case "VariableDeclaration":
-    case "ExpressionStatement":
-    case "DebuggerStatement":
-  }
-  return vcs;
-}
-
-function vcFunction(vars: Vars, pre: ASyntax.Proposition, f: JSyntax.FunctionDeclaration): Array<VerificationCondition> {
-  const vcs: Array<VerificationCondition> = [];
-  const vars2 = Object.assign({}, vars);
-  for (const p of f.params) {
-    vars2[p.name] = 0;
-  }
-  vars2["_res_"] = "_res_" in vars2 ? vars2["_res_"] + 1 : 0; 
-
-  // assume preconditions
-  let pre2 = pre;
-  for (const req of f.requires) {
-    const [,,post] = transformExpression(vars2, req, true);
-    pre2 = and(pre2, truthy(post));
-  }
-
-  // internal assertions
-  const ivcs = vcStatement(vars2, pre2, f.body);
-  ivcs.forEach(vc => {
-    vc.description = f.id.name + ":\n" + vc.description;
-    vc.body = vc.body.length == 0 ? f.body.body : vc.body;
-    vc.freeVars = vars2;
-  });
-  pushAll(vcs, ivcs);
-
-  // ensure postconditions
-  const [vars3, prop3] = transformStatement(vars2, f.body);
-  const vars2w = Object.assign({}, vars2);
-  delete vars2w["_res_"]; // remove _res_
-  const invocation: JSyntax.TopLevel = {
-    type: "VariableDeclaration",
-    id: { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false},
-    kind: "const",
-    init: { type: "CallExpression", callee: f.id, arguments: f.params }
-  };
-  for (const ens of f.ensures) {
-    const ens2 = replaceFunctionResult(f, ens);
-    const [,,post] = transformExpression(vars3, replaceOld(vars2w, ens2), true);
-    vcs.push(new VerificationCondition(
-      vars3, and(pre2, prop3), truthy(post),
-      f.id.name + ":\n" + stringifyExpr(ens),
-      vars2w, [f, invocation, { type: "AssertStatement", expression: replaceOld(null, ens2) }]));
-  }
-  return vcs;
-}
-
-export function vcProgram(prog: JSyntax.Program): Array<VerificationCondition> {
-  const vcs: Array<VerificationCondition> = [];
-  const funs: Array<JSyntax.FunctionDeclaration> = [];
-
-  let vars: Vars = {}, prop:ASyntax.Proposition = tru,
-      pre: Array<JSyntax.TopLevel> = [];
-  for (const stmt of prog.body) {
-    pre = pre.concat([stmt]);
-    if (stmt.type != "FunctionDeclaration") {
-      const ivcs = vcStatement(vars, prop, stmt);
-      ivcs.forEach(ivc => {
-        ivc.body = ivc.body.length == 0 ? pre : ivc.body;
-      });
-      pushAll(vcs, ivcs);
-      const state = transformStatement(vars, stmt);
-      vars = state[0];
-      prop = and(prop, state[1], not(state[2]));
-    } else {
-      funs.push(stmt);
-    }
-  }
-
-  // invariants
-  for (const inv of prog.invariants) {
-    const [,,post] = transformExpression(vars, inv, true);
-    vcs.push(new VerificationCondition(vars, prop, truthy(post),
-      "initially:\n" + stringifyExpr(inv),
-      {}, prog.body.concat([{ type: "AssertStatement", expression: inv }])));
-    for (const f of funs) {
-      f.requires.push(inv);
-      f.ensures.push(inv);
-    }
-  }
-
-  // havoc changed variables
-  const vars2 = havocVars(vars, v => funs.some(f => assignedInFun(v, f)));
-
-  // add functions
-  for (const f of funs) {
-    pushAll(vcs, vcFunction(vars2, prop, f));
-  }
-  return vcs;
-}
 
 export default class VerificationCondition {
   vars: Vars;
@@ -205,7 +50,7 @@ export default class VerificationCondition {
           requirements = `(assert ${propositionToSMT(this.prop)})`,
           post = `(assert (not ${propositionToSMT(this.post)}))`;
     return this._smtin =
-`${preamble}
+`${preamble({})}
 
 ; declarations
 ${declarations}

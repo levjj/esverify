@@ -1,48 +1,9 @@
-import { VarName, Vars, SMTInput, SMTOutput } from "./vc";
-import { JSyntax } from "./javascript";
+import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./vc";
+import { JSyntax, stringifyExpr, checkInvariants, checkPreconditions, replaceFunctionResult } from "./javascript";
 import { ASyntax, tru, fls, truthy, implies, and, or, eq, not } from "./assertions";
+import { pushAll } from "./util";
 
-export function createVars(names: Array<VarName> = []): Vars {
-  return names.reduce((vars: Vars, n: VarName) => {
-    vars[n] = 0;
-    return vars;
-  }, {});
-}
-
-function getVar(v: VarName, vars: Vars): ASyntax.Identifier {
-  const version = v in vars ? vars[v] : 0;
-  return { type: "Identifier", name: v, version };
-}
-
-function phi(cond: ASyntax.Proposition, left: Vars, leftP: ASyntax.Proposition,
-                                        right: Vars, rightP: ASyntax.Proposition):
-                                        [Vars, ASyntax.Proposition] {
-  let leftPr = leftP,
-      rightPr = rightP;
-  const nvars: Vars = {},
-        allKeys = Object.keys(left).concat(Object.keys(right));
-  for (const v of allKeys) {
-    if (v in nvars) continue;
-    if (v in left && v in right) {
-      if (left[v] < right[v]) {
-        leftPr = and(leftPr, eq(getVar(v, left), getVar(v, right)));
-        nvars[v] = right[v];
-      } else if (left[v] > right[v]) {
-        rightPr = and(rightPr, eq(getVar(v, right), getVar(v, left)));
-        nvars[v] = left[v];
-      } else {
-        nvars[v] = left[v];
-      }
-    } else if (v in left) {
-      nvars[v] = left[v];
-    } else {
-      nvars[v] = right[v];
-    }
-  }
-  return [nvars, and(implies(cond, leftPr), implies(not(cond), rightPr))];
-}
-
-export function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
+function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
   switch (expr.type) {
     case "Identifier":
     case "OldIdentifier":
@@ -74,7 +35,7 @@ export function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
   }
 }
 
-export function assignedInStmt(v: VarName, stmt: JSyntax.Statement): boolean {
+function assignedInStmt(v: VarName, stmt: JSyntax.Statement): boolean {
   switch (stmt.type) {
     case "VariableDeclaration":
       return stmt.id.name != v && assignedInExpr(v, stmt.init);
@@ -100,12 +61,47 @@ export function assignedInStmt(v: VarName, stmt: JSyntax.Statement): boolean {
   }
 }
 
-export function assignedInFun(v: VarName, f: JSyntax.FunctionDeclaration): boolean {
+function assignedInFun(v: VarName, f: JSyntax.FunctionDeclaration): boolean {
   if (f.params.some(p => p.name == v)) return false;
   return f.body.body.some(s => assignedInStmt(v, s));
 }
 
-export function havocVars(vars: Vars, f: (s: string) => boolean): Vars {
+function getVar(vars: Vars, v: VarName): ASyntax.Identifier {
+  if (!(v in vars)) throw new Error("unknown identifier: " + v);
+  return { type: "Identifier", name: v, version: vars[v] };
+}
+
+function phi(cond: ASyntax.Proposition, left: Transform,
+                                        right: Transform):
+                                        [Vars, ASyntax.Proposition, Array<VerificationCondition>] {
+  let leftPr = left.prop,
+      rightPr = right.prop;
+  const nvars: Vars = {},
+        allKeys = Object.keys(left.vars).concat(Object.keys(right.vars));
+  for (const v of allKeys) {
+    if (v in nvars) continue;
+    if (v in left.vars && v in right.vars) {
+      if (left.vars[v] < right.vars[v]) {
+        leftPr = and(leftPr, eq(getVar(left.vars, v), getVar(right.vars, v)));
+        nvars[v] = right.vars[v];
+      } else if (left.vars[v] > right.vars[v]) {
+        rightPr = and(rightPr, eq(getVar(right.vars, v), getVar(left.vars, v)));
+        nvars[v] = left.vars[v];
+      } else {
+        nvars[v] = left.vars[v];
+      }
+    } else if (v in left) {
+      nvars[v] = left.vars[v];
+    } else {
+      nvars[v] = right.vars[v];
+    }
+  }
+  left.vcs.forEach(vc => vc.prop = and(cond, vc.prop));
+  right.vcs.forEach(vc => vc.prop = and(not(cond), vc.prop));
+  return [nvars, and(implies(cond, leftPr), implies(not(cond), rightPr)), left.vcs.concat(right.vcs)];
+}
+
+function havocVars(vars: Vars, f: (s: string) => boolean): Vars {
   const res: Vars = {};
   for (const v in vars) {
     res[v] = f(v) ? vars[v] + 1 : vars[v];
@@ -113,73 +109,142 @@ export function havocVars(vars: Vars, f: (s: string) => boolean): Vars {
   return res;
 }
 
-type StateE = [Vars, ASyntax.Proposition, ASyntax.Expression];
+class Transform {
+  vars: Vars;
+  prop: ASyntax.Proposition;
+  vcs: Array<VerificationCondition>;
 
-export function transformExpression(vars: Vars, expr: JSyntax.Expression, readOnly: boolean = false): StateE {
+  constructor(vars: Vars, prop: ASyntax.Proposition, vcs: Array<VerificationCondition>) {
+    this.vars = vars;
+    this.prop = prop;
+    this.vcs = vcs;
+  }
+
+  then(t: Transform): Transform {
+    this.vars = t.vars;
+    this.prop = and(this.prop, t.prop);
+    t.vcs.forEach(vc => vc.prop = and(t.prop, vc.prop));
+    this.vcs = this.vcs.concat(t.vcs);
+    return this;
+  }
+}
+
+class ETransform extends Transform {
+  val: ASyntax.Expression;
+
+  constructor(vars: Vars, prop: ASyntax.Proposition, vcs: Array<VerificationCondition>, val: ASyntax.Expression) {
+    super(vars, prop, vcs);
+    this.val = val;
+  }
+
+  static pure(vars: Vars, val: ASyntax.Expression): ETransform {
+    return new ETransform(vars, tru, [], val);
+  }
+
+  map(f: (x: ASyntax.Expression) => ASyntax.Expression): ETransform {
+    return new ETransform(
+      this.vars,
+      this.prop,
+      this.vcs,
+      f(this.val)
+    );
+  }
+
+  then(t: ETransform): ETransform {
+    super.then(t);
+    this.val = t.val;
+    return this;
+  }
+}
+
+class STransform extends Transform {
+  bc: ASyntax.Proposition;
+
+  constructor(vars: Vars, prop: ASyntax.Proposition, vcs: Array<VerificationCondition>, bc: ASyntax.Proposition = fls) {
+    super(vars, prop, vcs);
+    this.bc = bc;
+  }
+
+  then(t: STransform): STransform {
+    t.vcs.forEach(vc => vc.prop = and(this.prop, vc.prop));
+    this.vars = t.vars;
+    this.prop = and(this.prop, implies(not(this.bc), t.prop));
+    this.vcs = this.vcs.concat(t.vcs);
+    this.bc = or(this.bc, t.bc);
+    return this;
+  }
+}
+
+export function transformExpression(ctxVars: Vars, vars: Vars, expr: JSyntax.Expression, ghost: boolean = false): ETransform {
   switch (expr.type) {
     case "Identifier":
-      return [vars, tru, { type: "Identifier", name: expr.name, version: vars[expr.name] }];
+      return ETransform.pure(vars, getVar(vars, expr.name));
     case "OldIdentifier":
-      if (!expr.version) throw new Error("version expected");
-      return [vars, tru, { type: "Identifier", name: expr.id.name, version: expr.version }];
+      return ETransform.pure(vars, getVar(ctxVars, expr.id.name));
     case "Literal":
-      return [vars, tru, expr];
+      return ETransform.pure(vars, expr);
     case "ArrayExpression":
-      type CollectE = [Vars, ASyntax.Proposition, Array<ASyntax.Expression>];
-      const initial: CollectE = [vars, tru, []];
-      const [vars4, p4, elems]: CollectE = expr.elements.reduce(([vars2, p2, elems]: CollectE, ele: JSyntax.Expression) => {
-        const [vars3, p3, v] = transformExpression(vars2, ele, readOnly);
-        elems.push(v);
-        return <CollectE>[vars4, and(p2, p3), elems];
-      }, initial);
-      return [vars4, p4, { type: "ArrayExpression", elements: elems }];
+      const elems: Array<ASyntax.Expression> = [];
+      const res = ETransform.pure(vars, { type: "Literal", value: undefined });
+      for (const elem of expr.elements) {
+        const t = transformExpression(ctxVars, res.vars, elem, ghost);
+        res.then(t);
+        elems.push(t.val);
+      }
+      return res.map(v => ({ type: "ArrayExpression", elements: elems }));
     case "UnaryExpression":
-      const [vars2, props, v] = transformExpression(vars, expr.argument, readOnly);
-      return [vars2, props, { type: "UnaryExpression", operator: expr.operator, argument: v}];
+      const t = transformExpression(ctxVars, vars, expr.argument, ghost);
+      return t.map(v => ({ type: "UnaryExpression", operator: expr.operator, argument: v }));
     case "BinaryExpression": {
-      const [vars2, props, v] = transformExpression(vars, expr.left, readOnly);
-      const [vars3, props2, v2] = transformExpression(vars2, expr.right, readOnly);
-      return [vars3, and(props, props2), {
-        type: "BinaryExpression", operator: expr.operator, left: v, right: v2}];
+      debugger;
+      const tl = transformExpression(ctxVars, vars, expr.left, ghost);
+      const tr = transformExpression(ctxVars, tl.vars, expr.right, ghost);
+      const res: ASyntax.Expression = { type: "BinaryExpression", operator: expr.operator, left: tl.val, right: tr.val };
+      tl.then(tr);
+      return tl.map(v => res);
     }
     case "LogicalExpression": {
       if (expr.operator == "&&") {
-        const [vars2, props2, v2] = transformExpression(vars, expr.left, readOnly);
-        const [vars3, props3, v3] = transformExpression(vars2, expr.right, readOnly);
-        const [vars4, props4] = phi(truthy(v2), vars3, props3, vars2, tru);
-        return [vars4, props4, {
-          type: "ConditionalExpression", test: truthy(v2), consequent: v3, alternate: v2}];
+        const tl = transformExpression(ctxVars, vars, expr.left, ghost);
+        const tr = transformExpression(ctxVars, tl.vars, expr.right, ghost);
+        const [vars4, props4, vcs4] = phi(truthy(tl.val), tr, new ETransform(tl.vars, tru, [], tl.val));
+        vcs4.forEach(vc => vc.prop = and(tl.prop, vc.prop));
+        return new ETransform(vars4, props4, tl.vcs.concat(vcs4), {
+          type: "ConditionalExpression", test: truthy(tl.val), consequent: tr.val, alternate: tl.val});
       } else {
-        const [vars2, props2, v2] = transformExpression(vars, expr.left, readOnly);
-        const [vars3, props3, v3] = transformExpression(vars2, expr.right, readOnly);
-        const [vars4, props4] = phi(truthy(v2), vars2, tru, vars3, props3);
-        return [vars4, props4, {
-          type: "ConditionalExpression", test: truthy(v2), consequent: v2, alternate: v3}];
+        const tl = transformExpression(ctxVars, vars, expr.left, ghost);
+        const tr = transformExpression(ctxVars, tl.vars, expr.right, ghost);
+        const [vars4, props4, vcs4] = phi(truthy(tl.val), new ETransform(tl.vars, tru, [], tl.val), tr);
+        vcs4.forEach(vc => vc.prop = and(tl.prop, vc.prop));
+        return new ETransform(vars4, props4, tl.vcs.concat(vcs4), {
+          type: "ConditionalExpression", test: truthy(tl.val), consequent: tl.val, alternate: tr.val});
       }
     }
     case "ConditionalExpression": {
-      const [vars2, props2, v2] = transformExpression(vars, expr.test, readOnly);
-      const [vars3, props3, v3] = transformExpression(vars2, expr.consequent, readOnly);
-      const [vars4, props4, v4] = transformExpression(vars2, expr.alternate, readOnly);
-      const [vars5, props5] = phi(truthy(v2), vars3, props3, vars4, props4);
-      return [vars5, props5, {
-          type: "ConditionalExpression", test: truthy(v2), consequent: v3, alternate: v4}];
+      const tt = transformExpression(ctxVars, vars, expr.test, ghost);
+      const tl = transformExpression(ctxVars, tt.vars, expr.consequent, ghost);
+      const tr = transformExpression(ctxVars, tt.vars, expr.alternate, ghost);
+      const [vars4, props4, vcs4] = phi(truthy(tt.val), tl, tr);
+      vcs4.forEach(vc => vc.prop = and(tt.prop, vc.prop));
+      return new ETransform(vars4, props4, tt.vcs.concat(vcs4), {
+        type: "ConditionalExpression", test: truthy(tt.val), consequent: tl.val, alternate: tr.val});
     }
     case "AssignmentExpression": {
-      if (readOnly) throw new Error("assignment in pure functional context");
-      const [vars2, props2, v2] = transformExpression(vars, expr.right);
-      const vars3 = Object.assign({}, vars2);
-      ++vars3[expr.left.name];
-      const to: ASyntax.Expression = { type: "Identifier", name: expr.left.name, version: vars3[expr.left.name] },
-            asg: ASyntax.Proposition = { type: "Eq", left: to, right: v2};
-      return [vars3, and(props2, asg), v2];
+      if (ghost) throw new Error("assignment in pure functional context");
+      const t = transformExpression(ctxVars, vars, expr.right);
+      const vars2 = Object.assign({}, t.vars);
+      ++vars2[expr.left.name];
+      const to: ASyntax.Expression = { type: "Identifier", name: expr.left.name, version: vars2[expr.left.name] },
+            asg: ASyntax.Proposition = { type: "Eq", left: to, right: t.val};
+      return new ETransform(vars2, and(t.prop, asg), t.vcs, t.val);
     }
     case "SequenceExpression": {
-      const initial: StateE = [vars, tru, { type: "Literal", value: undefined }];
-      return expr.expressions.reduce(([vars2, props2, v]: StateE, e: JSyntax.Expression): StateE => {
-        const [vars3, props3, v3] = transformExpression(vars2, e, readOnly);
-        return [ vars3, and(props2, props3), v3];
-      }, initial);
+      const res = ETransform.pure(vars, { type: "Literal", value: undefined });
+      for (const elem of expr.expressions) {
+        const t = transformExpression(ctxVars, res.vars, elem, ghost);
+        res.then(t);
+      }
+      return res;
     }
     case "CallExpression":
       throw new Error("not implemented yet\n" + JSON.stringify(expr)); 
@@ -188,246 +253,210 @@ export function transformExpression(vars: Vars, expr: JSyntax.Expression, readOn
   }
 }
 
-//             Variables, Verification Condition, Break Condition
-type StateS = [Vars, ASyntax.Proposition, ASyntax.Proposition];
+function transformWhileLoop(vars: Vars, whl: JSyntax.WhileStatement): STransform {
+  // return verification conditions:
+  // - call req in test, invariants and body
+  // - assert in body
+  // - invariants maintained
+  // break condition: test && return in body
 
-export function transformStatement(vars: Vars, stmt: JSyntax.Statement): StateS {
+  // assume loop condition true and invariants true
+  const tt = transformExpression(vars, vars, whl.test);
+  const res: STransform = new STransform(tt.vars, and(tt.prop, truthy(tt.val)), []);
+  for (const inv of whl.invariants) {
+    const ti = transformExpression(vars, res.vars, inv, true);
+    res.vars = ti.vars;
+    res.prop = and(res.prop, ti.prop, truthy(ti.val));
+  }
+  const tb = transformStatement(vars, res.vars, whl.body);
+  res.then(tb);
+
+  // internal verification conditions
+  const testBody: Array<JSyntax.TopLevel> = [checkInvariants(whl), {
+    type: "ExpressionStatement",
+    expression: { type: "CallExpression", arguments: [],
+                  callee: { type: "Identifier", name: "test", decl: {type: "Unresolved"}, refs: [], isWrittenTo: false}}
+  }];
+    
+  res.vcs.forEach(vc => vc.body = testBody);
+  res.bc = and(truthy(tt.val), res.bc);
+
+  // ensure invariants maintained
+  for (const inv of whl.invariants) {
+    const ti = transformExpression(vars, res.vars, inv, true);
+    res.vcs.push(new VerificationCondition(ti.vars, and(res.prop, ti.prop), truthy(ti.val),
+                "invariant maintained:\n" + stringifyExpr(inv),
+                 vars, testBody.concat([{ type: "AssertStatement", expression: inv }])));
+  }
+
+  return res;
+}
+
+export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Statement): STransform {
   switch (stmt.type) {
     case "VariableDeclaration": {
-      const [vars2, props2, v2] = transformExpression(vars, stmt.init);
+      const t = transformExpression(ctxVars, vars, stmt.init);
+      const vars2 = Object.assign({}, t.vars);
       vars2[stmt.id.name] = 0;
       const to: ASyntax.Expression = { type: "Identifier", name: stmt.id.name, version: 0 },
-            asg: ASyntax.Proposition = { type: "Eq", left: to, right: v2};
-      return [vars2, and(props2, asg), fls];
+            asg: ASyntax.Proposition = { type: "Eq", left: to, right: t.val};
+      return new STransform(vars2, and(t.prop, asg), t.vcs);
     }
     case "BlockStatement": {
-      const initial: StateS = [vars, tru, fls];
-      return stmt.body.reduce(([vars2, props2, bc]: StateS, s: JSyntax.Statement): StateS => {
-        const [vars3, props3, bc3] = transformStatement(vars2, s);
-        return [vars3, and(props2, implies(not(bc), props3)), or(bc, bc3)];
-      }, initial);
+      const res: STransform = new STransform(vars, tru, []);
+      for (const s of stmt.body) {
+        const t = transformStatement(ctxVars, res.vars, s);
+        res.then(t);
+      }
+      return res;
     }
     case "ExpressionStatement": {
-      const [vars2, props2] = transformExpression(vars, stmt.expression);
-      return [vars2, props2, fls];
+      const t = transformExpression(ctxVars, vars, stmt.expression);
+      return new STransform(t.vars, t.prop, t.vcs);
     }
     case "AssertStatement": {
-      const [,, v] = transformExpression(vars, stmt.expression, true);
-      return [vars, truthy(v), fls];
+      const t = transformExpression(ctxVars, vars, stmt.expression, true);
+      const vc = new VerificationCondition(t.vars, t.prop, truthy(t.val), "assert:\n" + stringifyExpr(stmt.expression), ctxVars);
+      return new STransform(t.vars, tru, t.vcs.concat(vc), not(truthy(t.val)));
     }
     case "IfStatement": {
-      const [vars2, props2, v2] = transformExpression(vars, stmt.test);
-      const [vars3, props3, bc3] = transformStatement(vars2, stmt.consequent);
-      const [vars4, props4, bc4] = transformStatement(vars2, stmt.alternate);
-      const [vars5, props5] = phi(truthy(v2), vars3, props3, vars4, props4);
-      return [vars5, props5, or(and(truthy(v2), bc3), and(not(truthy(v2)), bc4))];
+      const tt = transformExpression(ctxVars, vars, stmt.test);
+      const tl = transformStatement(ctxVars, tt.vars, stmt.consequent);
+      const tr = transformStatement(ctxVars, tt.vars, stmt.alternate);
+      const [vars2, props2, vcs2] = phi(truthy(tt.val), tl, tr);
+      vcs2.forEach(vc => vc.prop = and(tt.prop, vc.prop));
+      return new STransform(vars2, props2, tt.vcs.concat(vcs2),
+                            or(and(truthy(tt.val), tl.bc), and(not(truthy(tt.val)), tr.bc))); 
     }
     case "ReturnStatement": {
-      const [vars2, props2, v2]: StateE = transformExpression(vars, stmt.argument);
-      if (!("_res_" in vars)) throw new Error("Return outside function");
-      const to: ASyntax.Expression = { type: "Identifier", name: "_res_", version: vars["_res_"]},
-            asg: ASyntax.Proposition = { type: "Eq", left: to, right: v2 };
-      return [vars2, and(props2, asg), tru];
+      const t = transformExpression(ctxVars, vars, stmt.argument);
+      if (!("_res_" in t.vars)) throw new Error("Return outside function");
+      const to: ASyntax.Expression = { type: "Identifier", name: "_res_", version: vars["_res_"] },
+            asg: ASyntax.Proposition = { type: "Eq", left: to, right: t.val };
+      return new STransform(t.vars, and(t.prop, asg), t.vcs, tru);
     }
     case "WhileStatement": {
+      // invariants on entry
+      let vcs: Array<VerificationCondition> = [];
+      for (const inv of stmt.invariants) {
+        const t = transformExpression(ctxVars, vars, inv, true);
+        vcs.push(new VerificationCondition(t.vars, t.prop, truthy(t.val), "invariant on entry:\n" + stringifyExpr(inv)));
+      }
+
       // havoc changed variables
       const vars2 = havocVars(vars, v => assignedInExpr(v, stmt.test) || assignedInStmt(v, stmt.body));
 
-      // computed return conditions and values
-      const [vars3, p, v] = transformExpression(vars2, stmt.test);
-      const [vars4, p2, bc] = transformStatement(vars3, stmt.body);
+      const twhile = transformWhileLoop(vars2, stmt);
+      // we are going to use the returned verification conditions and break condition
+      // but we will ignore its effects
 
-      // havoc variables again
-      const vars5 = havocVars(vars4, v => assignedInExpr(v, stmt.test) || assignedInStmt(v, stmt.body));
+      // havoc changed variables again
+      const vars3 = havocVars(twhile.vars, v => assignedInExpr(v, stmt.test) || assignedInStmt(v, stmt.body));
 
-      // transform condition and invariants
-      const [vars6, p6, v6] = transformExpression(vars5, stmt.test);
-      const invariants = stmt.invariants.reduce((p2: ASyntax.Proposition, inv: JSyntax.Expression) => {
-        const [,, v7] = transformExpression(vars6, inv, true);
-        return and(p2, truthy(v7));
-      }, tru);
-
-      return [vars6, and(
-        p6,
-        not(truthy(v6)),
-        invariants,
-        p,
-        implies(truthy(v), p2)
-      ), and(truthy(v), bc)];
+      // assume loop conditions false and invariants true
+      const tt = transformExpression(ctxVars, vars3, stmt.test);
+      const res: STransform = new STransform(tt.vars,
+        and(tt.prop, not(truthy(tt.val))), vcs.concat(twhile.vcs).concat(tt.vcs), twhile.bc);
+      for (const inv of stmt.invariants) {
+        const ti = transformExpression(ctxVars, res.vars, inv, true);
+        res.vars = ti.vars;
+        res.prop = and(res.prop, ti.prop, truthy(ti.val));
+      }
+      return res;
     }
     case "DebuggerStatement": {
-      return [vars, tru, fls];
+      return new STransform(vars, tru, []);
     }
   }
 }
 
-export function transformTopLevel(vars: Vars, stmt: JSyntax.TopLevel): StateS {
-  switch (stmt.type) {
-    case 'ReturnStatement':
-      throw new Error("global return not permitted");
-    case 'FunctionDeclaration':
-      // TODO not implemented yet
-      return [vars, tru, fls];
-    default:
-      return transformStatement(vars, stmt);
+function transformFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration): Transform {
+  // assumes mutable vars from outer scope are fresh
+  const vcs: Array<VerificationCondition> = [];
+  const vars2 = Object.assign({}, vars);
+  for (const p of f.params) {
+    vars2[p.name] = 0;
   }
-}
+  vars2["_res_"] = "_res_" in vars2 ? vars2["_res_"] + 1 : 0; 
 
-export function transformProgram(prog: Array<JSyntax.TopLevel>): StateS {
-  const vars: Vars = {};
-  const initial: StateS = [vars, tru, fls];
-  return prog.reduce(([vars2, props2, bc]: StateS, s: JSyntax.TopLevel): StateS => {
-    const [vars3, props3, bc3] = transformTopLevel(vars2, s);
-    return [vars3, and(props2, implies(not(bc), props3)), or(bc, bc3)];
-  }, initial);
-}
-
-function smtToArray(smt: SMTOutput): Array<any> {
-  const s = smt.trim();
-  if (s == "empty") return [];
-  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
-  const [_, h, t] = m;
-  return [smtToValue(h)].concat(smtToArray(t));
-}
-
-export function smtToValue(smt: SMTOutput): any {
-  const s = smt.trim();
-  if (s == "jsundefined") return undefined;
-  if (s == "jsnull") return null;
-  const m = s.match(/^\((\w+)\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
-  const [_, tag, v] = m;
-  switch (tag) {
-    case "jsbool": return v == "true";
-    case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
-    case "jsstr": return v.substr(1, v.length - 2);
-    case "jsarr": return smtToArray(v);
-    default: throw new Error("unsupported");
+  const res: Transform = new Transform(vars2, tru, []);
+  for (const req of f.requires) {
+    const tr = transformExpression(vars2, res.vars, req, true);
+    res.vars = tr.vars;
+    res.prop = and(res.prop, tr.prop, truthy(tr.val));
   }
+  const tb = transformStatement(vars2, res.vars, f.body);
+  res.then(tb);
+
+  // internal verification conditions
+  const testBody: Array<JSyntax.TopLevel> = [{
+    type: "VariableDeclaration",
+    id: { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false},
+    kind: "const",
+    init: { type: "CallExpression", callee: f.id, arguments: f.params }
+  }];
+  res.vcs.forEach(vc => vc.body = testBody);
+
+  // ensure invariants maintained
+  for (const ens of f.ensures) {
+    const ens2 = replaceFunctionResult(f, ens);
+    const ti = transformExpression(vars2, res.vars, ens2, true);
+    res.vcs.push(new VerificationCondition(ti.vars, and(res.prop, ti.prop), truthy(ti.val),
+                 stringifyExpr(ens),
+                 vars2, testBody.concat([{ type: "AssertStatement", expression: ens2 }])));
+  }
+  res.vcs.forEach(vc => {
+    delete vc.freeVars["_res_"];
+    vc.description = f.id.name + ":\n" + vc.description;
+  });
+
+  return res;
 }
 
-function callMatchesParams(expr: JSyntax.CallExpression, f: JSyntax.FunctionDeclaration): boolean {
-  if (expr.arguments.length != f.params.length) return false;
-  for (let i = 0; i < expr.arguments.length; i++) {
-    const arg: JSyntax.Expression = expr.arguments[i];
-    if (arg.type != "Identifier" ||
-        arg.decl.type != "Param" ||
-        arg.decl.func != f ||
-        arg.decl.decl != f.params[i]) {
-     return false;
+export function transformProgram(prog: JSyntax.Program): Array<VerificationCondition> {
+  const res: Transform = new STransform({}, tru, []);
+
+  let testBody: Array<JSyntax.Statement> = [];
+  const funs: Array<JSyntax.FunctionDeclaration> = [];
+
+  for (const stmt of prog.body) {
+    if (stmt.type != "FunctionDeclaration") {
+      testBody = testBody.concat([stmt]);
+      const t = transformStatement({}, res.vars, stmt);
+      t.vcs.forEach(vc => vc.body = testBody);
+      res.then(t);
+    } else {
+      funs.push(stmt);
     }
   }
-  return true;
-}
 
-export function replaceFunctionResult(f: JSyntax.FunctionDeclaration, expr: JSyntax.Expression): JSyntax.Expression {
-  switch (expr.type) {
-    case "Identifier":
-    case "OldIdentifier":
-    case "Literal":
-      return expr;
-    case "ArrayExpression":
-      return { type: "ArrayExpression", elements: expr.elements.map(e => replaceFunctionResult(f, e)) };
-    case "UnaryExpression":
-      return { type: "UnaryExpression", operator: expr.operator, argument: replaceFunctionResult(f, expr.argument)};
-    case "BinaryExpression":
-      return {
-        type: "BinaryExpression",
-        operator: expr.operator,
-        left: replaceFunctionResult(f, expr.left),
-        right: replaceFunctionResult(f, expr.right)
-      };
-    case "LogicalExpression":
-      return {
-        type: "LogicalExpression",
-        operator: expr.operator,
-        left: replaceFunctionResult(f, expr.left),
-        right: replaceFunctionResult(f, expr.right)
-      };
-    case "ConditionalExpression":
-      return {
-        type: "ConditionalExpression",
-        test: replaceFunctionResult(f, expr.test),
-        consequent: replaceFunctionResult(f, expr.consequent),
-        alternate: replaceFunctionResult(f, expr.alternate)
-      };
-    case "AssignmentExpression":
-      return {
-        type: "AssignmentExpression",
-        left: expr.left, 
-        right: replaceFunctionResult(f, expr.right)
-      };
-    case "SequenceExpression":
-      return { type: "SequenceExpression", expressions: expr.expressions.map(e => replaceFunctionResult(f, e)) };
-    case "CallExpression":
-      if (expr.callee.type == "Identifier" &&
-          expr.callee.decl.type == "Func" &&
-          expr.callee.decl.decl == f &&
-          callMatchesParams(expr, f)) {
-        return { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false };
-      }
-      return {
-        type: "CallExpression",
-        callee: replaceFunctionResult(f, expr.callee),
-        arguments: expr.arguments.map(e => replaceFunctionResult(f, e))
-      }
-    case "FunctionExpression":
-      throw new Error("not implemented yet"); 
+  const vcs = res.vcs;
+
+  // invariants
+  for (const inv of prog.invariants) {
+    const ti = transformExpression({}, res.vars, inv, true);
+    vcs.push(new VerificationCondition(res.vars, res.prop, truthy(ti.val),
+      "initially:\n" + stringifyExpr(inv),
+      {}, prog.body.concat([{ type: "AssertStatement", expression: inv }])));
+    for (const f of funs) {
+      f.requires.push(inv);
+      f.ensures.push(inv);
+    }
   }
 
-}
 
-export function replaceOld(vars: Vars | null, expr: JSyntax.Expression): JSyntax.Expression {
-  switch (expr.type) {
-    case "OldIdentifier":
-      if (vars) {
-        return { type: "OldIdentifier", id: expr.id, version: vars[expr.id.name] };
-      }
-      return { type: "Identifier", name: expr.id.name + "_0", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false};
-    case "Identifier":
-    case "Literal":
-      return expr;
-    case "ArrayExpression":
-      return { type: "ArrayExpression", elements: expr.elements.map(e => replaceOld(vars, e)) };
-    case "UnaryExpression":
-      return { type: "UnaryExpression", operator: expr.operator, argument: replaceOld(vars, expr.argument)};
-    case "BinaryExpression":
-      return {
-        type: "BinaryExpression",
-        operator: expr.operator,
-        left: replaceOld(vars, expr.left),
-        right: replaceOld(vars, expr.right)
-      };
-    case "LogicalExpression":
-      return {
-        type: "LogicalExpression",
-        operator: expr.operator,
-        left: replaceOld(vars, expr.left),
-        right: replaceOld(vars, expr.right)
-      };
-    case "ConditionalExpression":
-      return {
-        type: "ConditionalExpression",
-        test: replaceOld(vars, expr.test),
-        consequent: replaceOld(vars, expr.consequent),
-        alternate: replaceOld(vars, expr.alternate)
-      };
-    case "AssignmentExpression":
-      return {
-        type: "AssignmentExpression",
-        left: expr.left, 
-        right: replaceOld(vars, expr.right)
-      };
-    case "SequenceExpression":
-      return { type: "SequenceExpression", expressions: expr.expressions.map(e => replaceOld(vars, e)) };
-    case "CallExpression":
-      return {
-        type: "CallExpression",
-        callee: replaceOld(vars, expr.callee),
-        arguments: expr.arguments.map(e => replaceOld(vars, e))
-      }
-    case "FunctionExpression":
-      throw new Error("not implemented yet"); 
+  // havoc changed variables
+  const vars2 = havocVars(res.vars, v => funs.some(f => assignedInFun(v, f)));
+
+  // add functions
+  const fdecls: Array<JSyntax.TopLevel> = [];
+  for (const f of funs) {
+    const tf = transformFunctionDeclaration(vars2, f);
+    pushAll(vcs, tf.vcs);
+    fdecls.push(checkPreconditions(f));
   }
+  vcs.forEach(vc => {
+    vc.body = fdecls.concat(vc.body);
+  });
+  return vcs;
 }

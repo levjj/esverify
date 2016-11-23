@@ -711,3 +711,100 @@ export function stringifyStmt(stmt: JSyntax.TopLevel, indent: number = 0): strin
   }
 }
 
+function callMatchesParams(expr: JSyntax.CallExpression, f: JSyntax.FunctionDeclaration): boolean {
+  if (expr.arguments.length != f.params.length) return false;
+  for (let i = 0; i < expr.arguments.length; i++) {
+    const arg: JSyntax.Expression = expr.arguments[i];
+    if (arg.type != "Identifier" ||
+        arg.decl.type != "Param" ||
+        arg.decl.func != f ||
+        arg.decl.decl != f.params[i]) {
+     return false;
+    }
+  }
+  return true;
+}
+
+export function replaceFunctionResult(f: JSyntax.FunctionDeclaration, expr: JSyntax.Expression): JSyntax.Expression {
+  switch (expr.type) {
+    case "Identifier":
+    case "OldIdentifier":
+    case "Literal":
+      return expr;
+    case "ArrayExpression":
+      return { type: "ArrayExpression", elements: expr.elements.map(e => replaceFunctionResult(f, e)) };
+    case "UnaryExpression":
+      return { type: "UnaryExpression", operator: expr.operator, argument: replaceFunctionResult(f, expr.argument)};
+    case "BinaryExpression":
+      return {
+        type: "BinaryExpression",
+        operator: expr.operator,
+        left: replaceFunctionResult(f, expr.left),
+        right: replaceFunctionResult(f, expr.right)
+      };
+    case "LogicalExpression":
+      return {
+        type: "LogicalExpression",
+        operator: expr.operator,
+        left: replaceFunctionResult(f, expr.left),
+        right: replaceFunctionResult(f, expr.right)
+      };
+    case "ConditionalExpression":
+      return {
+        type: "ConditionalExpression",
+        test: replaceFunctionResult(f, expr.test),
+        consequent: replaceFunctionResult(f, expr.consequent),
+        alternate: replaceFunctionResult(f, expr.alternate)
+      };
+    case "AssignmentExpression":
+      return {
+        type: "AssignmentExpression",
+        left: expr.left, 
+        right: replaceFunctionResult(f, expr.right)
+      };
+    case "SequenceExpression":
+      return { type: "SequenceExpression", expressions: expr.expressions.map(e => replaceFunctionResult(f, e)) };
+    case "CallExpression":
+      if (expr.callee.type == "Identifier" &&
+          expr.callee.decl.type == "Func" &&
+          expr.callee.decl.decl == f &&
+          callMatchesParams(expr, f)) {
+        return { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false };
+      }
+      return {
+        type: "CallExpression",
+        callee: replaceFunctionResult(f, expr.callee),
+        arguments: expr.arguments.map(e => replaceFunctionResult(f, e))
+      }
+    case "FunctionExpression":
+      throw new Error("not implemented yet"); 
+  }
+
+}
+
+export function checkInvariants(whl: JSyntax.WhileStatement): JSyntax.FunctionDeclaration {
+  return {
+    type: "FunctionDeclaration",
+    id: { type: "Identifier", name: "test", decl: {type: "Unresolved"}, refs: [], isWrittenTo: false},
+    params: [],
+    requires: [],
+    ensures: [],
+    body: { type: "BlockStatement", body:
+      whl.invariants.map((inv): JSyntax.Statement => ({ type: "AssertStatement", expression: inv })).concat(whl.body.body)}
+  }
+}
+
+export function checkPreconditions(f: JSyntax.FunctionDeclaration): JSyntax.FunctionDeclaration {
+  return {
+    type: "FunctionDeclaration",
+    id: f.id,
+    params: f.params,
+    requires: f.requires,
+    ensures: f.ensures,
+    body: {
+      type: "BlockStatement",
+      body: f.requires.map((r): JSyntax.Statement =>
+        ({ type: "AssertStatement", expression: r })).concat(f.body.body)
+    }
+  };
+}
