@@ -22,12 +22,16 @@ export namespace ASyntax {
                                     test: Proposition;
                                     consequent: Expression;
                                     alternate: Expression; }
+  interface CallExpression { type: "CallExpression";
+                             callee: string;
+                             arguments: Array<Expression>; }
   export type Expression = Identifier
                          | Literal
                          | ArrayExpression
                          | UnaryExpression
                          | BinaryExpression
-                         | ConditionalExpression;
+                         | ConditionalExpression
+                         | CallExpression;
 
   export interface Truthy { type: "Truthy"; expr: Expression; }
   export interface And { type: "And"; clauses: Array<Proposition>; }
@@ -168,6 +172,8 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
             then = expressionToSMT(expr.consequent),
             elze = expressionToSMT(expr.alternate);
       return `(ite ${test} ${then} ${elze})`;
+    case "CallExpression":
+      return `(${expr.callee} ${expr.arguments.map(expressionToSMT).join(" ")})`;
     default:
       throw new Error("unsupported");
   }
@@ -209,6 +215,13 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
     case "True": return `true`;
     case "False": return `false`;
   }
+}
+
+export function propositionToAssert(prop: ASyntax.Proposition): SMTInput {
+  if (prop.type == "And") {
+    return prop.clauses.map(propositionToAssert).join("");
+  }
+  return `(assert ${propositionToSMT(prop)})\n`;
 }
 
 function smtToArray(smt: SMTOutput): Array<any> {

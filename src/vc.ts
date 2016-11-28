@@ -2,8 +2,8 @@
 
 /// <reference path="../typings/isomorphic-fetch/isomorphic-fetch.d.ts"/>
 
-import { varsToSMT, expressionToSMT, propositionToSMT } from "./assertions";
-import preamble from "./defs-smt";
+import { varsToSMT, expressionToSMT, propositionToSMT, propositionToAssert } from "./assertions";
+import { preamble } from "./defs-smt";
 import { JSyntax, stringifyStmt } from "./javascript";
 import { ASyntax, smtToValue } from "./assertions";
 
@@ -29,6 +29,7 @@ export default class VerificationCondition {
   freeVars: Vars;
   body: Array<JSyntax.TopLevel>;
   description: string;
+  fns: Array<JSyntax.FunctionDeclaration>;
   _smtin: SMTInput | null;
   _smtout: SMTOutput | null;
   _result: Result;
@@ -40,6 +41,7 @@ export default class VerificationCondition {
     this.freeVars = freeVars;
     this.body = body;
     this.description = description;
+    this.fns = [];
     this._smtin = null;
     this._smtout = null;
     this._result = { status: "unverified" };
@@ -47,16 +49,19 @@ export default class VerificationCondition {
   
   smtInput(): SMTInput {
     const declarations = varsToSMT(this.vars),
-          requirements = `(assert ${propositionToSMT(this.prop)})`,
           post = `(assert (not ${propositionToSMT(this.post)}))`;
     return this._smtin =
-`${preamble({})}
+`${preamble}
+
+; functions
+${this.fns.map(f =>
+  `(declare-fun ${f.id.name} (${f.params.map(p => p.name).concat(f.freeVars).map(p => "JSVal").join(" ")}) JSVal)`).join("\n")}
 
 ; declarations
 ${declarations}
 
 ; requirements
-${requirements}
+${propositionToAssert(this.prop)}
 
 ; post condition
 ${post}
@@ -123,8 +128,10 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
       } catch (e) {
         this._result = { status: "unsat", model: m, error: e };
       }
-    } else {
+    } else if (this._smtout && this._smtout.startsWith("unsat")) {
       this._result = { status: "sat" };
+    } else {
+      this._result = { status: "failed", error: new Error("unexpected: " + this._smtout) };
     }
     return this._result;
   }
@@ -150,6 +157,20 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
       body: this.smtInput()
     });
     return req.text();
+  }
+
+  debugOut() {
+    console.log("\n" + this.description);
+    console.log("-----------------");
+    console.log(this._result);
+    console.log("SMT Input:");
+    console.log(this._smtin);
+    console.log("SMT Output:");
+    console.log(this._smtout);
+    if (this._smtout && this._smtout.startsWith("sat")) {
+      console.log("Test Body:");
+      console.log(this.testCode());
+    }
   }
 
 }

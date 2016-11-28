@@ -7,341 +7,358 @@ use(chaiSubset);
 import { verify } from "../index";
 import VerificationCondition from "../src/vc";
 
-describe("verify", () => {
-  var requires, ensures, invariant, assert, old; // do not rewrite assertions
-  
-  describe("max()", () => {
-    
-    const code = (() => {
-      function max(a, b) {
-        requires(typeof(a) == "number");
-        requires(typeof(b) == "number");
-        if (a >= b) {
-          return a;
-        } else {
-          return b;
-        }
-        ensures(max(a, b) >= a);
-      }
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
+let vcs: Array<VerificationCondition>;
+function helper(description: string, expected: string, debug: boolean = false) {
+  const body = async () => {
+    const vc = vcs.find(vc => vc.description == description);
+    expect(vc).to.not.be.undefined;
+    if (!vc) throw new Error();
+    await vc.solve();
+    if (debug) vc.debugOut();
+    expect(vc.result().status).to.be.eql(expected);
+  };
+  if (debug) {
+    it.only(description.replace(/\n/g, " "), body);
+  } else {
+    it(description.replace(/\n/g, " "), body);
+  }
+}
 
-    it("finds a verification conditions", () => {
-      expect(vcs).to.have.length(1);
-    });
-    
-    it("has a description", async () => {
-      expect(vcs[0].description).to.be.eql("max:\n(max(a, b) >= a)");
-    });
-    
-    it("can be verified", async () => {
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-    });
+function sat(description: string) { helper(description, "sat"); }
+function unsat(description: string) { helper(description, "unsat"); }
+function notest(description: string) { helper(description, "notest"); }
+
+function satDebug(description: string) { helper(description, "sat", true); }
+function unsatDebug(description: string) { helper(description, "unsat", true); }
+function notestDebug(description: string) { helper(description, "notest", true); }
+
+describe("max()", () => {
+  
+  const code = (() => {
+    function max(a, b) {
+      requires(typeof(a) == "number");
+      requires(typeof(b) == "number");
+      if (a >= b) {
+        return a;
+      } else {
+        return b;
+      }
+      ensures(max(a, b) >= a);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  it("finds a verification conditions", () => {
+    expect(vcs).to.have.length(1);
   });
   
-  describe("max() with missing pre", () => {
-    
-    const code = (() => {
-      function max(a, b) {
-        requires(typeof(b) == "number");
-        if (a >= b) {
-          return a;
-        } else {
-          return b;
-        }
-        ensures(max(a, b) >= a);
-      }
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
+  it("has a description", async () => {
+    expect(vcs[0].description).to.be.eql("max:\n(max(a, b) >= a)");
+  });
 
-    it("can not be verified", async () => {
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("notest"); // ideally "unsat""
-    });
-    
-    it("returns counter-example", async () => {
-      await vcs[0].solve();
-      expect(vcs[0].getModel()).to.containSubset({
-        a: false,
-        b: 0,
-      });
+  sat("max:\n(max(a, b) >= a)");
+});
+
+describe("max() with missing pre", () => {
+  
+  const code = (() => {
+    function max(a, b) {
+      requires(typeof(b) == "number");
+      if (a >= b) {
+        return a;
+      } else {
+        return b;
+      }
+      ensures(max(a, b) >= a);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  notest("max:\n(max(a, b) >= a)");
+  
+  it("returns counter-example", async () => {
+    await vcs[0].solve();
+    expect(vcs[0].getModel()).to.containSubset({
+      a: false,
+      b: 0,
     });
   });
+});
+
+describe("counter", () => {
   
-  describe("counter", () => {
+  const code = (() => {
+    let counter = 0;
+    invariant(typeof counter == "number");
+    invariant(counter >= 0);
     
-    const code = (() => {
-      let counter = 0;
-      invariant(typeof counter == "number");
-      invariant(counter >= 0);
+    function increment() {
+      counter++;
+      ensures(counter > old(counter));
+    }
+    
+    function decrement() {
+      if (counter > 0) counter--;
+      ensures(old(counter) > 0 ? counter < old(counter) : counter == old(counter));
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat('initially:\n(typeof(counter) == "number")');
+  sat("initially:\n(counter >= 0)");
+  sat("increment:\n(counter > old(counter))");
+  sat('increment:\n(typeof(counter) == "number")');
+  sat("increment:\n(counter >= 0)");
+  sat("decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))");
+  sat('decrement:\n(typeof(counter) == "number")');
+  sat("decrement:\n(counter >= 0)");
+});
+
+describe("simple steps", () => {
+  
+  const code = (() => {
+    let i = 0;
+    assert(i < 1);
+    i = 3;
+    assert(i < 2);
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat("assert:\n(i < 1)");
+  unsat("assert:\n(i < 2)");
+});
+
+describe("loop", () => {
+  
+  const code = (() => {
+    let i = 0;
+
+    while (i < 5) {
+      invariant(i <= 5);
+      i++;
+    }
+    
+    assert(i === 5);
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat("invariant on entry:\n(i <= 5)");
+  sat("invariant maintained:\n(i <= 5)");
+  sat("assert:\n(i === 5)");
+});
+
+describe("loop with missing invariant", () => {
+  
+  const code = (() => {
+    let i = 0;
+
+    while (i < 5) {
+      i++;
+    }
+    
+    assert(i === 5);
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  notest("assert:\n(i === 5)");
+});
+
+describe("sum", () => {
+  
+  const code = (() => {
+    function sumTo(n) {
+      requires(typeof n == "number");
+      requires(n >= 0);
       
-      function increment() {
-        counter++;
-        ensures(counter > old(counter));
-      }
-      
-      function decrement() {
-        if (counter > 0) counter--;
-        ensures(old(counter) > 0 ? counter < old(counter) : counter == old(counter));
-      }
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
-
-    it("finds all verification conditions", () => {
-      expect(vcs).to.have.length(8);
-    });
-    
-    it("is initialized correctly", async () => {
-      expect(vcs[0].description).to.be.eql('initially:\n(typeof(counter) == "number")');
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-      expect(vcs[1].description).to.be.eql("initially:\n(counter >= 0)");
-      await vcs[1].solve();
-      expect(vcs[1].result().status).to.be.eql("sat");
-    });
-    
-    it("increment increments", async () => {
-      expect(vcs[2].description).to.be.eql("increment:\n(counter > old(counter))");
-      await vcs[2].solve();
-      expect(vcs[2].result().status).to.be.eql("sat");
-    });
-
-    it("increment maintains invariants", async () => {
-      expect(vcs[3].description).to.be.eql('increment:\n(typeof(counter) == "number")');
-      await vcs[3].solve();
-      expect(vcs[3].result().status).to.be.eql("sat");
-      expect(vcs[4].description).to.be.eql("increment:\n(counter >= 0)");
-      await vcs[4].solve();
-      expect(vcs[4].result().status).to.be.eql("sat");
-    });
-    
-    it("decrement decrements", async () => {
-      expect(vcs[5].description).to.be.eql("decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))");
-      await vcs[5].solve();
-      expect(vcs[5].result().status).to.be.eql("sat");
-    });
-
-    it("decrement maintains invariants", async () => {
-      expect(vcs[6].description).to.be.eql('decrement:\n(typeof(counter) == "number")');
-      await vcs[6].solve();
-      expect(vcs[6].result().status).to.be.eql("sat");
-      expect(vcs[7].description).to.be.eql("decrement:\n(counter >= 0)");
-      await vcs[7].solve();
-      expect(vcs[7].result().status).to.be.eql("sat");
-    });
-    
-  });
-  
-  describe("simple steps", () => {
-    
-    const code = (() => {
-      let i = 0;
-      assert(i < 1);
-      i = 3;
-      assert(i < 2);
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
-
-    it("finds all verification conditions", () => {
-      expect(vcs).to.have.length(2);
-    });
-    
-    it("verifies first assertion", async () => {
-      expect(vcs[0].description).to.be.eql("assert:\n(i < 1)");
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-    });
-
-    it("does not verify second assertion", async () => {
-      expect(vcs[1].description).to.be.eql("assert:\n(i < 2)");
-      await vcs[1].solve();
-      expect(vcs[1].result().status).to.be.eql("unsat");
-    });
-    
-  });
-  
-  describe("loop", () => {
-    
-    const code = (() => {
-      let i = 0;
-
-      while (i < 5) {
-        invariant(i <= 5);
+      let i = 0, s = 0;
+      while (i < n) {
+        invariant(i <= n);
+        invariant(s == (i + 1) * i / 2);
         i++;
+        s = s + i;
       }
+      return s;
       
-      assert(i === 5);
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
-
-    it("finds all verification conditions", () => {
-      expect(vcs).to.have.length(3);
-    });
-    
-    it("invariant holds on entry", async () => {
-      expect(vcs[0].description).to.be.eql("invariant on entry:\n(i <= 5)");
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-    });
-    
-    it("invariant maintained by loop", async () => {
-      expect(vcs[1].description).to.be.eql("invariant maintained:\n(i <= 5)");
-      await vcs[1].solve();
-      expect(vcs[1].result().status).to.be.eql("sat");
-    });
-
-    it("results in final state", async () => {
-      expect(vcs[2].description).to.be.eql("assert:\n(i === 5)");
-      await vcs[2].solve();
-      expect(vcs[2].result().status).to.be.eql("sat");
-    });
-    
+      ensures(sumTo(n) == (n + 1) * n / 2);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
   });
+
+  sat("sumTo:\ninvariant on entry:\n(i <= n)");
+  sat("sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))");
+  sat("sumTo:\ninvariant maintained:\n(i <= n)");
+  sat("sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))");
+  sat("sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))");
+});
+
+
+describe("global call", () => {
   
-  describe("sum", () => {
-    
-    const code = (() => {
-      function sumTo(n) {
-        requires(typeof n == "number");
-        requires(n >= 0);
-        
-        let i = 0, s = 0;
-        while (i < n) {
-          invariant(i <= n);
-          invariant(s == (i + 1) * i / 2);
-          i++;
-          s = s + i;
-        }
-        return s;
-        
-        ensures(sumTo(n) == (n + 1) * n / 2);
-      }
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
+  const code = (() => {
+    function inc(n) {
+      requires(typeof(n) == "number");
+      return n + 1;
+      ensures(inc(n) > n);
+    }
 
-    it("finds all verification conditions", () => {
-      expect(vcs).to.have.length(5);
-    });
-    
-    it("bound invariant holds on loop entry", async () => {
-      expect(vcs[0].description).to.be.eql("sumTo:\ninvariant on entry:\n(i <= n)");
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-    });
-    
-    it("equality invariant holds on loop entry", async () => {
-      expect(vcs[1].description).to.be.eql("sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))");
-      await vcs[1].solve();
-      expect(vcs[1].result().status).to.be.eql("sat");
-    });
-    
-    it("counter invariant maintained by loop", async () => {
-      expect(vcs[2].description).to.be.eql("sumTo:\ninvariant maintained:\n(i <= n)");
-      await vcs[2].solve();
-      expect(vcs[2].result().status).to.be.eql("sat");
-    });
-
-    it("equality invariant maintained by loop", async () => {
-      expect(vcs[3].description).to.be.eql("sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))");
-      await vcs[3].solve();
-      expect(vcs[3].result().status).to.be.eql("sat");
-    });
-
-    it("verifies post condition", async () => {
-      expect(vcs[4].description).to.be.eql("sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))");
-      await vcs[4].solve();
-      expect(vcs[4].result().status).to.be.eql("sat");
-    });
-
+    let i = 3;
+    let j = inc(i);
+    assert(j > 3);
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
   });
+
+  sat('inc:\nrequires:\n(typeof(n) == "number")');
+  sat("assert:\n(j > 3)");
+  sat("inc:\n(inc(n) > n)");
   
+});
+
+describe("inline global call", () => {
   
-  describe("calls in code", () => {
-    
-    const code = (() => {
-      function inc(n) {
-        requires(typeof(n) == "number");
-        return n + 1;
-        ensures(inc(n) > n);
-      }
+  const code = (() => {
+    function inc(n) {
+      return n + 1;
+    }
+    function inc2(n) {
+      return inc(inc(n));
+    }
 
-      let i = 3;
-      let j = inc(i);
-      assert(j > 3);
-    }).toString();
-    
-    let vcs: Array<VerificationCondition>;
-    
-    beforeEach(() => {
-      const t = verify(code.substring(14, code.length - 2));
-      if (!t) throw new Error("failed to find verification conditions");
-      vcs = t;
-    });
+    let i = 3;
+    let j = inc(i);
+    assert(j == 4);
+    let k = inc2(i);
+    assert(k == 5);
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
 
-    it("find all verification conditions", () => {
-      expect(vcs).to.have.length(2);
-    });
-    
-    it("verifies inc", async () => {
-      expect(vcs[0].description).to.be.eql("inc:\n(inc(n) > n)");
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-    });
-    
-    it("verifies precondition", async () => {
-      expect(vcs[0].description).to.be.eql('inc:\n(typeof(i) == "number")');
-      await vcs[0].solve();
-      expect(vcs[0].result().status).to.be.eql("sat");
-    });
-    
-    it("verifies assertion", async () => {
-      expect(vcs[1].description).to.be.eql("assert:\n(j > 3)");
-      await vcs[1].solve();
-      expect(vcs[1].result().status).to.be.eql("sat");
-    });
+  sat("assert:\n(j == 4)");
+  notest("assert:\n(k == 5)");
+});
 
+describe("post conditions global call", () => {
+  
+  const code = (() => {
+    function inc(n) {
+      requires(typeof(n) == "number");
+      return n + 1;
+      ensures(inc(n) > n);
+    }
+    function inc2(n) {
+      return inc(inc(n));
+    }
+
+    let i = 3;
+    let j = inc(i);
+    assert(j == 4);
+    let k = inc2(i);
+    assert(k >= 5);
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat('inc:\nrequires:\n(typeof(n) == "number")');
+  unsat('inc2:\ninc:\nrequires:\n(typeof(n) == "number")');
+  sat('assert:\n(j == 4)');
+  sat("assert:\n(k >= 5)");
+});
+
+describe("fibonacci increasing", () => {
+  
+  const code = (() => {
+    function fib(n) {
+      requires(typeof(n) == "number");
+      requires(n >= 0);
+      if (n <= 1) return 1;
+      return fib(n - 1) + fib(n - 2);
+      ensures(fib(n) >= n);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
+  sat('fib:\nfib:\nrequires:\n(n >= 0)');
+  sat('fib:\n(fib(n) >= n)');
+});
+
+describe("buggy fibonacci", () => {
+  
+  const code = (() => {
+    function fib(n) {
+      requires(typeof(n) == "number");
+      requires(n >= 0);
+      if (n <= 1) return n;
+      return fib(n - 1) + fib(n - 2);
+      ensures(fib(n) >= n);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
+  sat('fib:\nfib:\nrequires:\n(n >= 0)');
+  unsat('fib:\n(fib(n) >= n)');
+  it("returns counter-example", async () => {
+    await vcs[4].solve();
+    expect(vcs[4].getModel()).to.containSubset({
+      n: 2
+    });
   });
 });

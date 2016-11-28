@@ -96,7 +96,8 @@ export namespace JSyntax {
                                          params: Array<Identifier>;
                                          requires: Array<Expression>;
                                          ensures: Array<Expression>;
-                                         body: BlockStatement; }
+                                         body: BlockStatement;
+                                         freeVars: Array<string>; }
   export type TopLevel = VariableDeclaration
                        | BlockStatement
                        | ExpressionStatement
@@ -218,7 +219,8 @@ function topLevelAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.TopLevel> {
           type: "BlockStatement",
           body: flatMap(withoutPseudoCalls("requires",
                         withoutPseudoCalls("ensures", stmt.body.body)), statementAsJavaScript)
-        }
+        },
+        freeVars: []
       };
       fd.id.decl = { type: "Func", decl: fd };
       return [fd];
@@ -486,160 +488,168 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
   }
 }
 
-type Scope = { [varname: string]: JSyntax.Declaration };
-type Scopes = Array<Scope>;
-
-function defSymbol(scopes: Scopes, sym: JSyntax.Identifier, decl: JSyntax.Declaration) {
-  // TODO enable shadowing
-  for (let i = scopes.length - 1; i >= 0; i--) {
-    if (sym.name in scopes[i]) throw new Error(`${sym.name} already defined`);  
+class Scope {
+  func: JSyntax.FunctionDeclaration | null;
+  ids: { [varname: string]: JSyntax.Declaration } = {};
+  parent: Scope | null;
+  constructor(parent: Scope | null = null, fn: JSyntax.FunctionDeclaration | null = null) {
+    this.parent = parent;
+    this.func = fn;
   }
 
-  const last = scopes[scopes.length - 1];
-  if (sym.name in last) throw new Error(`${sym.name} already defined`);
-  last[sym.name] = decl;
-}
+  lookupDef(sym: string) {
+    if (sym in this.ids) throw new Error(`${sym} already defined`);
+    if (this.parent) this.parent.lookupDef(sym);
+  }
 
-function useSymbol(scopes: Scopes, sym: JSyntax.Identifier, write: boolean = false) {
-  function lookup(): JSyntax.Declaration {
-    for (let i = scopes.length - 1; i >= 0; i--) {
-      if (sym.name in scopes[i]) return scopes[i][sym.name];  
+  defSymbol(sym: JSyntax.Identifier, decl: JSyntax.Declaration) {
+    // TODO enable shadowing
+    this.lookupDef(sym.name);
+    this.ids[sym.name] = decl;
+  }
+
+  lookupUse(sym: string): JSyntax.Declaration {
+    if (sym in this.ids) return this.ids[sym];
+    if (this.parent) {
+      const decl = this.parent.lookupUse(sym);
+      if (this.func && !this.func.freeVars.includes(sym) && decl.type != "Func") { // a free variable
+        this.func.freeVars.push(sym);
+      }
+      return decl;
     }
     throw new Error("undefined variable " + sym);
   }
-  const decl = lookup();
-  sym.decl = decl;
-  switch (decl.type) {
-    case "Var":
-      decl.decl.id.refs.push(sym);
-      if (write) {
-        if (decl.decl.kind == "const") {
-          throw new Error("assignment to const");
+
+  useSymbol(sym: JSyntax.Identifier, write: boolean = false) {
+    const decl = this.lookupUse(sym.name);
+    sym.decl = decl;
+    switch (decl.type) {
+      case "Var":
+        decl.decl.id.refs.push(sym);
+        if (write) {
+          if (decl.decl.kind == "const") {
+            throw new Error("assignment to const");
+          }
+          decl.decl.id.isWrittenTo = true;
         }
-        decl.decl.id.isWrittenTo = true;
-      }
-      break;
-    case "Func":
-      decl.decl.id.refs.push(sym);
-      if (write) {
-        throw new Error("assignment to function declaration");
-      }
-      break;
-    case "Param":
-      decl.decl.refs.push(sym);
-      if (write) {
-        throw new Error("assignment to function parameter");
-      }
-      break;
+        break;
+      case "Func":
+        decl.decl.id.refs.push(sym);
+        if (write) {
+          throw new Error("assignment to function declaration");
+        }
+        break;
+      case "Param":
+        decl.decl.refs.push(sym);
+        if (write) {
+          throw new Error("assignment to function parameter");
+        }
+        break;
+    }
   }
 }
 
 function resolveProgram(prog: JSyntax.Program) {
-  const scopes: Scopes = [{}];
-  prog.body.forEach(stmt => resolveTopLevel(scopes, stmt));
-  prog.invariants.forEach(inv => resolveExpression(scopes, inv));
+  const root: Scope = new Scope();
+  prog.body.forEach(stmt => resolveTopLevel(root, stmt));
+  prog.invariants.forEach(inv => resolveExpression(root, inv));
 }
 
-function resolveTopLevel(scopes: Scopes, stmt: JSyntax.TopLevel) {
+function resolveTopLevel(scope: Scope, stmt: JSyntax.TopLevel) {
   if (stmt.type == "FunctionDeclaration") {
-    defSymbol(scopes, stmt.id, { type: "Func", decl: stmt });
-    scopes.push({});
-    stmt.params.forEach(p => defSymbol(scopes, p, { type: "Param", func: stmt, decl: p }));
-    stmt.requires.forEach(r => resolveExpression(scopes, r));
-    stmt.ensures.forEach(r => resolveExpression(scopes, r, true));
-    stmt.body.body.forEach(s => resolveStament(scopes, s));
-    scopes.pop();
+    const funScope = new Scope(scope, stmt);
+    funScope.defSymbol(stmt.id, { type: "Func", decl: stmt });
+    stmt.params.forEach(p => funScope.defSymbol(p, { type: "Param", func: stmt, decl: p }));
+    stmt.requires.forEach(r => resolveExpression(funScope, r));
+    stmt.ensures.forEach(r => resolveExpression(funScope, r, true));
+    stmt.body.body.forEach(s => resolveStament(funScope, s));
+    scope.defSymbol(stmt.id, { type: "Func", decl: stmt });
     return;
   }
-  return resolveStament(scopes, stmt); 
+  return resolveStament(scope, stmt); 
 }
 
-function resolveStament(scopes: Scopes, stmt: JSyntax.Statement) {
+function resolveStament(scope: Scope, stmt: JSyntax.Statement) {
   switch (stmt.type) {
     case "VariableDeclaration":
-      defSymbol(scopes, stmt.id, { type: "Var", decl: stmt });
-      resolveExpression(scopes, stmt.init);
+      scope.defSymbol(stmt.id, { type: "Var", decl: stmt });
+      resolveExpression(scope, stmt.init);
       break;
     case "BlockStatement":
-      scopes.push({});
-      stmt.body.forEach(s => resolveStament(scopes, s));
-      scopes.pop();
+      const blockScope = new Scope(scope);
+      stmt.body.forEach(s => resolveStament(blockScope, s));
       break;
     case "ExpressionStatement":
-      resolveExpression(scopes, stmt.expression);
+      resolveExpression(scope, stmt.expression);
       break;
     case "AssertStatement":
-      resolveExpression(scopes, stmt.expression);
+      resolveExpression(scope, stmt.expression);
       break;
     case "IfStatement":
-      resolveExpression(scopes, stmt.test);
-      scopes.push({});
-      stmt.consequent.body.forEach(s => resolveStament(scopes, s));
-      scopes.pop();
-      scopes.push({});
-      stmt.alternate.body.forEach(s => resolveStament(scopes, s));
-      scopes.pop();
+      resolveExpression(scope, stmt.test);
+      const thenScope = new Scope(scope);
+      stmt.consequent.body.forEach(s => resolveStament(thenScope, s));
+      const elseScope = new Scope(scope);
+      stmt.alternate.body.forEach(s => resolveStament(elseScope, s));
       break;
     case "ReturnStatement":
-      resolveExpression(scopes, stmt.argument);
+      resolveExpression(scope, stmt.argument);
       break;
     case "WhileStatement":
-      resolveExpression(scopes, stmt.test);
-      scopes.push({});
-      stmt.invariants.forEach(i => resolveExpression(scopes, i));
-      stmt.body.body.forEach(s => resolveStament(scopes, s));
-      scopes.pop();
+      resolveExpression(scope, stmt.test);
+      const loopScope = new Scope(scope);
+      stmt.invariants.forEach(i => resolveExpression(loopScope, i));
+      stmt.body.body.forEach(s => resolveStament(loopScope, s));
       break;
     case "DebuggerStatement":
       break;
   }
 }
 
-function resolveExpression(scopes: Scopes, expr: JSyntax.Expression, allowOld: boolean = false) {
+function resolveExpression(scope: Scope, expr: JSyntax.Expression, allowOld: boolean = false) {
   switch (expr.type) {
     case "Identifier":
-      useSymbol(scopes, expr);
+      scope.useSymbol(expr);
       break;
     case "OldIdentifier":
       if (!allowOld) throw new Error("old() is only allows in function post conditions");
-      useSymbol(scopes, expr.id);
+      scope.useSymbol(expr.id);
     case "Literal":
       break;
     case "ArrayExpression":
-      expr.elements.forEach(e => resolveExpression(scopes, e, allowOld));
+      expr.elements.forEach(e => resolveExpression(scope, e, allowOld));
       break;
     case "UnaryExpression":
-      resolveExpression(scopes, expr.argument, allowOld);
+      resolveExpression(scope, expr.argument, allowOld);
       break;
     case "BinaryExpression":
-      resolveExpression(scopes, expr.left, allowOld);
-      resolveExpression(scopes, expr.right, allowOld);
+      resolveExpression(scope, expr.left, allowOld);
+      resolveExpression(scope, expr.right, allowOld);
       break;
     case "LogicalExpression":
-      resolveExpression(scopes, expr.left, allowOld);
-      resolveExpression(scopes, expr.right, allowOld);
+      resolveExpression(scope, expr.left, allowOld);
+      resolveExpression(scope, expr.right, allowOld);
       break;
     case "ConditionalExpression":
-      resolveExpression(scopes, expr.test, allowOld);
-      resolveExpression(scopes, expr.consequent, allowOld);
-      resolveExpression(scopes, expr.alternate, allowOld);
+      resolveExpression(scope, expr.test, allowOld);
+      resolveExpression(scope, expr.consequent, allowOld);
+      resolveExpression(scope, expr.alternate, allowOld);
       break;
     case "AssignmentExpression":
-      resolveExpression(scopes, expr.right, allowOld);
-      useSymbol(scopes, expr.left, true);
+      resolveExpression(scope, expr.right, allowOld);
+      scope.useSymbol(expr.left, true);
       break;
     case "SequenceExpression":
-      expr.expressions.forEach(e => resolveExpression(scopes, e, allowOld));
+      expr.expressions.forEach(e => resolveExpression(scope, e, allowOld));
       break;
     case "CallExpression":
-      expr.arguments.forEach(e => resolveExpression(scopes, e, allowOld));
-      resolveExpression(scopes, expr.callee);
+      expr.arguments.forEach(e => resolveExpression(scope, e, allowOld));
+      resolveExpression(scope, expr.callee);
       break;
     case "FunctionExpression":
-      scopes.push({});
-      expr.params.forEach(p => defSymbol(scopes, p, { type: "Param", func: expr, decl: p }));
-      expr.body.forEach(s => resolveStament(scopes, s));
-      scopes.pop();
+      const funScope = new Scope(scope);
+      expr.params.forEach(p => funScope.defSymbol(p, { type: "Param", func: expr, decl: p }));
+      expr.body.forEach(s => resolveStament(funScope, s));
       break;
   }
 }
@@ -790,7 +800,8 @@ export function checkInvariants(whl: JSyntax.WhileStatement): JSyntax.FunctionDe
     requires: [],
     ensures: [],
     body: { type: "BlockStatement", body:
-      whl.invariants.map((inv): JSyntax.Statement => ({ type: "AssertStatement", expression: inv })).concat(whl.body.body)}
+      whl.invariants.map((inv): JSyntax.Statement => ({ type: "AssertStatement", expression: inv })).concat(whl.body.body)},
+    freeVars: []
   }
 }
 
@@ -805,6 +816,7 @@ export function checkPreconditions(f: JSyntax.FunctionDeclaration): JSyntax.Func
       type: "BlockStatement",
       body: f.requires.map((r): JSyntax.Statement =>
         ({ type: "AssertStatement", expression: r })).concat(f.body.body)
-    }
+    },
+    freeVars: f.freeVars
   };
 }
