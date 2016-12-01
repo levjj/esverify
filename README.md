@@ -1,7 +1,7 @@
-lively.verify
-=============
+esverify
+========
 
-Experimental support for interactively verifying JavaScript
+Verification System for ECMAScript/JavaScript
 
 Example
 -------
@@ -14,6 +14,7 @@ function max(a, b) {
   requires(typeof(a) == "number");
   requires(typeof(b) == "number");
   ensures(max(a,b) >= a);
+
   if (a >= b) {
     return a;
   } else {
@@ -23,8 +24,7 @@ function max(a, b) {
 ```
 
 These expressions will then be statically verified with respect to the function
-body with an SMT solver. A tiny hand-written example of an SMT constraint
-system that verified the above function is given [here](max-by-hand.smt).
+body with an SMT solver.
 
 Interactive Tools
 -----------------

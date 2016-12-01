@@ -1,29 +1,23 @@
 var webpack = require('webpack'),
-    path = require('path'),
-    yargs = require('yargs');
+    path = require('path');
 
-var libraryName = 'lively.verify',
-    plugins = [],
-    outputFile;
+var libraryName = 'esverify';
 
-if (yargs.argv.p) {
-  plugins.push(new webpack.optimize.UglifyJsPlugin({minimize: true}));
-  outputFile = libraryName + '.min.js';
-} else {
-  outputFile = libraryName + '.js';
-}
-
-var config = {
+module.exports = {
   entry: [
-    __dirname + '/index.ts'
+    __dirname + '/index'
   ],
   devtool: 'source-map',
   output: {
-    path: path.join(__dirname, '/dist'),
-    filename: outputFile,
+    path: __dirname,
+    filename: libraryName + '.js',
     library: libraryName,
     libraryTarget: 'umd',
     umdNamedDefine: true
+  },
+  externals: {
+    esprima: 'commonjs esprima',
+    child_process: 'commonjs child_process'
   },
   module: {
     loaders: [
@@ -32,9 +26,6 @@ var config = {
   },
   resolve: {
     root: path.resolve('./src'),
-    extensions: ['', '.js', '.ts']
-  },
-  plugins: plugins
+    extensions: ['.js', '.ts']
+  }
 };
-
-module.exports = config;
