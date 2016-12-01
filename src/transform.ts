@@ -184,7 +184,7 @@ function phi(cond: ASyntax.Proposition, left: Transform,
       } else {
         nvars[v] = left.vars[v];
       }
-    } else if (v in left) {
+    } else if (v in left.vars) {
       nvars[v] = left.vars[v];
     } else {
       nvars[v] = right.vars[v];

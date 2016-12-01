@@ -362,3 +362,63 @@ describe("buggy fibonacci", () => {
     });
   });
 });
+
+describe("fibonacci increasing (external proof)", () => {
+  
+  const code = (() => {
+    function fib(n) {
+      if (n <= 1) return 1;
+      return fib(n - 1) + fib(n - 2);
+    }
+
+    function fibInc(n) {
+      requires(typeof(n) == "number");
+      requires(n >= 0);
+      fib(n);
+      if (n >= 2) {
+        fibInc(n - 1); fib(n - 1);
+        fibInc(n - 2); fib(n - 2);
+      }
+      ensures(fib(n) >= n);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat('fibInc:\nfibInc:\nrequires:\n(typeof(n) == "number")');
+  sat('fibInc:\nfibInc:\nrequires:\n(n >= 0)');
+  sat('fibInc:\n(fib(n) >= n)');
+});
+
+describe.skip("higher-order functions", () => {
+  
+  const code = (() => {
+    function map(arr. f) {
+      if (arr.length == 0) return [];
+      return [f(arr[0])].concat(map(arr.slice(1), f));
+    }
+
+    function mapLen(arr, f) {
+      requires(arr.constructor == Array);
+      map(arr, f);
+      if (arr.length > 0) {
+        mapLen(arr.slice(1));
+        map(arr.slice(1), f);
+      }
+      ensures(map(f, arr).length == arr.length);
+    }
+  }).toString();
+  
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error("failed to find verification conditions");
+    vcs = t;
+  });
+
+  sat('mapLen:\nmapLen:\nrequires:\n(arr.constructor == Array)');
+  sat('mapLen:\n(map(f, arr).length == arr.length)');
+});
