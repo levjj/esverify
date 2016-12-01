@@ -1,39 +1,44 @@
 {
-  "name": "lively.verify",
-  "version": "0.0.1",
-  "description": "Experimental support for interactively verifying JavaScript",
+  "name": "esverify",
+  "version": "0.0.2",
+  "description": "ECMAScript verification with SMT solvers",
   "author": "Christopher Schuster <cs@livoris.net>",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/LivelyKernel/lively.verify/issues"
+  "main": "dist/esverify.js",
+  "files": [
+    "bin",
+    "esverify.js"
+  ],
+  "bin": {
+    "esverify": "./bin/esverify.js"
   },
-  "homepage": "https://github.com/LivelyKernel/lively.verify#readme",
-  "main": "dist/lively.verify.min.js",
+  "engines": {
+    "node": ">=4"
+  },
+  "bugs": {
+    "url": "https://github.com/levjj/esverify/issues"
+  },
+  "homepage": "https://github.com/levjj/esverify#readme",
   "scripts": {
     "lint": "eslint --ext .js,.ts src tests/*.ts",
-    "build": "webpack --debug; webpack -p",
+    "build": "webpack --debug",
     "test": "TS_NODE_DISABLE_WARNINGS=true mocha --compilers ts:ts-node/register tests/*.ts"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LivelyKernel/lively.verify.git"
+    "url": "git+https://github.com/levjj/esverify.git"
   },
   "dependencies": {
     "esprima": "^3.1.1",
     "isomorphic-fetch": "^2.2.1"
   },
   "devDependencies": {
-    "browserify": "^13.0.1",
     "chai": "^3.5.0",
     "chai-subset": "^1.3.0",
     "mocha": "^3.1.2",
     "ts-loader": "^1.2.0",
     "ts-node": "^1.7.0",
-    "tslint": "^3.15.1",
-    "tslint-loader": "^2.1.5",
-    "typescript": "^2.0.9",
-    "typescript-eslint-parser": "^1.0.0",
-    "webpack": "^1.13.3",
-    "yargs": "^6.3.0"
+    "typescript": "^2.0.10",
+    "webpack": "^1.13.3"
   }
 }

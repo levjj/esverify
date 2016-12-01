@@ -1,16 +1,19 @@
+/* eslint no-unused-expressions:0 */
+/* global describe, it, expect */
+
 /// <reference path="../typings/mocha/mocha.d.ts" />
 /// <reference path="../typings/chai/chai.d.ts" />
-import { expect, use } from "chai";
-import * as chaiSubset from "chai-subset";
-use(chaiSubset);
+import { expect, use } from 'chai';
+import * as chaiSubset from 'chai-subset';
+import { verify } from '../index';
+import VerificationCondition from '../src/vc';
 
-import { verify } from "../index";
-import VerificationCondition from "../src/vc";
+use(chaiSubset);
 
 let vcs: Array<VerificationCondition>;
 function helper(description: string, expected: string, debug: boolean = false) {
   const body = async () => {
-    const vc = vcs.find(vc => vc.description == description);
+    const vc = vcs.find(v => v.description === description);
     expect(vc).to.not.be.undefined;
     if (!vc) throw new Error();
     await vc.solve();
@@ -18,26 +21,26 @@ function helper(description: string, expected: string, debug: boolean = false) {
     expect(vc.result().status).to.be.eql(expected);
   };
   if (debug) {
-    it.only(description.replace(/\n/g, " "), body);
+    it.only(description.replace(/\n/g, ' '), body);
   } else {
-    it(description.replace(/\n/g, " "), body);
+    it(description.replace(/\n/g, ' '), body);
   }
 }
 
-function sat(description: string) { helper(description, "sat"); }
-function unsat(description: string) { helper(description, "unsat"); }
-function notest(description: string) { helper(description, "notest"); }
+function sat(description: string) { helper(description, 'sat'); }
+function unsat(description: string) { helper(description, 'unsat'); }
+function notest(description: string) { helper(description, 'notest'); }
 
-function satDebug(description: string) { helper(description, "sat", true); }
-function unsatDebug(description: string) { helper(description, "unsat", true); }
-function notestDebug(description: string) { helper(description, "notest", true); }
+function satDebug(description: string) { helper(description, 'sat', true); }
+function unsatDebug(description: string) { helper(description, 'unsat', true); }
+function notestDebug(description: string) { helper(description, 'notest', true); }
 
-describe("max()", () => {
-  
+describe('max()', () => {
+
   const code = (() => {
     function max(a, b) {
-      requires(typeof(a) == "number");
-      requires(typeof(b) == "number");
+      requires(typeof(a) == 'number');
+      requires(typeof(b) == 'number');
       if (a >= b) {
         return a;
       } else {
@@ -46,29 +49,29 @@ describe("max()", () => {
       ensures(max(a, b) >= a);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  it("finds a verification conditions", () => {
+  it('finds a verification conditions', () => {
     expect(vcs).to.have.length(1);
   });
-  
-  it("has a description", async () => {
-    expect(vcs[0].description).to.be.eql("max:\n(max(a, b) >= a)");
+
+  it('has a description', async () => {
+    expect(vcs[0].description).to.be.eql('max:\n(max(a, b) >= a)');
   });
 
-  sat("max:\n(max(a, b) >= a)");
+  sat('max:\n(max(a, b) >= a)');
 });
 
-describe("max() with missing pre", () => {
-  
+describe('max() with missing pre', () => {
+
   const code = (() => {
     function max(a, b) {
-      requires(typeof(b) == "number");
+      requires(typeof(b) == 'number');
       if (a >= b) {
         return a;
       } else {
@@ -77,16 +80,16 @@ describe("max() with missing pre", () => {
       ensures(max(a, b) >= a);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  notest("max:\n(max(a, b) >= a)");
-  
-  it("returns counter-example", async () => {
+  notest('max:\n(max(a, b) >= a)');
+
+  it('returns counter-example', async () => {
     await vcs[0].solve();
     expect(vcs[0].getModel()).to.containSubset({
       a: false,
@@ -95,61 +98,61 @@ describe("max() with missing pre", () => {
   });
 });
 
-describe("counter", () => {
-  
+describe('counter', () => {
+
   const code = (() => {
     let counter = 0;
-    invariant(typeof counter == "number");
+    invariant(typeof counter == 'number');
     invariant(counter >= 0);
-    
+
     function increment() {
       counter++;
       ensures(counter > old(counter));
     }
-    
+
     function decrement() {
       if (counter > 0) counter--;
       ensures(old(counter) > 0 ? counter < old(counter) : counter == old(counter));
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
   sat('initially:\n(typeof(counter) == "number")');
-  sat("initially:\n(counter >= 0)");
-  sat("increment:\n(counter > old(counter))");
+  sat('initially:\n(counter >= 0)');
+  sat('increment:\n(counter > old(counter))');
   sat('increment:\n(typeof(counter) == "number")');
-  sat("increment:\n(counter >= 0)");
-  sat("decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))");
+  sat('increment:\n(counter >= 0)');
+  sat('decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))');
   sat('decrement:\n(typeof(counter) == "number")');
-  sat("decrement:\n(counter >= 0)");
+  sat('decrement:\n(counter >= 0)');
 });
 
-describe("simple steps", () => {
-  
+describe('simple steps', () => {
+
   const code = (() => {
     let i = 0;
     assert(i < 1);
     i = 3;
     assert(i < 2);
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  sat("assert:\n(i < 1)");
-  unsat("assert:\n(i < 2)");
+  sat('assert:\n(i < 1)');
+  unsat('assert:\n(i < 2)');
 });
 
-describe("loop", () => {
-  
+describe('loop', () => {
+
   const code = (() => {
     let i = 0;
 
@@ -157,49 +160,49 @@ describe("loop", () => {
       invariant(i <= 5);
       i++;
     }
-    
+
     assert(i === 5);
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  sat("invariant on entry:\n(i <= 5)");
-  sat("invariant maintained:\n(i <= 5)");
-  sat("assert:\n(i === 5)");
+  sat('invariant on entry:\n(i <= 5)');
+  sat('invariant maintained:\n(i <= 5)');
+  sat('assert:\n(i === 5)');
 });
 
-describe("loop with missing invariant", () => {
-  
+describe('loop with missing invariant', () => {
+
   const code = (() => {
     let i = 0;
 
     while (i < 5) {
       i++;
     }
-    
+
     assert(i === 5);
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  notest("assert:\n(i === 5)");
+  notest('assert:\n(i === 5)');
 });
 
-describe("sum", () => {
-  
+describe('sum', () => {
+
   const code = (() => {
     function sumTo(n) {
-      requires(typeof n == "number");
+      requires(typeof n == 'number');
       requires(n >= 0);
-      
+
       let i = 0, s = 0;
       while (i < n) {
         invariant(i <= n);
@@ -208,30 +211,30 @@ describe("sum", () => {
         s = s + i;
       }
       return s;
-      
+
       ensures(sumTo(n) == (n + 1) * n / 2);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  sat("sumTo:\ninvariant on entry:\n(i <= n)");
-  sat("sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))");
-  sat("sumTo:\ninvariant maintained:\n(i <= n)");
-  sat("sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))");
-  sat("sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))");
+  sat('sumTo:\ninvariant on entry:\n(i <= n)');
+  sat('sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))');
+  sat('sumTo:\ninvariant maintained:\n(i <= n)');
+  sat('sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))');
+  sat('sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))');
 });
 
 
-describe("global call", () => {
-  
+describe('global call', () => {
+
   const code = (() => {
     function inc(n) {
-      requires(typeof(n) == "number");
+      requires(typeof(n) == 'number');
       return n + 1;
       ensures(inc(n) > n);
     }
@@ -240,21 +243,21 @@ describe("global call", () => {
     let j = inc(i);
     assert(j > 3);
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
   sat('inc:\nrequires:\n(typeof(n) == "number")');
-  sat("assert:\n(j > 3)");
-  sat("inc:\n(inc(n) > n)");
-  
+  sat('assert:\n(j > 3)');
+  sat('inc:\n(inc(n) > n)');
+
 });
 
-describe("inline global call", () => {
-  
+describe('inline global call', () => {
+
   const code = (() => {
     function inc(n) {
       return n + 1;
@@ -269,22 +272,22 @@ describe("inline global call", () => {
     let k = inc2(i);
     assert(k == 5);
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
-  sat("assert:\n(j == 4)");
-  notest("assert:\n(k == 5)");
+  sat('assert:\n(j == 4)');
+  notest('assert:\n(k == 5)');
 });
 
-describe("post conditions global call", () => {
-  
+describe('post conditions global call', () => {
+
   const code = (() => {
     function inc(n) {
-      requires(typeof(n) == "number");
+      requires(typeof(n) == 'number');
       return n + 1;
       ensures(inc(n) > n);
     }
@@ -298,34 +301,34 @@ describe("post conditions global call", () => {
     let k = inc2(i);
     assert(k >= 5);
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
   sat('inc:\nrequires:\n(typeof(n) == "number")');
   unsat('inc2:\ninc:\nrequires:\n(typeof(n) == "number")');
   sat('assert:\n(j == 4)');
-  sat("assert:\n(k >= 5)");
+  sat('assert:\n(k >= 5)');
 });
 
-describe("fibonacci increasing", () => {
-  
+describe('fibonacci increasing', () => {
+
   const code = (() => {
     function fib(n) {
-      requires(typeof(n) == "number");
+      requires(typeof(n) == 'number');
       requires(n >= 0);
       if (n <= 1) return 1;
       return fib(n - 1) + fib(n - 2);
       ensures(fib(n) >= n);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
@@ -334,28 +337,28 @@ describe("fibonacci increasing", () => {
   sat('fib:\n(fib(n) >= n)');
 });
 
-describe("buggy fibonacci", () => {
-  
+describe('buggy fibonacci', () => {
+
   const code = (() => {
     function fib(n) {
-      requires(typeof(n) == "number");
+      requires(typeof(n) == 'number');
       requires(n >= 0);
       if (n <= 1) return n;
       return fib(n - 1) + fib(n - 2);
       ensures(fib(n) >= n);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
   sat('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
   sat('fib:\nfib:\nrequires:\n(n >= 0)');
   unsat('fib:\n(fib(n) >= n)');
-  it("returns counter-example", async () => {
+  it('returns counter-example', async () => {
     await vcs[4].solve();
     expect(vcs[4].getModel()).to.containSubset({
       n: 2
@@ -363,8 +366,8 @@ describe("buggy fibonacci", () => {
   });
 });
 
-describe("fibonacci increasing (external proof)", () => {
-  
+describe('fibonacci increasing (external proof)', () => {
+
   const code = (() => {
     function fib(n) {
       if (n <= 1) return 1;
@@ -372,7 +375,7 @@ describe("fibonacci increasing (external proof)", () => {
     }
 
     function fibInc(n) {
-      requires(typeof(n) == "number");
+      requires(typeof(n) == 'number');
       requires(n >= 0);
       fib(n);
       if (n >= 2) {
@@ -382,10 +385,10 @@ describe("fibonacci increasing (external proof)", () => {
       ensures(fib(n) >= n);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 
@@ -394,10 +397,10 @@ describe("fibonacci increasing (external proof)", () => {
   sat('fibInc:\n(fib(n) >= n)');
 });
 
-describe.skip("higher-order functions", () => {
-  
+describe.skip('higher-order functions', () => {
+
   const code = (() => {
-    function map(arr. f) {
+    function map(arr, f) {
       if (arr.length == 0) return [];
       return [f(arr[0])].concat(map(arr.slice(1), f));
     }
@@ -412,10 +415,10 @@ describe.skip("higher-order functions", () => {
       ensures(map(f, arr).length == arr.length);
     }
   }).toString();
-  
+
   beforeEach(() => {
     const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error("failed to find verification conditions");
+    if (!t) throw new Error('failed to find verification conditions');
     vcs = t;
   });
 

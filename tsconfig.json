@@ -10,7 +10,7 @@
     "outDir": "build",
     "target": "es6",
     "strictNullChecks": true,
-    "lib": ["es2016"]  
+    "lib": ["es2016"]
   },
   "exclude": [
     "node_modules"

@@ -5,15 +5,13 @@ module.exports = {
     sourceType: 'module'
   },
   extends: 'airbnb-base',
-  rules: {
-    'no-debugger': process.env.NODE_ENV === 'production' ? 2 : 0
-  },
   settings: {
     'import/resolver': {
       'webpack': {
         'config': 'webpack.config.js'
       }
-    }
+    },
+    'spaced-comment': { markers: ['/'] },
   },
   ecmaFeatures: {
     "modules": true
@@ -25,6 +23,8 @@ module.exports = {
     es6: true
   },
   rules: {
-    quotes: [2, "single"]
+    'no-debugger': process.env.NODE_ENV === 'production' ? 2 : 0,
+    'quotes': [1, 'single'],
+    'import/extensions': [2, 'never']
   }
 }
