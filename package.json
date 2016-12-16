@@ -38,7 +38,7 @@
     "mocha": "^3.1.2",
     "ts-loader": "^1.2.0",
     "ts-node": "^1.7.0",
-    "typescript": "^2.0.10",
+    "typescript": "^2.1.4",
     "webpack": "^1.13.3"
   }
 }
