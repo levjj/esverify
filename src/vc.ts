@@ -17,10 +17,10 @@ type Model = { [varName: string]: any };
 
 type Result = { status: "unverified" }
             | { status: "inprogress" }
-            | { status: "sat" }
-            | { status: "unsat", model: Model, error: Error }
-            | { status: "failed", error: Error }
-            | { status: "notest", model: Model };
+            | { status: "verified" }
+            | { status: "incorrect", model: Model, error: Error }
+            | { status: "error", error: Error }
+            | { status: "tested", model: Model };
 
 export default class VerificationCondition {
   vars: Vars;
@@ -46,7 +46,7 @@ export default class VerificationCondition {
     this._smtout = null;
     this._result = { status: "unverified" };
   }
-  
+
   smtInput(): SMTInput {
     const declarations = varsToSMT(this.vars),
           post = `(assert (not ${propositionToSMT(this.post)}))`;
@@ -69,7 +69,7 @@ ${post}
 (check-sat)
 (get-value (${Object.keys(this.freeVars).map(v => `${v}_${this.freeVars[v]}`).join(' ')}))`;
   }
-  
+
   getModel(): Model {
     let res = this._smtout;
     if (!res || !res.startsWith("sat")) throw new Error("no model available");
@@ -103,7 +103,7 @@ ${oldValues.join("")}
 
 ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   }
-  
+
   runTest(m: Model = this.getModel()) {
     eval(this.testCode());
   }
@@ -111,27 +111,27 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   result(): Result {
     return this._result;
   }
-  
+
   async solve(): Promise<Result> {
     this._result = { status: "inprogress" };
     try {
       this._smtout = await (typeof fetch === "undefined" ? this.solveLocal() : this.solveRequest());
     } catch (e) {
-      this._result = { status: "failed", error: e };
+      this._result = { status: "error", error: e };
       return this._result;
     }
     if (this._smtout && this._smtout.startsWith("sat")) {
       const m = this.getModel();
       try {
         this.runTest(m);
-        this._result = { status: "notest", model: m };
+        this._result = { status: "tested", model: m };
       } catch (e) {
-        this._result = { status: "unsat", model: m, error: e };
+        this._result = { status: "incorrect", model: m, error: e };
       }
     } else if (this._smtout && this._smtout.startsWith("unsat")) {
-      this._result = { status: "sat" };
+      this._result = { status: "verified" };
     } else {
-      this._result = { status: "failed", error: new Error("unexpected: " + this._smtout) };
+      this._result = { status: "error", error: new Error("unexpected: " + this._smtout) };
     }
     return this._result;
   }
@@ -152,7 +152,7 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   }
 
   async solveRequest(): Promise<string> {
-    const req = await fetch("/nodejs/Z3server/", {
+    const req = await fetch("/z3", {
       method: "POST",
       body: this.smtInput()
     });

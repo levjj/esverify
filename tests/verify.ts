@@ -27,13 +27,13 @@ function helper(description: string, expected: string, debug: boolean = false) {
   }
 }
 
-function sat(description: string) { helper(description, 'sat'); }
-function unsat(description: string) { helper(description, 'unsat'); }
-function notest(description: string) { helper(description, 'notest'); }
+function verified(description: string) { helper(description, 'verified'); }
+function incorrect(description: string) { helper(description, 'incorrect'); }
+function tested(description: string) { helper(description, 'tested'); }
 
-function satDebug(description: string) { helper(description, 'sat', true); }
-function unsatDebug(description: string) { helper(description, 'unsat', true); }
-function notestDebug(description: string) { helper(description, 'notest', true); }
+function verifiedDebug(description: string) { helper(description, 'verified', true); }
+function incorrectDebug(description: string) { helper(description, 'incorrect', true); }
+function testedDebug(description: string) { helper(description, 'tested', true); }
 
 describe('max()', () => {
 
@@ -64,7 +64,7 @@ describe('max()', () => {
     expect(vcs[0].description).to.be.eql('max:\n(max(a, b) >= a)');
   });
 
-  sat('max:\n(max(a, b) >= a)');
+  verified('max:\n(max(a, b) >= a)');
 });
 
 describe('max() with missing pre', () => {
@@ -87,7 +87,7 @@ describe('max() with missing pre', () => {
     vcs = t;
   });
 
-  notest('max:\n(max(a, b) >= a)');
+  tested('max:\n(max(a, b) >= a)');
 
   it('returns counter-example', async () => {
     await vcs[0].solve();
@@ -122,14 +122,14 @@ describe('counter', () => {
     vcs = t;
   });
 
-  sat('initially:\n(typeof(counter) == "number")');
-  sat('initially:\n(counter >= 0)');
-  sat('increment:\n(counter > old(counter))');
-  sat('increment:\n(typeof(counter) == "number")');
-  sat('increment:\n(counter >= 0)');
-  sat('decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))');
-  sat('decrement:\n(typeof(counter) == "number")');
-  sat('decrement:\n(counter >= 0)');
+  verified('initially:\n(typeof(counter) == "number")');
+  verified('initially:\n(counter >= 0)');
+  verified('increment:\n(counter > old(counter))');
+  verified('increment:\n(typeof(counter) == "number")');
+  verified('increment:\n(counter >= 0)');
+  verified('decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))');
+  verified('decrement:\n(typeof(counter) == "number")');
+  verified('decrement:\n(counter >= 0)');
 });
 
 describe('simple steps', () => {
@@ -147,8 +147,8 @@ describe('simple steps', () => {
     vcs = t;
   });
 
-  sat('assert:\n(i < 1)');
-  unsat('assert:\n(i < 2)');
+  verified('assert:\n(i < 1)');
+  incorrect('assert:\n(i < 2)');
 });
 
 describe('loop', () => {
@@ -170,9 +170,9 @@ describe('loop', () => {
     vcs = t;
   });
 
-  sat('invariant on entry:\n(i <= 5)');
-  sat('invariant maintained:\n(i <= 5)');
-  sat('assert:\n(i === 5)');
+  verified('invariant on entry:\n(i <= 5)');
+  verified('invariant maintained:\n(i <= 5)');
+  verified('assert:\n(i === 5)');
 });
 
 describe('loop with missing invariant', () => {
@@ -193,7 +193,7 @@ describe('loop with missing invariant', () => {
     vcs = t;
   });
 
-  notest('assert:\n(i === 5)');
+  tested('assert:\n(i === 5)');
 });
 
 describe('sum', () => {
@@ -222,11 +222,11 @@ describe('sum', () => {
     vcs = t;
   });
 
-  sat('sumTo:\ninvariant on entry:\n(i <= n)');
-  sat('sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))');
-  sat('sumTo:\ninvariant maintained:\n(i <= n)');
-  sat('sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))');
-  sat('sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))');
+  verified('sumTo:\ninvariant on entry:\n(i <= n)');
+  verified('sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))');
+  verified('sumTo:\ninvariant maintained:\n(i <= n)');
+  verified('sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))');
+  verified('sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))');
 });
 
 
@@ -250,9 +250,9 @@ describe('global call', () => {
     vcs = t;
   });
 
-  sat('inc:\nrequires:\n(typeof(n) == "number")');
-  sat('assert:\n(j > 3)');
-  sat('inc:\n(inc(n) > n)');
+  verified('inc:\nrequires:\n(typeof(n) == "number")');
+  verified('assert:\n(j > 3)');
+  verified('inc:\n(inc(n) > n)');
 
 });
 
@@ -279,8 +279,8 @@ describe('inline global call', () => {
     vcs = t;
   });
 
-  sat('assert:\n(j == 4)');
-  notest('assert:\n(k == 5)');
+  verified('assert:\n(j == 4)');
+  tested('assert:\n(k == 5)');
 });
 
 describe('post conditions global call', () => {
@@ -308,10 +308,10 @@ describe('post conditions global call', () => {
     vcs = t;
   });
 
-  sat('inc:\nrequires:\n(typeof(n) == "number")');
-  unsat('inc2:\ninc:\nrequires:\n(typeof(n) == "number")');
-  sat('assert:\n(j == 4)');
-  sat('assert:\n(k >= 5)');
+  verified('inc:\nrequires:\n(typeof(n) == "number")');
+  incorrect('inc2:\ninc:\nrequires:\n(typeof(n) == "number")');
+  verified('assert:\n(j == 4)');
+  verified('assert:\n(k >= 5)');
 });
 
 describe('fibonacci increasing', () => {
@@ -332,9 +332,9 @@ describe('fibonacci increasing', () => {
     vcs = t;
   });
 
-  sat('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
-  sat('fib:\nfib:\nrequires:\n(n >= 0)');
-  sat('fib:\n(fib(n) >= n)');
+  verified('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
+  verified('fib:\nfib:\nrequires:\n(n >= 0)');
+  verified('fib:\n(fib(n) >= n)');
 });
 
 describe('buggy fibonacci', () => {
@@ -355,9 +355,9 @@ describe('buggy fibonacci', () => {
     vcs = t;
   });
 
-  sat('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
-  sat('fib:\nfib:\nrequires:\n(n >= 0)');
-  unsat('fib:\n(fib(n) >= n)');
+  verified('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
+  verified('fib:\nfib:\nrequires:\n(n >= 0)');
+  incorrect('fib:\n(fib(n) >= n)');
   it('returns counter-example', async () => {
     await vcs[4].solve();
     expect(vcs[4].getModel()).to.containSubset({
@@ -392,9 +392,9 @@ describe('fibonacci increasing (external proof)', () => {
     vcs = t;
   });
 
-  sat('fibInc:\nfibInc:\nrequires:\n(typeof(n) == "number")');
-  sat('fibInc:\nfibInc:\nrequires:\n(n >= 0)');
-  sat('fibInc:\n(fib(n) >= n)');
+  verified('fibInc:\nfibInc:\nrequires:\n(typeof(n) == "number")');
+  verified('fibInc:\nfibInc:\nrequires:\n(n >= 0)');
+  verified('fibInc:\n(fib(n) >= n)');
 });
 
 describe.skip('higher-order functions', () => {
@@ -422,6 +422,6 @@ describe.skip('higher-order functions', () => {
     vcs = t;
   });
 
-  sat('mapLen:\nmapLen:\nrequires:\n(arr.constructor == Array)');
-  sat('mapLen:\n(map(f, arr).length == arr.length)');
+  verified('mapLen:\nmapLen:\nrequires:\n(arr.constructor == Array)');
+  verified('mapLen:\n(map(f, arr).length == arr.length)');
 });
