@@ -15,12 +15,12 @@ export type Vars = { [varName: string]: number; };  // latest assigned value
 
 type Model = { [varName: string]: any };
 
-type Result = { status: "unverified" }
-            | { status: "inprogress" }
-            | { status: "verified" }
-            | { status: "incorrect", model: Model, error: Error }
-            | { status: "error", error: Error }
-            | { status: "tested", model: Model };
+export type Result = { status: "unverified" }
+                   | { status: "inprogress" }
+                   | { status: "verified" }
+                   | { status: "incorrect", model: Model, error: Error }
+                   | { status: "error", error: Error }
+                   | { status: "tested", model: Model };
 
 export default class VerificationCondition {
   vars: Vars;
