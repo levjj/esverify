@@ -51,17 +51,29 @@ export default class VerificationCondition {
 
   smtInput(): SMTInput {
     const declarations = varsToSMT(this.vars),
-          post = `(assert (not ${propositionToSMT(this.post)}))`;
+          post = `(assert (not ${propositionToSMT(this.post)}))`,
+          fns1 = this.fns.filter(f => f.params.length == 1),
+          fns2 = this.fns.filter(f => f.params.length == 2);
     return this._smtin =
 `${preamble(this.fns.map(f => ({ fn: f.id.name, nfreevars: f.freeVars.length })))}
 
 ; function preconditions
-(define-fun pre ((f_0 JSVal) (arg_0 JSVal)) Bool${this.fns.map(f => `\n  (ite (is-jsfun-${f.id.name} f_0) ${propositionToSMT(transformPrecondition(f))}`)}
-  false${this.fns.map(f => ')')})
+(define-fun pre1 ((f_0 JSVal) (arg_0 JSVal)) Bool${fns1.map(f =>
+  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPrecondition(f))}`).join('')}
+  false${fns1.map(f => ')').join('')})
+
+(define-fun pre2 ((f_0 JSVal) (arg_0 JSVal) (arg_1 JSVal)) Bool${fns2.map(f =>
+  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPrecondition(f))}`).join('')}
+  false${fns2.map(f => ')').join('')})
 
 ; function postconditions
-(define-fun post ((f_0 JSVal) (arg_0 JSVal)) Bool${this.fns.map(f => `\n  (ite (is-jsfun-${f.id.name} f_0) ${propositionToSMT(transformPostcondition(f))}`)}
-  false${this.fns.map(f => ')')})
+(define-fun post1 ((f_0 JSVal) (arg_0 JSVal)) Bool${fns1.map(f =>
+  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPostcondition(f))}`).join('')}
+  false${fns1.map(f => ')').join('')})
+
+(define-fun post2 ((f_0 JSVal) (arg_0 JSVal) (arg_1 JSVal)) Bool${fns2.map(f =>
+  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPostcondition(f))}`).join('')}
+  false${fns2.map(f => ')').join('')})
 
 ; declarations
 ${declarations}

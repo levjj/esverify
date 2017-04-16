@@ -54,6 +54,13 @@ export namespace ASyntax {
   export interface Postcondition { type: "Postcondition";
                                    callee: Expression;
                                    args: Array<Expression>; }
+  export interface ForAll { type: "ForAll";
+                            callee: Expression;
+                            args: Array<string>;
+                            prop: Proposition; }
+  export interface CallTrigger { type: "CallTrigger";
+                                 callee: Expression;
+                                 args: Array<Expression>; }
   export type Proposition = Truthy
                           | And
                           | Or
@@ -62,7 +69,9 @@ export namespace ASyntax {
                           | True
                           | False
                           | Precondition
-                          | Postcondition;
+                          | Postcondition
+                          | ForAll
+                          | CallTrigger;
 }
 
 const unOpToSMT: {[unop: string]: string} = {
@@ -171,8 +180,8 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
         default: throw new Error("unsupported");
       }
     case "FunctionLiteral": {
-      if (expr.freeVars.length == 0) return `jsfun-${expr.name}`;
-      return `(jsfun-${expr.name} ${expr.freeVars.map(expressionToSMT).join(' ')})`;
+      if (expr.freeVars.length == 0) return `jsfun_${expr.name}`;
+      return `(jsfun_${expr.name} ${expr.freeVars.map(expressionToSMT).join(' ')})`;
     }
     case 'ArrayExpression':
       return `(jsarray ${arrayToSMT(expr.elements)})`;
@@ -191,10 +200,17 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
             then = expressionToSMT(expr.consequent),
             elze = expressionToSMT(expr.alternate);
       return `(ite ${test} ${then} ${elze})`;
-    case "CallExpression":
-      return `(app ${expressionToSMT(expr.callee)} ${expr.args.map(expressionToSMT).join(" ")})`;
+    case "CallExpression": {
+      if (expr.args.length == 1) {
+        return `(app1 ${expressionToSMT(expr.callee)} ${expr.args.map(expressionToSMT).join(" ")})`;
+      } else if (expr.args.length == 2) {
+        return `(app2 ${expressionToSMT(expr.callee)} ${expr.args.map(expressionToSMT).join(" ")})`;
+      } else {
+        throw new Error("unsupported");
+      }
+    }
     case "ClosedVarExpression":
-      return `(jsfun-${expr.funcName}-${expr.freeVar} f)`;
+      return `(jsfun_${expr.funcName}_${expr.freeVar} f_0)`;
   }
 }
 
@@ -234,9 +250,36 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
     case "True": return `true`;
     case "False": return `false`;
     case "Precondition":
-      return `(pre ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      if (prop.args.length == 1) {
+        return `(pre1 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      } else if (prop.args.length == 2) {
+        return `(pre2 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      } else {
+        throw new Error("unsupported");
+      }
     case "Postcondition":
-      return `(post ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      if (prop.args.length == 1) {
+        return `(post1 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      } else if (prop.args.length == 2) {
+        return `(post2 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      } else {
+        throw new Error("unsupported");
+      }
+    case "ForAll": {
+      const params = `(${prop.args.map(p => `(${p}_0 JSVal)`).join(' ')})`;
+      const triggerArgs = `${expressionToSMT(prop.callee)} ${prop.args.map(p => p + "_0").join(' ')}`;
+      if (prop.args.length != 1 && prop.args.length != 2) throw new Error("Not supported");
+      const trigger = (prop.args.length == 1 ? "call1 " : "call2 ") + triggerArgs;
+      return `(forall ${params} (! ${propositionToSMT(prop.prop)} :pattern ((${trigger}))))`;
+    }
+    case "CallTrigger":
+      if (prop.args.length == 1) {
+        return `(call1 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      } else if (prop.args.length == 2) {
+        return `(call2 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      } else {
+        throw new Error("unsupported");
+      }
   }
 }
 
@@ -263,6 +306,7 @@ export function smtToValue(smt: SMTOutput): any {
   const m = s.match(/^\((\w+)\ (.*)\)$/);
   if (!m) throw new Error("Cannot parse output!");
   const [_, tag, v] = m;
+  if (tag.startsWith("jsfun_")) return null;
   switch (tag) {
     case "jsbool": return v == "true";
     case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
@@ -271,50 +315,3 @@ export function smtToValue(smt: SMTOutput): any {
     default: throw new Error("unsupported");
   }
 }
-
-// function replaceFreeVarExpr(expr: ASyntax.Expression, fv: string, e: ASyntax.Expression): ASyntax.Expression {
-//   switch (expr.type) {
-//     case "Identifier": return expr.name == fv ? e : expr;
-//     case "Literal": return expr;
-//     case "FunctionLiteral": return { type: "FunctionLiteral",
-//                                      name: expr.name,
-//                                      freeVars: expr.freeVars.map(a => replaceFreeVarExpr(a, fv, e)) };
-//     case 'ArrayExpression': return { type: "ArrayExpression",
-//                                      elements: expr.elements.map(a => replaceFreeVarExpr(a, fv, e)) };
-//     case "UnaryExpression": return { type: "UnaryExpression",
-//                                      operator: expr.operator,
-//                                      argument: replaceFreeVarExpr(expr.argument, fv, e) };
-//     case "BinaryExpression": return { type: "BinaryExpression",
-//                                       operator: expr.operator,
-//                                       left: replaceFreeVarExpr(expr.left, fv, e),
-//                                       right: replaceFreeVarExpr(expr.right, fv, e) };
-//     case "ConditionalExpression": return { type: "ConditionalExpression",
-//                                            test: replaceFreeVar(expr.test, fv, e),
-//                                            consequent: replaceFreeVarExpr(expr.consequent, fv, e),
-//                                            alternate: replaceFreeVarExpr(expr.alternate, fv, e) };
-//     case "CallExpression": return { type: "CallExpression",
-//                                     callee: replaceFreeVarExpr(expr.callee, fv, e),
-//                                     args: expr.args.map(a => replaceFreeVarExpr(a, fv, e)) };
-//     case "ClosedVarExpression": return expr;
-//   }
-// }
-
-// export function replaceFreeVar(prop: ASyntax.Proposition, fv: string, e: ASyntax.Expression): ASyntax.Proposition {
-//   switch (prop.type) {
-//     case "Truthy": return { type: "Truthy", expr: replaceFreeVarExpr(prop.expr, fv, e) };
-//     case "And": return { type: "And", clauses: prop.clauses.map(c => replaceFreeVar(c, fv, e)) };
-//     case "Or": return { type: "Or", clauses: prop.clauses.map(c => replaceFreeVar(c, fv, e)) };
-//     case "Eq": return { type: "Eq",
-//                         left: replaceFreeVarExpr(prop.left, fv, e),
-//                         right: replaceFreeVarExpr(prop.right, fv, e) }
-//     case "Not": return { type: "Not", arg: replaceFreeVar(prop.arg, fv, e) };
-//     case "True": return prop;
-//     case "False": return prop;
-//     case "Precondition": return { type: "Precondition",
-//                                   callee: replaceFreeVarExpr(prop.callee, fv, e),
-//                                   args: prop.args.map(a => replaceFreeVarExpr(a, fv, e)) };
-//     case "Postcondition": return { type: "Postcondition",
-//                                    callee: replaceFreeVarExpr(prop.callee, fv, e),
-//                                    args: prop.args.map(a => replaceFreeVarExpr(a, fv, e)) };
-//   }
-// }

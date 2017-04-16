@@ -44,7 +44,12 @@ export namespace JSyntax {
                                         expressions: Expression[]; }
   export interface CallExpression { type: "CallExpression";
                                     callee: Expression;
-                                    arguments: Array<Expression>; }
+                                    args: Array<Expression>; }
+  export interface SpecExpression { type: "SpecExpression";
+                                    callee: Expression;
+                                    args: Array<string>;
+                                    pre: Expression;
+                                    post: Expression }
   // export interface FunctionExpression { type: "FunctionExpression";
   //                                       params: Array<Identifier>;
   //                                       body: Statement[]; }
@@ -59,7 +64,8 @@ export namespace JSyntax {
                          | AssignmentExpression
                          | SequenceExpression
                         //  | FunctionExpression
-                         | CallExpression;
+                         | CallExpression
+                         | SpecExpression;
   export interface VariableDeclaration { type: "VariableDeclaration";
                                          id: Identifier;
                                          init: Expression;
@@ -466,10 +472,34 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
                 refs: [], isWrittenTo: false, decl: { type: "Unresolved" } }
         };
       }
+      if (expr.callee.type == "Identifier" &&
+          expr.callee.name == "isFunc") {
+        debugger;
+      }
+      if (expr.callee.type == "Identifier" &&
+          expr.callee.name == "isFunc" &&
+          expr.arguments.length == 3 &&
+          expr.arguments[1].type == "ArrowFunctionExpression" &&
+          expr.arguments[2].type == "ArrowFunctionExpression" &&
+          (expr.arguments[1] as Syntax.ArrowFunctionExpression).body.type != "BlockStatement" &&
+          (expr.arguments[2] as Syntax.ArrowFunctionExpression).body.type != "BlockStatement" &&
+          (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.length == 
+          (expr.arguments[2] as Syntax.ArrowFunctionExpression).params.length &&
+          (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.every((p, idx) => {
+            const otherP = (expr.arguments[2] as Syntax.ArrowFunctionExpression).params[idx];
+            return p.type == "Identifier" && otherP.type == "Identifier" && p.name == otherP.name; })) {
+        return {
+          type: "SpecExpression",
+          callee: expressionAsJavaScript(expr.arguments[0]),
+          args: (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.map(p => (p as Syntax.Identifier).name),
+          pre: expressionAsJavaScript((expr.arguments[1] as Syntax.ArrowFunctionExpression).body as Syntax.Expression),
+          post: expressionAsJavaScript((expr.arguments[1] as Syntax.ArrowFunctionExpression).body as Syntax.Expression)
+        };
+      }
       return {
         type: "CallExpression",
         callee: expressionAsJavaScript(expr.callee),
-        arguments: expr.arguments.map(expressionAsJavaScript)
+        args: expr.arguments.map(expressionAsJavaScript)
       };
     case "Identifier":
       if (expr.name == "undefined") {
@@ -648,7 +678,7 @@ function resolveExpression(scope: Scope, expr: JSyntax.Expression, allowOld: boo
       expr.expressions.forEach(e => resolveExpression(scope, e, allowOld));
       break;
     case "CallExpression":
-      expr.arguments.forEach(e => resolveExpression(scope, e, allowOld));
+      expr.args.forEach(e => resolveExpression(scope, e, allowOld));
       resolveExpression(scope, expr.callee);
       break;
     // case "FunctionExpression":
@@ -688,7 +718,9 @@ export function stringifyExpr(expr: JSyntax.Expression): string {
     case "SequenceExpression":
       return `${expr.expressions.map(stringifyExpr).join(', ')}`;
     case "CallExpression":
-      return `${stringifyExpr(expr.callee)}(${expr.arguments.map(stringifyExpr).join(', ')})`;
+      return `${stringifyExpr(expr.callee)}(${expr.args.map(stringifyExpr).join(', ')})`;
+    case "SpecExpression":
+      return `isFunc(${stringifyExpr(expr.callee)}, (${expr.args.join(", ")}) => (${stringifyExpr(expr.pre)}), (${expr.args.join(", ")}) => (${stringifyExpr(expr.post)}))`;
     // case "FunctionExpression":
     //   throw new Error("not implemented yet");
   }
@@ -727,9 +759,9 @@ export function stringifyStmt(stmt: JSyntax.Statement, indent: number = 0): stri
 }
 
 function callMatchesParams(expr: JSyntax.CallExpression, f: JSyntax.FunctionDeclaration): boolean {
-  if (expr.arguments.length != f.params.length) return false;
-  for (let i = 0; i < expr.arguments.length; i++) {
-    const arg: JSyntax.Expression = expr.arguments[i];
+  if (expr.args.length != f.params.length) return false;
+  for (let i = 0; i < expr.args.length; i++) {
+    const arg: JSyntax.Expression = expr.args[i];
     if (arg.type != "Identifier" ||
         arg.decl.type != "Param" ||
         arg.decl.func != f ||
@@ -789,8 +821,14 @@ export function replaceFunctionResult(f: JSyntax.FunctionDeclaration, expr: JSyn
       return {
         type: "CallExpression",
         callee: replaceFunctionResult(f, expr.callee),
-        arguments: expr.arguments.map(e => replaceFunctionResult(f, e))
+        args: expr.args.map(e => replaceFunctionResult(f, e))
       }
+    case "SpecExpression":
+      return { type: "SpecExpression",
+               callee: replaceFunctionResult(f, expr.callee),
+               args: expr.args,
+               pre: replaceFunctionResult(f, expr.pre),
+               post: replaceFunctionResult(f, expr.post) }
     // case "FunctionExpression":
     //   throw new Error("not implemented yet"); 
   }

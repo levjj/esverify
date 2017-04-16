@@ -250,10 +250,9 @@ describe('global call', () => {
     vcs = t;
   });
 
-  verified('inc:\nrequires:\n(typeof(n) == "number")');
+  verified('precondition inc(i)');
   verified('assert:\n(j > 3)');
   verified('inc:\n(inc(n) > n)');
-
 });
 
 describe('inline global call', () => {
@@ -297,7 +296,7 @@ describe('post conditions global call', () => {
 
     let i = 3;
     let j = inc(i);
-    assert(j == 4);
+    assert(j >= 4);
     let k = inc2(i);
     assert(k >= 5);
   }).toString();
@@ -308,9 +307,12 @@ describe('post conditions global call', () => {
     vcs = t;
   });
 
-  verified('inc:\nrequires:\n(typeof(n) == "number")');
-  incorrect('inc2:\ninc:\nrequires:\n(typeof(n) == "number")');
-  verified('assert:\n(j == 4)');
+  verified('inc:\n(inc(n) > n)')
+  incorrect('inc2:\nprecondition inc(n)');
+  incorrect('inc2:\nprecondition inc(inc(n))');
+  verified('precondition inc(i)');
+  verified('assert:\n(j >= 4)');
+  verified('precondition inc2(i)');
   verified('assert:\n(k >= 5)');
 });
 
@@ -323,6 +325,7 @@ describe('fibonacci increasing', () => {
       if (n <= 1) return 1;
       return fib(n - 1) + fib(n - 2);
       ensures(fib(n) >= n);
+      ensures(fib(n) >= 1);
     }
   }).toString();
 
@@ -332,8 +335,8 @@ describe('fibonacci increasing', () => {
     vcs = t;
   });
 
-  verified('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
-  verified('fib:\nfib:\nrequires:\n(n >= 0)');
+  verified('fib:\nprecondition fib((n - 1))');
+  verified('fib:\nprecondition fib((n - 2))');
   verified('fib:\n(fib(n) >= n)');
 });
 
@@ -355,8 +358,8 @@ describe('buggy fibonacci', () => {
     vcs = t;
   });
 
-  verified('fib:\nfib:\nrequires:\n(typeof(n) == "number")');
-  verified('fib:\nfib:\nrequires:\n(n >= 0)');
+  verified('fib:\nprecondition fib((n - 1))');
+  verified('fib:\nprecondition fib((n - 2))');
   incorrect('fib:\n(fib(n) >= n)');
   it('returns counter-example', async () => {
     await vcs[4].solve();
@@ -397,7 +400,44 @@ describe('fibonacci increasing (external proof)', () => {
   verified('fibInc:\n(fib(n) >= n)');
 });
 
-describe.skip('higher-order functions', () => {
+describe('simple higher-order functions', () => {
+
+  const code = (() => {
+    function inc(n) {
+      requires(typeof(n) == 'number');
+      ensures(inc(n) > n);
+
+      return n + 1;
+    }
+
+    function twice(f, n) {
+      requires(isFunc(f, x => typeof(x) == 'number', x => f(x) > x));
+      requires(typeof(n) == 'number');
+      ensures(twice(f, n) > n + 1);
+
+      return f(f(n));
+    }
+
+    const x = 3;
+    const y = twice(inc, x);
+    assert(y >= 5);
+  }).toString();
+
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error('failed to find verification conditions');
+    vcs = t;
+  });
+
+  verified('inc:\n(inc(n) > n)');
+  verified('twice:\nprecondition f(n)');
+  verified('twice:\nprecondition f(f(n))');
+  verified('twice:\n(twice(f, n) > (n + 1))');
+  verified('precondition twice(inc, x)');
+  verified('assert:\n(y >= 5)');
+});
+
+describe.skip('mapLen example', () => {
 
   const code = (() => {
     function map(arr, f) {

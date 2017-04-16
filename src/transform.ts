@@ -29,9 +29,11 @@ function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
       return expr.expressions.some(e => assignedInExpr(v, e));
     }
     case "CallExpression":
-      return assignedInExpr(v, expr.callee) || expr.arguments.some(e => assignedInExpr(v, e));
+      return assignedInExpr(v, expr.callee) || expr.args.some(e => assignedInExpr(v, e));
     // case "FunctionExpression":
     //   throw new Error("not implemented yet");
+    case "SpecExpression":
+      return assignedInExpr(v, expr.callee) || assignedInExpr(v, expr.pre) || assignedInExpr(v, expr.post);
   }
 }
 
@@ -129,8 +131,41 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
       return {
         type: "CallExpression",
         callee: pureExpression(ctxVars, vars, lets, expr.callee),
-        args: expr.arguments.map(a => pureExpression(ctxVars, vars, lets, a))
+        args: expr.args.map(a => pureExpression(ctxVars, vars, lets, a))
       };
+    case "SpecExpression": {
+      const vars2 = Object.assign({}, vars);
+      for (const arg of expr.args) {
+        vars2[arg] = 0;
+      }
+      const callee = pureExpression(ctxVars, vars, lets, expr.callee);
+      const args = expr.args.map(a => getVar(vars2, a));
+      const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
+      const postP: ASyntax.Proposition = { type: "Precondition", callee, args };
+      const r = truthy(pureExpression(ctxVars, vars2, lets, expr.pre));
+      const s = truthy(pureExpression(ctxVars, vars2, lets, expr.post));
+      const forAll: ASyntax.Proposition = {
+        type: "ForAll",
+        callee: pureExpression(ctxVars, vars, lets, expr.callee),
+        args: expr.args,
+        prop: and(implies(r, preP), implies(and(r, postP), s))
+      };
+      const fnCheck: ASyntax.Expression = {
+        type: "BinaryExpression",
+        left: {
+          type: "UnaryExpression",
+          operator: "typeof",
+          argument: callee
+        },
+        operator: "==",
+        right: { type: "Literal", value: "function" }
+      };
+      const test = and(truthy(fnCheck), forAll);
+      const consequent: ASyntax.Expression = { type: "Literal", value: true };
+      const alternate: ASyntax.Expression = { type: "Literal", value: false };
+      return { type: "ConditionalExpression", test, consequent, alternate };
+    }
+
     // case "FunctionExpression":
     //   throw new PureContextError();
   }
@@ -350,22 +385,27 @@ export function transformExpression(ctxVars: Vars, vars: Vars, expr: JSyntax.Exp
 
       // evaluate arguments
       const args: Array<ASyntax.Expression> = [];
-      for (const arg of expr.arguments) {
+      for (const arg of expr.args) {
         const t = transformExpression(ctxVars, res.vars, arg);
         res.then(t);
         args.push(t.val);
       }
 
+      // apply call trigger
+      res.prop = and(res.prop, { type: "CallTrigger", callee, args });
+
       // verify precondition
       res.vcs.push(new VerificationCondition(res.vars, res.prop,
                                            { type: "Precondition", callee, args },
-                                           `precondition: ${stringifyExpr(expr)}`));
+                                           `precondition ${stringifyExpr(expr)}`));
       
       // assume postcondition and return result
       res.prop = and(res.prop, { type: "Postcondition", callee, args });
       res.val = { type: "CallExpression", callee, args };
       return res;
     }
+    case "SpecExpression":
+      throw new Error("Unsupported");
     // case "FunctionExpression":
     //   throw new Error("not implemented yet"); 
   }
@@ -391,7 +431,7 @@ function transformWhileLoop(vars: Vars, whl: JSyntax.WhileStatement): STransform
   // internal verification conditions
   const testBody: Array<JSyntax.Statement> = [checkInvariants(whl), {
     type: "ExpressionStatement",
-    expression: { type: "CallExpression", arguments: [],
+    expression: { type: "CallExpression", args: [],
                   callee: { type: "Identifier", name: "test", decl: {type: "Unresolved"}, refs: [], isWrittenTo: false}}
   }];
     
@@ -436,17 +476,20 @@ function transformFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration
     type: "VariableDeclaration",
     id: { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false},
     kind: "const",
-    init: { type: "CallExpression", callee: f.id, arguments: f.params }
+    init: { type: "CallExpression", callee: f.id, args: f.params }
   }];
   res.vcs.forEach(vc => vc.body = testBody);
 
   // ensure post conditions
   for (const ens of f.ensures) {
     const ens2 = replaceFunctionResult(f, ens);
+    const vars3 = Object.assign({}, vars2);
+    delete vars3[f.id.name]; // funcName not free
+    delete vars3["_res_"]; // res not free
     const ti = pureExpression(vars2, res.vars, {}, ens);
     res.vcs.push(new VerificationCondition(res.vars, res.prop, truthy(ti),
                  stringifyExpr(ens),
-                 vars2, testBody.concat([{ type: "AssertStatement", expression: ens2 }])));
+                 vars3, testBody.concat([{ type: "AssertStatement", expression: ens2 }])));
   }
   res.vcs.forEach(vc => {
     // delete vc.freeVars["_res_"];
@@ -615,7 +658,6 @@ function transformSpec(f: JSyntax.FunctionDeclaration, s: Array<JSyntax.Expressi
 
 export function transformPrecondition(f: JSyntax.FunctionDeclaration): ASyntax.Proposition {
   return transformSpec(f, f.requires);
-
 }
 
 export function transformPostcondition(f: JSyntax.FunctionDeclaration): ASyntax.Proposition {

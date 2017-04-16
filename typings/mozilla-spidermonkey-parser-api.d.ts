@@ -293,7 +293,7 @@ declare module "spiderMonkeyParserAPI" {
                                | ArrayExpression
                                | ObjectExpression
                                | FunctionExpression
-                               | ArrowExpression
+                               | ArrowFunctionExpression
                                | SequenceExpression
                                | UnaryExpression
                                | BinaryExpression
@@ -369,8 +369,8 @@ declare module "spiderMonkeyParserAPI" {
         /**
          * A fat arrow function expression, i.e., `let foo = (bar) => { ... body ... }`.
          */
-        interface ArrowExpression {
-            type: "ArrowExpression";
+        interface ArrowFunctionExpression {
+            type: "ArrowFunctionExpression";
             params: Pattern[];
             defaults?: Expression[];
             rest?: Identifier;

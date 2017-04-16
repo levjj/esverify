@@ -2,9 +2,9 @@ type Functions = Array<{ fn: string, nfreevars: number }>;
 
 function funcVal(name: string, nFreeVars: number) {
   if (nFreeVars == 0) {
-    return `\n    jsfun-${name}`;
+    return `\n    jsfun_${name}`;
   } else {
-    return `\n    (jsfun-${name} ${[...Array(nFreeVars).keys()].map(n => `(jsfun-${name}-${n} JSVal)`).join(' ')})`;
+    return `\n    (jsfun_${name} ${[...Array(nFreeVars).keys()].map(n => `(jsfun_${name}_${n} JSVal)`).join(' ')})`;
   }
 }
 
@@ -28,13 +28,15 @@ export function preamble(fns: Functions): string { return `
 
 ; Check for function values
 (define-fun is-jsfun ((f JSVal)) Bool
-  (or false${fns.map(f => `\n      (is-jsfun-${f.fn} f)`).join('')}))
+  (or false${fns.map(f => `\n      (is-jsfun_${f.fn} f)`).join('')}))
 
-; Denote function results with
-(declare-fun app (JSVal JSVal) JSVal)
+; Uninterpreted function results 
+(declare-fun app1 (JSVal JSVal) JSVal)
+(declare-fun app2 (JSVal JSVal JSVal) JSVal)
 
 ; Call trigger to manually instantiate quantifiers
-(declare-fun call (JSVal JSVal) Bool)
+(declare-fun call1 (JSVal JSVal) Bool)
+(declare-fun call2 (JSVal JSVal JSVal) Bool)
 
 ; Types in JavaScript
 (declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj JSFunction)))
