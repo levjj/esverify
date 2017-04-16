@@ -1,4 +1,17 @@
-export const preamble = `
+type Functions = Array<{ fn: string, nfreevars: number }>;
+
+function funcVal(name: string, nFreeVars: number) {
+  if (nFreeVars == 0) {
+    return `\n    jsfun-${name}`;
+  } else {
+    return `\n    (jsfun-${name} ${[...Array(nFreeVars).keys()].map(n => `(jsfun-${name}-${n} JSVal)`).join(' ')})`;
+  }
+}
+
+export function preamble(fns: Functions): string { return `
+(set-option :smt.auto-config false) ; disable automatic self configuration
+(set-option :smt.mbqi false) ; disable model-based quantifier instantiation
+
 ; Values in JavaScript
 (declare-datatypes () (
   (JSVal
@@ -8,11 +21,20 @@ export const preamble = `
     jsnull
     jsundefined
     (jsarray (items JSValList))
-    (jsobj (props JSPropList))
-    jsfun)
+    (jsobj (props JSPropList))${fns.map(f => funcVal(f.fn, f.nfreevars)).join('')})
   (JSValList empty (cons (car JSVal) (cdr JSValList)))
   (JSProp (prop (key (List Int)) (val JSVal)))
   (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
+
+; Check for function values
+(define-fun is-jsfun ((f JSVal)) Bool
+  (or false${fns.map(f => `\n      (is-jsfun-${f.fn} f)`).join('')}))
+
+; Denote function results with
+(declare-fun app (JSVal JSVal) JSVal)
+
+; Call trigger to manually instantiate quantifiers
+(declare-fun call (JSVal JSVal) Bool)
 
 ; Types in JavaScript
 (declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj JSFunction)))
@@ -169,3 +191,4 @@ export const preamble = `
     (jsnum (bv2int (bvand ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
   jsundefined)) ; non-standard!
 `;
+}

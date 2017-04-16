@@ -1,11 +1,13 @@
-/* global fetch */
-
+/* global fetch require console */
 /// <reference path="../typings/isomorphic-fetch/isomorphic-fetch.d.ts"/>
+declare const require: (s: string) => any;
+declare const console: { log: any };
 
 import { varsToSMT, expressionToSMT, propositionToSMT, propositionToAssert } from "./assertions";
 import { preamble } from "./defs-smt";
 import { JSyntax, stringifyStmt } from "./javascript";
 import { ASyntax, smtToValue } from "./assertions";
+import { transformPrecondition, transformPostcondition } from "./transform";
 
 export type SMTInput = string;
 export type SMTOutput = string;
@@ -27,14 +29,14 @@ export default class VerificationCondition {
   prop: ASyntax.Proposition;
   post: ASyntax.Proposition;
   freeVars: Vars;
-  body: Array<JSyntax.TopLevel>;
+  body: Array<JSyntax.Statement>;
   description: string;
   fns: Array<JSyntax.FunctionDeclaration>;
   _smtin: SMTInput | null;
   _smtout: SMTOutput | null;
   _result: Result;
 
-  constructor(vars: Vars, prop: ASyntax.Proposition, post: ASyntax.Proposition, description: string, freeVars: Vars = {}, body: Array<JSyntax.TopLevel> = []) {
+  constructor(vars: Vars, prop: ASyntax.Proposition, post: ASyntax.Proposition, description: string, freeVars: Vars = {}, body: Array<JSyntax.Statement> = []) {
  this.vars = vars;
     this.prop = prop;
     this.post = post;
@@ -51,11 +53,15 @@ export default class VerificationCondition {
     const declarations = varsToSMT(this.vars),
           post = `(assert (not ${propositionToSMT(this.post)}))`;
     return this._smtin =
-`${preamble}
+`${preamble(this.fns.map(f => ({ fn: f.id.name, nfreevars: f.freeVars.length })))}
 
-; functions
-${this.fns.map(f =>
-  `(declare-fun ${f.id.name} (${f.params.map(p => p.name).concat(f.freeVars).map(p => "JSVal").join(" ")}) JSVal)`).join("\n")}
+; function preconditions
+(define-fun pre ((f_0 JSVal) (arg_0 JSVal)) Bool${this.fns.map(f => `\n  (ite (is-jsfun-${f.id.name} f_0) ${propositionToSMT(transformPrecondition(f))}`)}
+  false${this.fns.map(f => ')')})
+
+; function postconditions
+(define-fun post ((f_0 JSVal) (arg_0 JSVal)) Bool${this.fns.map(f => `\n  (ite (is-jsfun-${f.id.name} f_0) ${propositionToSMT(transformPostcondition(f))}`)}
+  false${this.fns.map(f => ')')})
 
 ; declarations
 ${declarations}
@@ -159,7 +165,7 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
     return req.text();
   }
 
-  debugOut() {
+  debugOut() { 
     console.log("\n" + this.description);
     console.log("-----------------");
     console.log(this._result);
@@ -172,5 +178,4 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
       console.log(this.testCode());
     }
   }
-
 }

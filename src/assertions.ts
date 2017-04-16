@@ -5,6 +5,9 @@ export namespace ASyntax {
   export interface Identifier { type: "Identifier"; name: string; version: number; }
   interface Literal { type: "Literal";
                       value: undefined | null | boolean | number | string; }
+  interface FunctionLiteral { type: "FunctionLiteral";
+                              name: string;
+                              freeVars: Array<Expression>; }
   interface ArrayExpression { type: "ArrayExpression";
                               elements: Array<Expression>; }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
@@ -23,15 +26,20 @@ export namespace ASyntax {
                                     consequent: Expression;
                                     alternate: Expression; }
   interface CallExpression { type: "CallExpression";
-                             callee: string;
-                             arguments: Array<Expression>; }
+                             callee: Expression;
+                             args: Array<Expression>; }
+  interface ClosedVarExpression { type: "ClosedVarExpression";
+                                  funcName: string;
+                                  freeVar: number; }
   export type Expression = Identifier
                          | Literal
+                         | FunctionLiteral
                          | ArrayExpression
                          | UnaryExpression
                          | BinaryExpression
                          | ConditionalExpression
-                         | CallExpression;
+                         | CallExpression
+                         | ClosedVarExpression;
 
   export interface Truthy { type: "Truthy"; expr: Expression; }
   export interface And { type: "And"; clauses: Array<Proposition>; }
@@ -40,14 +48,21 @@ export namespace ASyntax {
   export interface Not { type: "Not"; arg: Proposition; }
   export interface True { type: "True"; }
   export interface False { type: "False"; }
-
+  export interface Precondition { type: "Precondition";
+                                  callee: Expression;
+                                  args: Array<Expression>; }
+  export interface Postcondition { type: "Postcondition";
+                                   callee: Expression;
+                                   args: Array<Expression>; }
   export type Proposition = Truthy
                           | And
                           | Or
                           | Eq
                           | Not
                           | True
-                          | False;
+                          | False
+                          | Precondition
+                          | Postcondition;
 }
 
 const unOpToSMT: {[unop: string]: string} = {
@@ -155,6 +170,10 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
         case "string": return `(jsstr "${expr.value}")`;
         default: throw new Error("unsupported");
       }
+    case "FunctionLiteral": {
+      if (expr.freeVars.length == 0) return `jsfun-${expr.name}`;
+      return `(jsfun-${expr.name} ${expr.freeVars.map(expressionToSMT).join(' ')})`;
+    }
     case 'ArrayExpression':
       return `(jsarray ${arrayToSMT(expr.elements)})`;
     case "UnaryExpression":
@@ -173,9 +192,9 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
             elze = expressionToSMT(expr.alternate);
       return `(ite ${test} ${then} ${elze})`;
     case "CallExpression":
-      return `(${expr.callee} ${expr.arguments.map(expressionToSMT).join(" ")})`;
-    default:
-      throw new Error("unsupported");
+      return `(app ${expressionToSMT(expr.callee)} ${expr.args.map(expressionToSMT).join(" ")})`;
+    case "ClosedVarExpression":
+      return `(jsfun-${expr.funcName}-${expr.freeVar} f)`;
   }
 }
 
@@ -214,6 +233,10 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
       return `(not ${arg})`;
     case "True": return `true`;
     case "False": return `false`;
+    case "Precondition":
+      return `(pre ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+    case "Postcondition":
+      return `(post ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
   }
 }
 
@@ -248,3 +271,50 @@ export function smtToValue(smt: SMTOutput): any {
     default: throw new Error("unsupported");
   }
 }
+
+// function replaceFreeVarExpr(expr: ASyntax.Expression, fv: string, e: ASyntax.Expression): ASyntax.Expression {
+//   switch (expr.type) {
+//     case "Identifier": return expr.name == fv ? e : expr;
+//     case "Literal": return expr;
+//     case "FunctionLiteral": return { type: "FunctionLiteral",
+//                                      name: expr.name,
+//                                      freeVars: expr.freeVars.map(a => replaceFreeVarExpr(a, fv, e)) };
+//     case 'ArrayExpression': return { type: "ArrayExpression",
+//                                      elements: expr.elements.map(a => replaceFreeVarExpr(a, fv, e)) };
+//     case "UnaryExpression": return { type: "UnaryExpression",
+//                                      operator: expr.operator,
+//                                      argument: replaceFreeVarExpr(expr.argument, fv, e) };
+//     case "BinaryExpression": return { type: "BinaryExpression",
+//                                       operator: expr.operator,
+//                                       left: replaceFreeVarExpr(expr.left, fv, e),
+//                                       right: replaceFreeVarExpr(expr.right, fv, e) };
+//     case "ConditionalExpression": return { type: "ConditionalExpression",
+//                                            test: replaceFreeVar(expr.test, fv, e),
+//                                            consequent: replaceFreeVarExpr(expr.consequent, fv, e),
+//                                            alternate: replaceFreeVarExpr(expr.alternate, fv, e) };
+//     case "CallExpression": return { type: "CallExpression",
+//                                     callee: replaceFreeVarExpr(expr.callee, fv, e),
+//                                     args: expr.args.map(a => replaceFreeVarExpr(a, fv, e)) };
+//     case "ClosedVarExpression": return expr;
+//   }
+// }
+
+// export function replaceFreeVar(prop: ASyntax.Proposition, fv: string, e: ASyntax.Expression): ASyntax.Proposition {
+//   switch (prop.type) {
+//     case "Truthy": return { type: "Truthy", expr: replaceFreeVarExpr(prop.expr, fv, e) };
+//     case "And": return { type: "And", clauses: prop.clauses.map(c => replaceFreeVar(c, fv, e)) };
+//     case "Or": return { type: "Or", clauses: prop.clauses.map(c => replaceFreeVar(c, fv, e)) };
+//     case "Eq": return { type: "Eq",
+//                         left: replaceFreeVarExpr(prop.left, fv, e),
+//                         right: replaceFreeVarExpr(prop.right, fv, e) }
+//     case "Not": return { type: "Not", arg: replaceFreeVar(prop.arg, fv, e) };
+//     case "True": return prop;
+//     case "False": return prop;
+//     case "Precondition": return { type: "Precondition",
+//                                   callee: replaceFreeVarExpr(prop.callee, fv, e),
+//                                   args: prop.args.map(a => replaceFreeVarExpr(a, fv, e)) };
+//     case "Postcondition": return { type: "Postcondition",
+//                                    callee: replaceFreeVarExpr(prop.callee, fv, e),
+//                                    args: prop.args.map(a => replaceFreeVarExpr(a, fv, e)) };
+//   }
+// }
