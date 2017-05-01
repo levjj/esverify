@@ -1,13 +1,10 @@
-import { Vars, SMTInput, SMTOutput } from "./vc";
+import { Vars, SMTInput, SMTOutput } from "./verification";
 import { flatMap } from "./util";
 
 export namespace ASyntax {
   export interface Identifier { type: "Identifier"; name: string; version: number; }
   interface Literal { type: "Literal";
                       value: undefined | null | boolean | number | string; }
-  interface FunctionLiteral { type: "FunctionLiteral";
-                              name: string;
-                              freeVars: Array<Expression>; }
   interface ArrayExpression { type: "ArrayExpression";
                               elements: Array<Expression>; }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
@@ -28,18 +25,13 @@ export namespace ASyntax {
   interface CallExpression { type: "CallExpression";
                              callee: Expression;
                              args: Array<Expression>; }
-  interface ClosedVarExpression { type: "ClosedVarExpression";
-                                  funcName: string;
-                                  freeVar: number; }
   export type Expression = Identifier
                          | Literal
-                         | FunctionLiteral
                          | ArrayExpression
                          | UnaryExpression
                          | BinaryExpression
                          | ConditionalExpression
-                         | CallExpression
-                         | ClosedVarExpression;
+                         | CallExpression;
 
   export interface Truthy { type: "Truthy"; expr: Expression; }
   export interface And { type: "And"; clauses: Array<Proposition>; }
@@ -179,10 +171,6 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
         case "string": return `(jsstr "${expr.value}")`;
         default: throw new Error("unsupported");
       }
-    case "FunctionLiteral": {
-      if (expr.freeVars.length == 0) return `jsfun_${expr.name}`;
-      return `(jsfun_${expr.name} ${expr.freeVars.map(expressionToSMT).join(' ')})`;
-    }
     case 'ArrayExpression':
       return `(jsarray ${arrayToSMT(expr.elements)})`;
     case "UnaryExpression":
@@ -209,8 +197,6 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
         throw new Error("unsupported");
       }
     }
-    case "ClosedVarExpression":
-      return `(jsfun_${expr.funcName}_${expr.freeVar} f_0)`;
   }
 }
 

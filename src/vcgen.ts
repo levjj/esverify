@@ -1,6 +1,6 @@
-import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./vc";
+import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./verification";
 import { JSyntax, stringifyExpr, declName, checkInvariants, checkPreconditions, replaceFunctionResult } from "./javascript";
-import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT } from "./assertions";
+import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT } from "./propositions";
 import { pushAll } from "./util";
 
 function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
@@ -71,6 +71,49 @@ function getVar(vars: Vars, v: VarName): ASyntax.Identifier {
   return { type: "Identifier", name: v, version: vars[v] };
 }
 
+function newVar(vars: Vars, v: VarName): ASyntax.Identifier {
+  vars[v] = v in vars ? vars[v] + 1 : 0;
+  return getVar(vars, v);
+}
+
+function havocVars(vars: Vars, f: (s: string) => boolean): Vars {
+  const res: Vars = {};
+  for (const v in vars) {
+    res[v] = f(v) ? vars[v] + 1 : vars[v];
+  }
+  return res;
+}
+
+function phi(cond: ASyntax.Proposition, left: Transform,
+                                        right: Transform):
+                                        [Vars, ASyntax.Proposition, Array<VerificationCondition>] {
+  let leftPr = left.prop,
+      rightPr = right.prop;
+  const nvars: Vars = {},
+        allKeys = Object.keys(left.vars).concat(Object.keys(right.vars));
+  for (const v of allKeys) {
+    if (v in nvars) continue;
+    if (v in left.vars && v in right.vars) {
+      if (left.vars[v] < right.vars[v]) {
+        leftPr = and(leftPr, eq(getVar(left.vars, v), getVar(right.vars, v)));
+        nvars[v] = right.vars[v];
+      } else if (left.vars[v] > right.vars[v]) {
+        rightPr = and(rightPr, eq(getVar(right.vars, v), getVar(left.vars, v)));
+        nvars[v] = left.vars[v];
+      } else {
+        nvars[v] = left.vars[v];
+      }
+    } else if (v in left.vars) {
+      nvars[v] = left.vars[v];
+    } else {
+      nvars[v] = right.vars[v];
+    }
+  }
+  left.vcs.forEach(vc => vc.prop = and(cond, vc.prop));
+  right.vcs.forEach(vc => vc.prop = and(not(cond), vc.prop));
+  return [nvars, and(implies(cond, leftPr), implies(not(cond), rightPr)), left.vcs.concat(right.vcs)];
+}
+
 // function freshResVar(vars: Vars): [Vars, VarName] {
 //   let i = 0;
 //   while (`tmp_${i}` in vars) i++;
@@ -82,6 +125,31 @@ class PureContextError extends Error {
 }
 
 type Bindings = { [varName: string]: ASyntax.Expression };
+
+function spec(callee: ASyntax.Expression,
+                    args: Array<ASyntax.Identifier>,
+                    req: ASyntax.Proposition,
+                    ens: ASyntax.Proposition): ASyntax.Proposition {
+  const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
+  const postP: ASyntax.Proposition = { type: "Precondition", callee, args };
+  const forAll: ASyntax.Proposition = {
+    type: "ForAll",
+    callee,
+    args: args.map(a => a.name),
+    prop: and(implies(req, preP), implies(and(preP, postP), ens))
+  };
+  const fnCheck: ASyntax.Expression = {
+    type: "BinaryExpression",
+    left: {
+      type: "UnaryExpression",
+      operator: "typeof",
+      argument: callee
+    },
+    operator: "==",
+    right: { type: "Literal", value: "function" }
+  };
+  return and(truthy(fnCheck), forAll);
+}
 
 function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax.Expression): ASyntax.Expression {
   switch (expr.type) {
@@ -140,27 +208,9 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
       }
       const callee = pureExpression(ctxVars, vars, lets, expr.callee);
       const args = expr.args.map(a => getVar(vars2, a));
-      const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
-      const postP: ASyntax.Proposition = { type: "Precondition", callee, args };
-      const r = truthy(pureExpression(ctxVars, vars2, lets, expr.pre));
-      const s = truthy(pureExpression(ctxVars, vars2, lets, expr.post));
-      const forAll: ASyntax.Proposition = {
-        type: "ForAll",
-        callee: pureExpression(ctxVars, vars, lets, expr.callee),
-        args: expr.args,
-        prop: and(implies(r, preP), implies(and(r, postP), s))
-      };
-      const fnCheck: ASyntax.Expression = {
-        type: "BinaryExpression",
-        left: {
-          type: "UnaryExpression",
-          operator: "typeof",
-          argument: callee
-        },
-        operator: "==",
-        right: { type: "Literal", value: "function" }
-      };
-      const test = and(truthy(fnCheck), forAll);
+      const req = truthy(pureExpression(ctxVars, vars2, lets, expr.pre));
+      const ens = truthy(pureExpression(ctxVars, vars2, lets, expr.post));
+      const test = spec(callee, args, req, ens);
       const consequent: ASyntax.Expression = { type: "Literal", value: true };
       const alternate: ASyntax.Expression = { type: "Literal", value: false };
       return { type: "ConditionalExpression", test, consequent, alternate };
@@ -194,44 +244,6 @@ function pureStatements(ctxVars: Vars, vars: Vars, stmts: Array<JSyntax.Statemen
     }
   }
   return pureExpression(ctxVars, vars, lets, last.argument);
-}
-
-function phi(cond: ASyntax.Proposition, left: Transform,
-                                        right: Transform):
-                                        [Vars, ASyntax.Proposition, Array<VerificationCondition>] {
-  let leftPr = left.prop,
-      rightPr = right.prop;
-  const nvars: Vars = {},
-        allKeys = Object.keys(left.vars).concat(Object.keys(right.vars));
-  for (const v of allKeys) {
-    if (v in nvars) continue;
-    if (v in left.vars && v in right.vars) {
-      if (left.vars[v] < right.vars[v]) {
-        leftPr = and(leftPr, eq(getVar(left.vars, v), getVar(right.vars, v)));
-        nvars[v] = right.vars[v];
-      } else if (left.vars[v] > right.vars[v]) {
-        rightPr = and(rightPr, eq(getVar(right.vars, v), getVar(left.vars, v)));
-        nvars[v] = left.vars[v];
-      } else {
-        nvars[v] = left.vars[v];
-      }
-    } else if (v in left.vars) {
-      nvars[v] = left.vars[v];
-    } else {
-      nvars[v] = right.vars[v];
-    }
-  }
-  left.vcs.forEach(vc => vc.prop = and(cond, vc.prop));
-  right.vcs.forEach(vc => vc.prop = and(not(cond), vc.prop));
-  return [nvars, and(implies(cond, leftPr), implies(not(cond), rightPr)), left.vcs.concat(right.vcs)];
-}
-
-function havocVars(vars: Vars, f: (s: string) => boolean): Vars {
-  const res: Vars = {};
-  for (const v in vars) {
-    res[v] = f(v) ? vars[v] + 1 : vars[v];
-  }
-  return res;
 }
 
 class Transform {
@@ -450,15 +462,20 @@ function transformWhileLoop(vars: Vars, whl: JSyntax.WhileStatement): STransform
 }
 
 function transformFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration): Transform {
-  // assumes mutable vars from outer scope are fresh
   const vcs: Array<VerificationCondition> = [];
-  const vars2 = Object.assign({_res_: 0}, vars);
-  
+  // havoc all let-bound free variable
+  const vars2 = Object.assign({_res_: 0}, havocVars(vars, v => f.freeVars.some(decl =>
+    decl.type == "Var" && decl.decl.id.name == v && decl.decl.kind == "let")));
+
+  const req = truthy(pureExpression(ctxVars, vars2, {}, stmt.pre));
+  const ens = truthy(pureExpression(ctxVars, vars2, {}, stmt.post));
+  const pf: ASyntax.Proposition = spec(id, stmt.params.map(p => getVar(vars_f, p.name)), req, ens),
+    pfi: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", name: stmt.id.name, freeVars: freeVars_f });
+
   // add arguments to scope 
   const args: Array<ASyntax.Expression> = [];
   for (const p of f.params) {
-    vars2[p.name] = 0;
-    args.push({ type: "Identifier", name: p.name, version: 0 });
+    args.push(newVar(vars2, p.name));
   }
   const callee: ASyntax.Expression = { type: "Identifier", name: f.id.name, version: 0 };
   const eq_call: ASyntax.Proposition = eq({ type: "Identifier", name: "_res_", version: 0 },
@@ -502,10 +519,9 @@ function transformFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration
 export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Statement): STransform {
   switch (stmt.type) {
     case "VariableDeclaration": {
-      const t = transformExpression(ctxVars, vars, stmt.init);
-      const vars2 = Object.assign({}, t.vars);
-      vars2[stmt.id.name] = 0; // TODO enable shadowing
-      const to: ASyntax.Expression = { type: "Identifier", name: stmt.id.name, version: 0 },
+      const t = transformExpression(ctxVars, vars, stmt.init),
+            vars2 = Object.assign({}, t.vars),
+            to: ASyntax.Expression = newVar(vars2, stmt.id.name),
             asg: ASyntax.Proposition = { type: "Eq", left: to, right: t.val};
       return new STransform(vars2, and(t.prop, asg), t.vcs);
     }
@@ -575,15 +591,14 @@ export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Stat
     }
     case "FunctionDeclaration": {
       const vars2 = Object.assign({}, vars);
-      vars2[stmt.id.name] = 0; // TODO enable shadowing
+      const id = newVar(vars2, stmt.id.name);
       // havoc all let-bound free variable
       const vars_f = havocVars(vars2, v => stmt.freeVars.some(decl =>
         decl.type == "Var" && decl.decl.id.name == v && decl.decl.kind == "let"));
-      const id: ASyntax.Expression = { type: "Identifier", name: stmt.id.name, version: 0 },
-            freeVars: Array<ASyntax.Expression> = stmt.freeVars.map(d => getVar(vars2, declName(d))),
-            freeVars_f: Array<ASyntax.Expression> = stmt.freeVars.map(d => getVar(vars_f, declName(d))),
-            eq_2: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", name: stmt.id.name, freeVars }),
-            eq_f: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", name: stmt.id.name, freeVars: freeVars_f });
+      const req = truthy(pureExpression(ctxVars, vars2, {}, stmt.pre));
+      const ens = truthy(pureExpression(ctxVars, vars2, {}, stmt.post));
+      const pf: ASyntax.Proposition = spec(id, stmt.params.map(p => getVar(vars_f, p.name)), req, ens),
+            pfi: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", name: stmt.id.name, freeVars: freeVars_f });
       const t: Transform = transformFunctionDeclaration(vars_f, stmt);
       t.vcs.forEach(vc => vc.prop = and(eq_f, vc.prop));
       return new STransform(vars2, eq_2, t.vcs);

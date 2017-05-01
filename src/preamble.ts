@@ -1,14 +1,4 @@
-type Functions = Array<{ fn: string, nfreevars: number }>;
-
-function funcVal(name: string, nFreeVars: number) {
-  if (nFreeVars == 0) {
-    return `\n    jsfun_${name}`;
-  } else {
-    return `\n    (jsfun_${name} ${[...Array(nFreeVars).keys()].map(n => `(jsfun_${name}_${n} JSVal)`).join(' ')})`;
-  }
-}
-
-export function preamble(fns: Functions): string { return `
+export const preamble: string = `
 (set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
@@ -21,14 +11,11 @@ export function preamble(fns: Functions): string { return `
     jsnull
     jsundefined
     (jsarray (items JSValList))
-    (jsobj (props JSPropList))${fns.map(f => funcVal(f.fn, f.nfreevars)).join('')})
+    (jsobj (props JSPropList))
+    jsfun)
   (JSValList empty (cons (car JSVal) (cdr JSValList)))
   (JSProp (prop (key (List Int)) (val JSVal)))
   (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
-
-; Check for function values
-(define-fun is-jsfun ((f JSVal)) Bool
-  (or false${fns.map(f => `\n      (is-jsfun_${f.fn} f)`).join('')}))
 
 ; Uninterpreted function results 
 (declare-fun app1 (JSVal JSVal) JSVal)
@@ -193,4 +180,3 @@ export function preamble(fns: Functions): string { return `
     (jsnum (bv2int (bvand ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
   jsundefined)) ; non-standard!
 `;
-}
