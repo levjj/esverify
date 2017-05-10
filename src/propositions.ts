@@ -40,6 +40,7 @@ export namespace ASyntax {
   export interface And { type: "And"; clauses: Array<Proposition>; }
   export interface Or { type: "Or"; clauses: Array<Proposition>; }
   export interface Eq { type: "Eq"; left: Expression, right: Expression; }
+  export interface Iff { type: "Iff"; left: Proposition, right: Proposition; }
   export interface Not { type: "Not"; arg: Proposition; }
   export interface True { type: "True"; }
   export interface False { type: "False"; }
@@ -59,6 +60,7 @@ export namespace ASyntax {
   export type Proposition = Truthy
                           | And
                           | Or
+                          | Iff
                           | Eq
                           | Not
                           | True
@@ -135,6 +137,10 @@ export function or(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
 
 export function eq(left: ASyntax.Expression, right: ASyntax.Expression): ASyntax.Proposition {
   return { type: "Eq", left, right };
+}
+
+export function iff(left: ASyntax.Proposition, right: ASyntax.Proposition): ASyntax.Proposition {
+  return { type: "Iff", left, right };
 }
 
 export function not(arg: ASyntax.Proposition): ASyntax.Proposition {
@@ -238,16 +244,26 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
       if (clauses.length == 1) return clauses[0];
       return `(or ${clauses.join(' ')})`;
     }
-    case "Eq":
+    case "Iff": {
+      const left: SMTInput = propositionToSMT(prop.left);
+      const right: SMTInput = propositionToSMT(prop.right);
+      if (left == `true`) return right;
+      if (right == `true`) return left;
+      if (left == right) return `true`;
+      return `(= ${left} ${right})`;
+    }
+    case "Eq": {
       const left: SMTInput = expressionToSMT(prop.left);
       const right: SMTInput = expressionToSMT(prop.right);
       if (left == right) return `true`;
       return `(= ${left} ${right})`;
-    case "Not":
+    }
+    case "Not": {
       const arg: SMTInput = propositionToSMT(prop.arg);
       if (arg == "true") return `false`;
       if (arg == "false") return `true`;
       return `(not ${arg})`;
+    }
     case "True": return `true`;
     case "False": return `false`;
     case "Precondition":

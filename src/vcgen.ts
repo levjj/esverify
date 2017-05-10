@@ -1,6 +1,6 @@
 import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./verification";
 import { JSyntax, stringifyExpr, declName, checkInvariants, checkPreconditions, replaceFunctionResult } from "./javascript";
-import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT, expressionToSMT } from "./propositions";
+import { ASyntax, tru, fls, truthy, implies, and, iff, or, eq, not, propositionToSMT, expressionToSMT } from "./propositions";
 import { pushAll } from "./util";
 
 function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
@@ -475,7 +475,7 @@ function transformSpec(vars: Vars, f: JSyntax.FunctionDeclaration): ASyntax.Prop
   const postP: ASyntax.Proposition = { type: "Postcondition", callee, args };
   const callP: ASyntax.Proposition = { type: "CallTrigger", callee, args };
   const forAll: ASyntax.Proposition = { type: "ForAll", callee, args,
-    prop: and(callP, implies(req, preP), implies(and(req, postP), ens))
+    prop: and(callP, iff(req, preP), iff(postP, implies(req, ens)))
   };
   const fnCheck: ASyntax.Expression = {
     type: "BinaryExpression",
