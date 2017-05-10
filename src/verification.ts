@@ -3,11 +3,10 @@
 declare const require: (s: string) => any;
 declare const console: { log: any };
 
-import { varsToSMT, expressionToSMT, propositionToSMT, propositionToAssert } from "./assertions";
-import { preamble } from "./defs-smt";
+import { ASyntax, smtToValue, varsToSMT, expressionToSMT, propositionToSMT, propositionToAssert } from "./propositions";
+import { preamble } from "./preamble";
 import { JSyntax, stringifyStmt } from "./javascript";
-import { ASyntax, smtToValue } from "./assertions";
-import { transformPrecondition, transformPostcondition } from "./transform";
+import { transformPrecondition, transformPostcondition } from "./vcgen";
 
 export type SMTInput = string;
 export type SMTOutput = string;

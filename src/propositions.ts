@@ -1,4 +1,4 @@
-import { Vars, SMTInput, SMTOutput } from "./vc";
+import { Vars, SMTInput, SMTOutput } from "./verification";
 import { flatMap } from "./util";
 
 export namespace ASyntax {

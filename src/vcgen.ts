@@ -1,6 +1,6 @@
-import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./vc";
+import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./verification";
 import { JSyntax, stringifyExpr, declName, checkInvariants, checkPreconditions, replaceFunctionResult } from "./javascript";
-import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT } from "./assertions";
+import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT } from "./propositions";
 import { pushAll } from "./util";
 
 function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {

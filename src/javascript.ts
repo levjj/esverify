@@ -473,11 +473,7 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
         };
       }
       if (expr.callee.type == "Identifier" &&
-          expr.callee.name == "isFunc") {
-        debugger;
-      }
-      if (expr.callee.type == "Identifier" &&
-          expr.callee.name == "isFunc" &&
+          expr.callee.name == "spec" &&
           expr.arguments.length == 3 &&
           expr.arguments[1].type == "ArrowFunctionExpression" &&
           expr.arguments[2].type == "ArrowFunctionExpression" &&

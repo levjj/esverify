@@ -1,12 +1,20 @@
 /* eslint no-unused-expressions:0 */
-/* global describe, it, expect */
+/* global describe, it, expect, requires, ensures, invariant, assert, old, spec, console */
 
 /// <reference path="../typings/mocha/mocha.d.ts" />
 /// <reference path="../typings/chai/chai.d.ts" />
 import { expect, use } from 'chai';
 import * as chaiSubset from 'chai-subset';
 import { verify } from '../index';
-import VerificationCondition from '../src/vc';
+import VerificationCondition from '../src/verification';
+
+declare const requires: (x: any) => void;
+declare const ensures: (x: any) => void;
+declare const invariant: (x: any) => void;
+declare const assert: (x: any) => void;
+declare const old: (x: any) => any;
+declare const spec: (x: any, r: (rx: any) => void, s: (rs: any) => void) => void;
+declare const console: { log: any };
 
 use(chaiSubset);
 
@@ -41,12 +49,13 @@ describe('max()', () => {
     function max(a, b) {
       requires(typeof(a) == 'number');
       requires(typeof(b) == 'number');
+      ensures(max(a, b) >= a);
+
       if (a >= b) {
         return a;
       } else {
         return b;
       }
-      ensures(max(a, b) >= a);
     }
   }).toString();
 
@@ -72,12 +81,13 @@ describe('max() with missing pre', () => {
   const code = (() => {
     function max(a, b) {
       requires(typeof(b) == 'number');
+      ensures(max(a, b) >= a);
+
       if (a >= b) {
         return a;
       } else {
         return b;
       }
-      ensures(max(a, b) >= a);
     }
   }).toString();
 
@@ -106,13 +116,15 @@ describe('counter', () => {
     invariant(counter >= 0);
 
     function increment() {
-      counter++;
       ensures(counter > old(counter));
+
+      counter++;
     }
 
     function decrement() {
-      if (counter > 0) counter--;
       ensures(old(counter) > 0 ? counter < old(counter) : counter == old(counter));
+
+      if (counter > 0) counter--;
     }
   }).toString();
 
@@ -202,6 +214,7 @@ describe('sum', () => {
     function sumTo(n) {
       requires(typeof n == 'number');
       requires(n >= 0);
+      ensures(sumTo(n) == (n + 1) * n / 2);
 
       let i = 0, s = 0;
       while (i < n) {
@@ -211,8 +224,6 @@ describe('sum', () => {
         s = s + i;
       }
       return s;
-
-      ensures(sumTo(n) == (n + 1) * n / 2);
     }
   }).toString();
 
@@ -235,8 +246,9 @@ describe('global call', () => {
   const code = (() => {
     function inc(n) {
       requires(typeof(n) == 'number');
-      return n + 1;
       ensures(inc(n) > n);
+
+      return n + 1;
     }
 
     let i = 3;
@@ -287,8 +299,9 @@ describe('post conditions global call', () => {
   const code = (() => {
     function inc(n) {
       requires(typeof(n) == 'number');
-      return n + 1;
       ensures(inc(n) > n);
+
+      return n + 1;
     }
     function inc2(n) {
       return inc(inc(n));
@@ -316,16 +329,39 @@ describe('post conditions global call', () => {
   verified('assert:\n(k >= 5)');
 });
 
+describe('closure', () => {
+
+  const code = (() => {
+    let x = 3;
+    function f(y) {
+      requires(x > 1);
+    }
+    f(0);
+    x = 1;
+    f(1);
+  }).toString();
+
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error('failed to find verification conditions');
+    vcs = t;
+  });
+
+  verified('precondition f(0)');
+  incorrect('precondition f(1)');
+});
+
 describe('fibonacci increasing', () => {
 
   const code = (() => {
     function fib(n) {
       requires(typeof(n) == 'number');
       requires(n >= 0);
-      if (n <= 1) return 1;
-      return fib(n - 1) + fib(n - 2);
       ensures(fib(n) >= n);
       ensures(fib(n) >= 1);
+
+      if (n <= 1) return 1;
+      return fib(n - 1) + fib(n - 2);
     }
   }).toString();
 
@@ -346,9 +382,10 @@ describe('buggy fibonacci', () => {
     function fib(n) {
       requires(typeof(n) == 'number');
       requires(n >= 0);
+      ensures(fib(n) >= n);
+
       if (n <= 1) return n;
       return fib(n - 1) + fib(n - 2);
-      ensures(fib(n) >= n);
     }
   }).toString();
 
@@ -380,12 +417,13 @@ describe('fibonacci increasing (external proof)', () => {
     function fibInc(n) {
       requires(typeof(n) == 'number');
       requires(n >= 0);
+      ensures(fib(n) >= n);
+
       fib(n);
       if (n >= 2) {
         fibInc(n - 1); fib(n - 1);
         fibInc(n - 2); fib(n - 2);
       }
-      ensures(fib(n) >= n);
     }
   }).toString();
 
@@ -411,7 +449,7 @@ describe('simple higher-order functions', () => {
     }
 
     function twice(f, n) {
-      requires(isFunc(f, x => typeof(x) == 'number', x => f(x) > x));
+      requires(spec(f, x => typeof(x) == 'number', x => f(x) > x));
       requires(typeof(n) == 'number');
       ensures(twice(f, n) > n + 1);
 
@@ -447,12 +485,13 @@ describe.skip('mapLen example', () => {
 
     function mapLen(arr, f) {
       requires(arr.constructor == Array);
+      ensures(map(f, arr).length == arr.length);
+
       map(arr, f);
       if (arr.length > 0) {
-        mapLen(arr.slice(1));
+        mapLen(arr.slice(1), f);
         map(arr.slice(1), f);
       }
-      ensures(map(f, arr).length == arr.length);
     }
   }).toString();
 
