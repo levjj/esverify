@@ -6,7 +6,6 @@ declare const console: { log: any };
 import { ASyntax, smtToValue, varsToSMT, expressionToSMT, propositionToSMT, propositionToAssert } from "./propositions";
 import { preamble } from "./preamble";
 import { JSyntax, stringifyStmt } from "./javascript";
-import { transformPrecondition, transformPostcondition } from "./vcgen";
 
 export type SMTInput = string;
 export type SMTOutput = string;
@@ -20,6 +19,7 @@ export type Result = { status: "unverified" }
                    | { status: "inprogress" }
                    | { status: "verified" }
                    | { status: "incorrect", model: Model, error: Error }
+                   | { status: "unknown" }
                    | { status: "error", error: Error }
                    | { status: "tested", model: Model };
 
@@ -30,7 +30,6 @@ export default class VerificationCondition {
   freeVars: Vars;
   body: Array<JSyntax.Statement>;
   description: string;
-  fns: Array<JSyntax.FunctionDeclaration>;
   _smtin: SMTInput | null;
   _smtout: SMTOutput | null;
   _result: Result;
@@ -42,7 +41,6 @@ export default class VerificationCondition {
     this.freeVars = freeVars;
     this.body = body;
     this.description = description;
-    this.fns = [];
     this._smtin = null;
     this._smtout = null;
     this._result = { status: "unverified" };
@@ -50,29 +48,9 @@ export default class VerificationCondition {
 
   smtInput(): SMTInput {
     const declarations = varsToSMT(this.vars),
-          post = `(assert (not ${propositionToSMT(this.post)}))`,
-          fns1 = this.fns.filter(f => f.params.length == 1),
-          fns2 = this.fns.filter(f => f.params.length == 2);
+          post = `(assert (not ${propositionToSMT(this.post)}))`;
     return this._smtin =
-`${preamble(this.fns.map(f => ({ fn: f.id.name, nfreevars: f.freeVars.length })))}
-
-; function preconditions
-(define-fun pre1 ((f_0 JSVal) (arg_0 JSVal)) Bool${fns1.map(f =>
-  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPrecondition(f))}`).join('')}
-  false${fns1.map(f => ')').join('')})
-
-(define-fun pre2 ((f_0 JSVal) (arg_0 JSVal) (arg_1 JSVal)) Bool${fns2.map(f =>
-  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPrecondition(f))}`).join('')}
-  false${fns2.map(f => ')').join('')})
-
-; function postconditions
-(define-fun post1 ((f_0 JSVal) (arg_0 JSVal)) Bool${fns1.map(f =>
-  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPostcondition(f))}`).join('')}
-  false${fns1.map(f => ')').join('')})
-
-(define-fun post2 ((f_0 JSVal) (arg_0 JSVal) (arg_1 JSVal)) Bool${fns2.map(f =>
-  `\n  (ite (is-jsfun_${f.id.name} f_0) ${propositionToSMT(transformPostcondition(f))}`).join('')}
-  false${fns2.map(f => ')').join('')})
+`${preamble}
 
 ; declarations
 ${declarations}
@@ -145,6 +123,8 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
       } catch (e) {
         this._result = { status: "incorrect", model: m, error: e };
       }
+    } else if (this._smtout && this._smtout.startsWith("unknown")) {
+      this._result = { status: "unknown" };
     } else if (this._smtout && this._smtout.startsWith("unsat")) {
       this._result = { status: "verified" };
     } else {

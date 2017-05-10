@@ -6,8 +6,7 @@ export namespace ASyntax {
   interface Literal { type: "Literal";
                       value: undefined | null | boolean | number | string; }
   interface FunctionLiteral { type: "FunctionLiteral";
-                              name: string;
-                              freeVars: Array<Expression>; }
+                              id: number; }
   interface ArrayExpression { type: "ArrayExpression";
                               elements: Array<Expression>; }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
@@ -28,9 +27,6 @@ export namespace ASyntax {
   interface CallExpression { type: "CallExpression";
                              callee: Expression;
                              args: Array<Expression>; }
-  interface ClosedVarExpression { type: "ClosedVarExpression";
-                                  funcName: string;
-                                  freeVar: number; }
   export type Expression = Identifier
                          | Literal
                          | FunctionLiteral
@@ -38,8 +34,7 @@ export namespace ASyntax {
                          | UnaryExpression
                          | BinaryExpression
                          | ConditionalExpression
-                         | CallExpression
-                         | ClosedVarExpression;
+                         | CallExpression;
 
   export interface Truthy { type: "Truthy"; expr: Expression; }
   export interface And { type: "And"; clauses: Array<Proposition>; }
@@ -56,7 +51,7 @@ export namespace ASyntax {
                                    args: Array<Expression>; }
   export interface ForAll { type: "ForAll";
                             callee: Expression;
-                            args: Array<string>;
+                            args: Array<Identifier>;
                             prop: Proposition; }
   export interface CallTrigger { type: "CallTrigger";
                                  callee: Expression;
@@ -180,8 +175,7 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
         default: throw new Error("unsupported");
       }
     case "FunctionLiteral": {
-      if (expr.freeVars.length == 0) return `jsfun_${expr.name}`;
-      return `(jsfun_${expr.name} ${expr.freeVars.map(expressionToSMT).join(' ')})`;
+      return `(jsfun ${expr.id})`;
     }
     case 'ArrayExpression':
       return `(jsarray ${arrayToSMT(expr.elements)})`;
@@ -209,14 +203,21 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
         throw new Error("unsupported");
       }
     }
-    case "ClosedVarExpression":
-      return `(jsfun_${expr.funcName}_${expr.freeVar} f_0)`;
   }
 }
 
 export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
   switch (prop.type) {
-    case "Truthy": return `(_truthy ${expressionToSMT(prop.expr)})`;
+    case "Truthy": {
+      if (prop.expr.type == "ConditionalExpression" &&
+          prop.expr.consequent.type == "Literal" &&
+          prop.expr.consequent.value === true &&
+          prop.expr.alternate.type == "Literal" &&
+          prop.expr.alternate.value === false) {
+        return propositionToSMT(prop.expr.test);
+      }
+      return `(_truthy ${expressionToSMT(prop.expr)})`;
+    }
     case "And": {
       const clauses: Array<SMTInput> = flatMap(prop.clauses,
         c => c.type == "And" ? c.clauses : [c]) 
@@ -266,8 +267,8 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
         throw new Error("unsupported");
       }
     case "ForAll": {
-      const params = `(${prop.args.map(p => `(${p}_0 JSVal)`).join(' ')})`;
-      const triggerArgs = `${expressionToSMT(prop.callee)} ${prop.args.map(p => p + "_0").join(' ')}`;
+      const params = `(${prop.args.map(p => `(${expressionToSMT(p)} JSVal)`).join(' ')})`;
+      const triggerArgs = `${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(' ')}`;
       if (prop.args.length != 1 && prop.args.length != 2) throw new Error("Not supported");
       const trigger = (prop.args.length == 1 ? "call1 " : "call2 ") + triggerArgs;
       return `(forall ${params} (! ${propositionToSMT(prop.prop)} :pattern ((${trigger}))))`;

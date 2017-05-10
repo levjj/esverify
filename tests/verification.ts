@@ -38,10 +38,12 @@ function helper(description: string, expected: string, debug: boolean = false) {
 function verified(description: string) { helper(description, 'verified'); }
 function incorrect(description: string) { helper(description, 'incorrect'); }
 function tested(description: string) { helper(description, 'tested'); }
+function unknown(description: string) { helper(description, 'unknown'); }
 
 function verifiedDebug(description: string) { helper(description, 'verified', true); }
 function incorrectDebug(description: string) { helper(description, 'incorrect', true); }
 function testedDebug(description: string) { helper(description, 'tested', true); }
+function unknownDebug(description: string) { helper(description, 'unknown', true); }
 
 describe('max()', () => {
 
@@ -97,7 +99,7 @@ describe('max() with missing pre', () => {
     vcs = t;
   });
 
-  tested('max:\n(max(a, b) >= a)');
+  unknown('max:\n(max(a, b) >= a)');
 
   it('returns counter-example', async () => {
     await vcs[0].solve();
@@ -291,7 +293,7 @@ describe('inline global call', () => {
   });
 
   verified('assert:\n(j == 4)');
-  tested('assert:\n(k == 5)');
+  unknown('assert:\n(k == 5)');
 });
 
 describe('post conditions global call', () => {
@@ -321,8 +323,8 @@ describe('post conditions global call', () => {
   });
 
   verified('inc:\n(inc(n) > n)')
-  incorrect('inc2:\nprecondition inc(n)');
-  incorrect('inc2:\nprecondition inc(inc(n))');
+  unknown('inc2:\nprecondition inc(n)');
+  unknown('inc2:\nprecondition inc(inc(n))');
   verified('precondition inc(i)');
   verified('assert:\n(j >= 4)');
   verified('precondition inc2(i)');
@@ -348,7 +350,7 @@ describe('closure', () => {
   });
 
   verified('precondition f(0)');
-  incorrect('precondition f(1)');
+  unknown('precondition f(1)');
 });
 
 describe('fibonacci increasing', () => {
@@ -397,7 +399,7 @@ describe('buggy fibonacci', () => {
 
   verified('fib:\nprecondition fib((n - 1))');
   verified('fib:\nprecondition fib((n - 2))');
-  incorrect('fib:\n(fib(n) >= n)');
+  unknown('fib:\n(fib(n) >= n)');
   it('returns counter-example', async () => {
     await vcs[4].solve();
     expect(vcs[4].getModel()).to.containSubset({

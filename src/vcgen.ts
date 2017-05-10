@@ -1,6 +1,6 @@
 import VerificationCondition, { VarName, Vars, SMTInput, SMTOutput } from "./verification";
 import { JSyntax, stringifyExpr, declName, checkInvariants, checkPreconditions, replaceFunctionResult } from "./javascript";
-import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT } from "./propositions";
+import { ASyntax, tru, fls, truthy, implies, and, or, eq, not, propositionToSMT, expressionToSMT } from "./propositions";
 import { pushAll } from "./util";
 
 function assignedInExpr(v: VarName, expr: JSyntax.Expression): boolean {
@@ -66,16 +66,19 @@ function assignedInStmt(v: VarName, stmt: JSyntax.Statement): boolean {
   }
 }
 
-function getVar(vars: Vars, v: VarName): ASyntax.Identifier {
-  if (!(v in vars)) throw new Error("unknown identifier: " + v);
-  return { type: "Identifier", name: v, version: vars[v] };
+function getVar(vars: Vars, name: VarName): ASyntax.Identifier {
+  if (!(name in vars)) throw new Error("unknown identifier: " + name);
+  return { type: "Identifier", name, version: vars[name] };
 }
 
-// function freshResVar(vars: Vars): [Vars, VarName] {
-//   let i = 0;
-//   while (`tmp_${i}` in vars) i++;
-//   return [Object.assign({}, vars, {[`tmp_${i}`]: 0, "_res_": i}), `tmp_${i}`]
-// }
+function freshVar(vars: Vars, name: VarName): ASyntax.Identifier {
+  if (!(name in vars)) {
+    vars[name] = 0;
+  } else {
+    vars[name]++;
+  }
+  return getVar(vars, name);
+}
 
 class PureContextError extends Error {
   constructor() { super("not supported in pure functional context"); }
@@ -135,20 +138,18 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
       };
     case "SpecExpression": {
       const vars2 = Object.assign({}, vars);
-      for (const arg of expr.args) {
-        vars2[arg] = 0;
+      const args: Array<ASyntax.Identifier> = [];
+      for (const p of expr.args) {
+        args.push(freshVar(vars2, p));
       }
       const callee = pureExpression(ctxVars, vars, lets, expr.callee);
-      const args = expr.args.map(a => getVar(vars2, a));
       const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
-      const postP: ASyntax.Proposition = { type: "Precondition", callee, args };
+      const postP: ASyntax.Proposition = { type: "Postcondition", callee, args };
+      const callP: ASyntax.Proposition = { type: "CallTrigger", callee, args };
       const r = truthy(pureExpression(ctxVars, vars2, lets, expr.pre));
       const s = truthy(pureExpression(ctxVars, vars2, lets, expr.post));
-      const forAll: ASyntax.Proposition = {
-        type: "ForAll",
-        callee: pureExpression(ctxVars, vars, lets, expr.callee),
-        args: expr.args,
-        prop: and(implies(r, preP), implies(and(r, postP), s))
+      const forAll: ASyntax.Proposition = { type: "ForAll", callee, args,
+        prop: and(callP, implies(r, preP), implies(and(r, postP), s))
       };
       const fnCheck: ASyntax.Expression = {
         type: "BinaryExpression",
@@ -233,6 +234,9 @@ function havocVars(vars: Vars, f: (s: string) => boolean): Vars {
   }
   return res;
 }
+
+let nextUniqueFuncId = 0
+function uniqueFuncId() { return nextUniqueFuncId++; }
 
 class Transform {
   vars: Vars;
@@ -449,16 +453,55 @@ function transformWhileLoop(vars: Vars, whl: JSyntax.WhileStatement): STransform
   return res;
 }
 
-function transformFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration): Transform {
-  // assumes mutable vars from outer scope are fresh
+function transformSpec(vars: Vars, f: JSyntax.FunctionDeclaration): ASyntax.Proposition {
+  const vars2 = Object.assign({}, vars);
+  const callee: ASyntax.Identifier = { type: "Identifier", name: f.id.name, version: 0 };
+  
+  // add arguments to scope 
+  const args: Array<ASyntax.Identifier> = [];
+  for (const p of f.params) {
+    args.push(freshVar(vars2, p.name));
+  }
+
+  let req = tru;
+  for (const r of f.requires) {
+    req = and(req, truthy(pureExpression(vars2, vars2, {}, r)));
+  }
+  let ens = tru;
+  for (const r of f.ensures) {
+    ens = and(ens, truthy(pureExpression(vars2, vars2, {}, r)));
+  }
+  const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
+  const postP: ASyntax.Proposition = { type: "Postcondition", callee, args };
+  const callP: ASyntax.Proposition = { type: "CallTrigger", callee, args };
+  const forAll: ASyntax.Proposition = { type: "ForAll", callee, args,
+    prop: and(callP, implies(req, preP), implies(and(req, postP), ens))
+  };
+  const fnCheck: ASyntax.Expression = {
+    type: "BinaryExpression",
+    left: {
+      type: "UnaryExpression",
+      operator: "typeof",
+      argument: callee
+    },
+    operator: "==",
+    right: { type: "Literal", value: "function" }
+  };
+  return and(truthy(fnCheck), forAll);
+}
+
+function verifyFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration): Transform {
+
+  // havoc all let-bound free variable
+  const vars2 = Object.assign({_res_: 0}, havocVars(vars, v => f.freeVars.some(decl =>
+    decl.type == "Var" && decl.decl.id.name == v && decl.decl.kind == "let")));
+
   const vcs: Array<VerificationCondition> = [];
-  const vars2 = Object.assign({_res_: 0}, vars);
   
   // add arguments to scope 
   const args: Array<ASyntax.Expression> = [];
   for (const p of f.params) {
-    vars2[p.name] = 0;
-    args.push({ type: "Identifier", name: p.name, version: 0 });
+    args.push(freshVar(vars2, p.name));
   }
   const callee: ASyntax.Expression = { type: "Identifier", name: f.id.name, version: 0 };
   const eq_call: ASyntax.Proposition = eq({ type: "Identifier", name: "_res_", version: 0 },
@@ -576,17 +619,12 @@ export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Stat
     case "FunctionDeclaration": {
       const vars2 = Object.assign({}, vars);
       vars2[stmt.id.name] = 0; // TODO enable shadowing
-      // havoc all let-bound free variable
-      const vars_f = havocVars(vars2, v => stmt.freeVars.some(decl =>
-        decl.type == "Var" && decl.decl.id.name == v && decl.decl.kind == "let"));
       const id: ASyntax.Expression = { type: "Identifier", name: stmt.id.name, version: 0 },
-            freeVars: Array<ASyntax.Expression> = stmt.freeVars.map(d => getVar(vars2, declName(d))),
-            freeVars_f: Array<ASyntax.Expression> = stmt.freeVars.map(d => getVar(vars_f, declName(d))),
-            eq_2: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", name: stmt.id.name, freeVars }),
-            eq_f: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", name: stmt.id.name, freeVars: freeVars_f });
-      const t: Transform = transformFunctionDeclaration(vars_f, stmt);
-      t.vcs.forEach(vc => vc.prop = and(eq_f, vc.prop));
-      return new STransform(vars2, eq_2, t.vcs);
+            eq_f: ASyntax.Proposition = eq(id, { type: "FunctionLiteral", id: uniqueFuncId() }),
+            spec_f: ASyntax.Proposition = transformSpec(vars2, stmt);
+      const t: Transform = verifyFunctionDeclaration(vars2, stmt);
+      t.vcs.forEach(vc => vc.prop = and(eq_f, spec_f, vc.prop));
+      return new STransform(vars2, and(eq_f, spec_f), t.vcs);
     }
   }
 }
@@ -630,36 +668,6 @@ export function transformProgram(prog: JSyntax.Program): Array<VerificationCondi
   }
   vcs.forEach(vc => {
     vc.body = funcTestBodies.concat(vc.body);
-    vc.fns = prog.functions;
   });
   return vcs;
-}
-
-function transformSpec(f: JSyntax.FunctionDeclaration, s: Array<JSyntax.Expression>): ASyntax.Proposition {
-  const vars: Vars = {};
-  const lets: Bindings = {};
-  vars[f.id.name] = 0;
-  lets[f.id.name] = { type: "Identifier", name: "f", version: 0 };
-  f.params.forEach((p, idx) => {
-    vars[p.name] = 0;
-    lets[p.name] = { type: "Identifier", name: "arg", version: idx };
-  });
-  f.freeVars.forEach((d, idx) => {
-    vars[declName(d)] = 0;
-    lets[declName(d)] = { type: "ClosedVarExpression", funcName: f.id.name, freeVar: idx };
-  });
-
-  let prop = tru;
-  for (const req of s) {
-    prop = and(prop, truthy(pureExpression(vars, vars, lets, req)));
-  }
-  return prop;
-}
-
-export function transformPrecondition(f: JSyntax.FunctionDeclaration): ASyntax.Proposition {
-  return transformSpec(f, f.requires);
-}
-
-export function transformPostcondition(f: JSyntax.FunctionDeclaration): ASyntax.Proposition {
-  return transformSpec(f, f.ensures);
 }

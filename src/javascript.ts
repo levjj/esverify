@@ -489,7 +489,7 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
           callee: expressionAsJavaScript(expr.arguments[0]),
           args: (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.map(p => (p as Syntax.Identifier).name),
           pre: expressionAsJavaScript((expr.arguments[1] as Syntax.ArrowFunctionExpression).body as Syntax.Expression),
-          post: expressionAsJavaScript((expr.arguments[1] as Syntax.ArrowFunctionExpression).body as Syntax.Expression)
+          post: expressionAsJavaScript((expr.arguments[2] as Syntax.ArrowFunctionExpression).body as Syntax.Expression)
         };
       }
       return {
