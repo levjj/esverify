@@ -55,10 +55,10 @@ export default class VerificationCondition {
 ; declarations
 ${declarations}
 
-; requirements
+; antecedents
 ${propositionToAssert(this.prop)}
 
-; post condition
+; verification condition
 ${post}
 
 (check-sat)

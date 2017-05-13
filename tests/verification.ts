@@ -334,12 +334,13 @@ describe('post conditions global call', () => {
 describe('closure', () => {
 
   const code = (() => {
-    let x = 3;
-    function f(y) {
-      requires(x > 1);
+    let x = 2;
+    const y = 3;
+    function f(z) {
+      requires(x < y);
     }
     f(0);
-    x = 1;
+    x = 4;
     f(1);
   }).toString();
 
@@ -350,7 +351,7 @@ describe('closure', () => {
   });
 
   verified('precondition f(0)');
-  unknown('precondition f(1)');
+  unknownDebug('precondition f(1)');
 });
 
 describe('fibonacci increasing', () => {

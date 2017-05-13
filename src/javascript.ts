@@ -8,6 +8,9 @@ export namespace JSyntax {
                           | { type: "Func"; decl: JSyntax.FunctionDeclaration }
                           | { type: "Param";
                               func: JSyntax.FunctionDeclaration;
+                              decl: JSyntax.Identifier }
+                          | { type: "OuterParam";
+                              func: JSyntax.FunctionDeclaration;
                               decl: JSyntax.Identifier };
 
   export interface Identifier { type: "Identifier"; name: string;
@@ -515,12 +518,12 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
 }
 
 function isWrittenTo(decl: JSyntax.Declaration): boolean {
-  return decl.type == "Var" && decl.decl.kind == "let";
+  return decl.type == "Var" && decl.decl.kind == "let" || decl.type == "OuterParam";
 }
 
 export function declName(decl: JSyntax.Declaration): string {
   if (decl.type == "Unresolved") throw new Error("Unresolved variable");
-  return decl.type == "Param" ? decl.decl.name : decl.decl.id.name;
+  return decl.type == "Param" || decl.type == "OuterParam" ? decl.decl.name : decl.decl.id.name;
 }
 
 class Scope {
@@ -546,7 +549,8 @@ class Scope {
   lookupUse(sym: string): JSyntax.Declaration {
     if (sym in this.ids) return this.ids[sym];
     if (this.parent) {
-      const decl = this.parent.lookupUse(sym);
+      let decl: JSyntax.Declaration = this.parent.lookupUse(sym);
+      if (decl.type == "Param") decl = { type: "OuterParam", func: decl.func, decl: decl.decl };
       if (this.func && !this.func.freeVars.includes(decl) && isWrittenTo(decl)) {
         this.func.freeVars.push(decl); // a free variable
       }

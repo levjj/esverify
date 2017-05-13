@@ -86,10 +86,9 @@ class PureContextError extends Error {
 
 type Bindings = { [varName: string]: ASyntax.Expression };
 
-function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax.Expression): ASyntax.Expression {
+function pureExpression(ctxVars: Vars, vars: Vars, expr: JSyntax.Expression): ASyntax.Expression {
   switch (expr.type) {
     case "Identifier":
-      if (expr.name in lets) return lets[expr.name];
       return getVar(vars, expr.name);
     case "OldIdentifier":
       return getVar(ctxVars, expr.id.name);
@@ -98,19 +97,19 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
     case "ArrayExpression":
       return {
         type: "ArrayExpression",
-        elements: expr.elements.map(e => pureExpression(ctxVars, vars, lets, e))
+        elements: expr.elements.map(e => pureExpression(ctxVars, vars, e))
       };
     case "UnaryExpression":
-      const argument = pureExpression(ctxVars, vars, lets, expr.argument);
+      const argument = pureExpression(ctxVars, vars, expr.argument);
       return { type: "UnaryExpression", operator: expr.operator, argument };
     case "BinaryExpression": {
-      const left = pureExpression(ctxVars, vars, lets, expr.left);
-      const right = pureExpression(ctxVars, vars, lets, expr.right);
+      const left = pureExpression(ctxVars, vars, expr.left);
+      const right = pureExpression(ctxVars, vars, expr.right);
       return { type: "BinaryExpression", operator: expr.operator, left, right };
     }
     case "LogicalExpression": {
-      const left = pureExpression(ctxVars, vars, lets, expr.left);
-      const right = pureExpression(ctxVars, vars, lets, expr.right);
+      const left = pureExpression(ctxVars, vars, expr.left);
+      const right = pureExpression(ctxVars, vars, expr.right);
       if (expr.operator == "&&") {
         return { type: "ConditionalExpression", test: truthy(left), consequent: right, alternate: left };
       } else {
@@ -118,9 +117,9 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
       }
     }
     case "ConditionalExpression": {
-      const test = truthy(pureExpression(ctxVars, vars, lets, expr.test));
-      const consequent = pureExpression(ctxVars, vars, lets, expr.consequent);
-      const alternate = pureExpression(ctxVars, vars, lets, expr.alternate);
+      const test = truthy(pureExpression(ctxVars, vars, expr.test));
+      const consequent = pureExpression(ctxVars, vars, expr.consequent);
+      const alternate = pureExpression(ctxVars, vars, expr.alternate);
       return { type: "ConditionalExpression", test, consequent, alternate };
     }
     case "AssignmentExpression": {
@@ -128,13 +127,13 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
     }
     case "SequenceExpression": {
       // ignore all expressions but the last
-      return pureExpression(ctxVars, vars, lets, expr.expressions[expr.expressions.length - 1]);
+      return pureExpression(ctxVars, vars, expr.expressions[expr.expressions.length - 1]);
     }
     case "CallExpression":
       return {
         type: "CallExpression",
-        callee: pureExpression(ctxVars, vars, lets, expr.callee),
-        args: expr.args.map(a => pureExpression(ctxVars, vars, lets, a))
+        callee: pureExpression(ctxVars, vars, expr.callee),
+        args: expr.args.map(a => pureExpression(ctxVars, vars, a))
       };
     case "SpecExpression": {
       const vars2 = Object.assign({}, vars);
@@ -142,12 +141,12 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
       for (const p of expr.args) {
         args.push(freshVar(vars2, p));
       }
-      const callee = pureExpression(ctxVars, vars, lets, expr.callee);
+      const callee = pureExpression(ctxVars, vars, expr.callee);
       const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
       const postP: ASyntax.Proposition = { type: "Postcondition", callee, args };
       const callP: ASyntax.Proposition = { type: "CallTrigger", callee, args };
-      const r = truthy(pureExpression(ctxVars, vars2, lets, expr.pre));
-      const s = truthy(pureExpression(ctxVars, vars2, lets, expr.post));
+      const r = truthy(pureExpression(ctxVars, vars2, expr.pre));
+      const s = truthy(pureExpression(ctxVars, vars2, expr.post));
       const forAll: ASyntax.Proposition = { type: "ForAll", callee, args,
         prop: and(callP, implies(r, preP), implies(and(r, postP), s))
       };
@@ -170,31 +169,6 @@ function pureExpression(ctxVars: Vars, vars: Vars, lets: Bindings, expr: JSyntax
     // case "FunctionExpression":
     //   throw new PureContextError();
   }
-}
-
-function pureStatements(ctxVars: Vars, vars: Vars, stmts: Array<JSyntax.Statement>): ASyntax.Expression {
-  if (stmts.length < 1) throw new PureContextError();
-  const last = stmts[stmts.length - 1];
-  if (last.type != "ReturnStatement") throw new PureContextError();
-  const lets: Bindings = {};
-  for (const stmt of stmts.slice(0, -1)) {
-    switch (stmt.type) {
-      case "VariableDeclaration":
-        lets[stmt.id.name] = pureExpression(ctxVars, vars, lets, stmt.init);
-        break;
-      case "BlockStatement":
-      case "ExpressionStatement":
-      case "IfStatement":
-      case "ReturnStatement":
-      case "WhileStatement":
-      case "FunctionDeclaration":
-        throw new PureContextError();
-      case "AssertStatement":
-      case "DebuggerStatement":
-        break; // ignore
-    }
-  }
-  return pureExpression(ctxVars, vars, lets, last.argument);
 }
 
 function phi(cond: ASyntax.Proposition, left: Transform,
@@ -426,7 +400,7 @@ function transformWhileLoop(vars: Vars, whl: JSyntax.WhileStatement): STransform
   const tt = transformExpression(vars, vars, whl.test);
   const res: STransform = new STransform(tt.vars, and(tt.prop, truthy(tt.val)), []);
   for (const inv of whl.invariants) {
-    const ti = pureExpression(vars, res.vars, {}, inv);
+    const ti = pureExpression(vars, res.vars, inv);
     res.prop = and(res.prop, truthy(ti));
   }
   const tb = transformStatement(vars, res.vars, whl.body);
@@ -444,7 +418,7 @@ function transformWhileLoop(vars: Vars, whl: JSyntax.WhileStatement): STransform
 
   // ensure invariants maintained
   for (const inv of whl.invariants) {
-    const ti = pureExpression(vars, res.vars, {}, inv);
+    const ti = pureExpression(vars, res.vars, inv);
     res.vcs.push(new VerificationCondition(res.vars, res.prop, truthy(ti),
                 "invariant maintained:\n" + stringifyExpr(inv),
                  vars, testBody.concat([{ type: "AssertStatement", expression: inv }])));
@@ -465,11 +439,11 @@ function transformSpec(vars: Vars, f: JSyntax.FunctionDeclaration): ASyntax.Prop
 
   let req = tru;
   for (const r of f.requires) {
-    req = and(req, truthy(pureExpression(vars2, vars2, {}, r)));
+    req = and(req, truthy(pureExpression(vars2, vars2, r)));
   }
   let ens = tru;
   for (const r of f.ensures) {
-    ens = and(ens, truthy(pureExpression(vars2, vars2, {}, r)));
+    ens = and(ens, truthy(pureExpression(vars2, vars2, r)));
   }
   const preP: ASyntax.Proposition = { type: "Precondition", callee, args };
   const postP: ASyntax.Proposition = { type: "Postcondition", callee, args };
@@ -508,7 +482,7 @@ function verifyFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration): 
                                           { type: "CallExpression", callee, args });
   const res: Transform = new Transform(vars2, eq_call, []);
   for (const req of f.requires) {
-    const tr = pureExpression(vars2, res.vars, {}, req);
+    const tr = pureExpression(vars2, res.vars, req);
     res.prop = and(res.prop, truthy(tr));
   }
   const tb = transformStatement(vars2, res.vars, f.body);
@@ -529,7 +503,7 @@ function verifyFunctionDeclaration(vars: Vars, f: JSyntax.FunctionDeclaration): 
     const vars3 = Object.assign({}, vars2);
     delete vars3[f.id.name]; // funcName not free
     delete vars3["_res_"]; // res not free
-    const ti = pureExpression(vars2, res.vars, {}, ens);
+    const ti = pureExpression(vars2, res.vars, ens);
     res.vcs.push(new VerificationCondition(res.vars, res.prop, truthy(ti),
                  stringifyExpr(ens),
                  vars3, testBody.concat([{ type: "AssertStatement", expression: ens2 }])));
@@ -565,7 +539,7 @@ export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Stat
       return new STransform(t.vars, t.prop, t.vcs);
     }
     case "AssertStatement": {
-      const t = pureExpression(ctxVars, vars, {}, stmt.expression);
+      const t = pureExpression(ctxVars, vars, stmt.expression);
       const vc = new VerificationCondition(vars, tru, truthy(t), "assert:\n" + stringifyExpr(stmt.expression), ctxVars);
       return new STransform(vars, tru, [vc], not(truthy(t)));
     }
@@ -589,7 +563,7 @@ export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Stat
       // invariants on entry
       let vcs: Array<VerificationCondition> = [];
       for (const inv of stmt.invariants) {
-        const t = pureExpression(ctxVars, vars, {}, inv);
+        const t = pureExpression(ctxVars, vars, inv);
         vcs.push(new VerificationCondition(vars, tru, truthy(t), "invariant on entry:\n" + stringifyExpr(inv)));
       }
 
@@ -608,7 +582,7 @@ export function transformStatement(ctxVars: Vars, vars: Vars, stmt: JSyntax.Stat
       const res: STransform = new STransform(tt.vars,
         and(tt.prop, not(truthy(tt.val))), vcs.concat(twhile.vcs).concat(tt.vcs), twhile.bc);
       for (const inv of stmt.invariants) {
-        const ti = pureExpression(ctxVars, res.vars, {}, inv);
+        const ti = pureExpression(ctxVars, res.vars, inv);
         res.prop = and(res.prop, truthy(ti));
       }
       return res;
@@ -655,7 +629,7 @@ export function transformProgram(prog: JSyntax.Program): Array<VerificationCondi
 
   // main program body needs to establish invariants
   for (const inv of prog.invariants) {
-    const ti = pureExpression({}, res.vars, {}, inv);
+    const ti = pureExpression({}, res.vars, inv);
     vcs.push(new VerificationCondition(res.vars, res.prop, truthy(ti),
       "initially:\n" + stringifyExpr(inv),
       {}, prog.body.concat([{ type: "AssertStatement", expression: inv }])));
