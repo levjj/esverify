@@ -1,5 +1,7 @@
-export const preamble: string = `
-(set-option :smt.auto-config false) ; disable automatic self configuration
+import { P, Vars, Locs, Heap, SMTInput, propositionToAssert, propositionToSMT } from "./propositions";
+
+export default function smt(heap: Heap, locs: Locs, vars: Vars, prop: P, vc: P): SMTInput {
+    return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
 ; Values in JavaScript
@@ -16,18 +18,6 @@ export const preamble: string = `
   (JSValList empty (cons (car JSVal) (cdr JSValList)))
   (JSProp (prop (key (List Int)) (val JSVal)))
   (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
-
-; Uninterpreted function results 
-(declare-fun pre1 (JSVal JSVal) Bool)
-(declare-fun pre2 (JSVal JSVal JSVal) Bool)
-(declare-fun post1 (JSVal JSVal) Bool)
-(declare-fun post2 (JSVal JSVal JSVal) Bool)
-(declare-fun app1 (JSVal JSVal) JSVal)
-(declare-fun app2 (JSVal JSVal JSVal) JSVal)
-
-; Call trigger to manually instantiate quantifiers
-(declare-fun call1 (JSVal JSVal) Bool)
-(declare-fun call2 (JSVal JSVal JSVal) Bool)
 
 ; Types in JavaScript
 (declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj JSFunction)))
@@ -183,4 +173,43 @@ export const preamble: string = `
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvand ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
   jsundefined)) ; non-standard!
-`;
+
+; Heap
+
+(declare-sort Loc)
+(define-sort Heap () (Array Loc JSVal))
+
+; Functions
+
+(declare-fun pre0 (JSVal Heap) Bool)
+(declare-fun pre1 (JSVal Heap JSVal) Bool)
+(declare-fun pre2 (JSVal Heap JSVal JSVal) Bool)
+(declare-fun post0 (JSVal Heap Heap) Bool)
+(declare-fun post1 (JSVal Heap Heap JSVal) Bool)
+(declare-fun post2 (JSVal Heap Heap JSVal JSVal) Bool)
+(declare-fun app0 (JSVal Heap) JSVal)
+(declare-fun app1 (JSVal Heap JSVal) JSVal)
+(declare-fun app2 (JSVal Heap JSVal JSVal) JSVal)
+(declare-fun call0 (JSVal Heap Heap) Bool)
+(declare-fun call1 (JSVal Heap Heap JSVal) Bool)
+(declare-fun call2 (JSVal Heap Heap JSVal JSVal) Bool)
+
+; Declarations
+
+${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
+${[...locs].map(v => `(declare-const l_${v} Loc)\n`).join('')}
+${locs.size == 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_'+l).join(' ')}))`}
+
+${[...Array(heap+1).keys()].map(h => `(declare-const h_${h} Heap)\n`).join('')}
+
+; Antecedents
+
+${propositionToAssert(prop)}
+
+; Verification condition
+
+(assert (not ${propositionToSMT(vc)}))
+
+(check-sat)
+(get-value (${[...vars].map(v => `v_${v}`).join(' ')}))`;
+}

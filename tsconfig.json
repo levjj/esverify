@@ -4,6 +4,8 @@
     "declaration": false,
     "module": "commonjs",
     "noImplicitAny": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
     "preserveConstEnums": true,
     "removeComments": false,
     "sourceMap": true,

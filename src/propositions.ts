@@ -1,33 +1,35 @@
-import { Vars, SMTInput, SMTOutput } from "./verification";
 import { flatMap } from "./util";
 
 export namespace ASyntax {
-  export interface Identifier { type: "Identifier"; name: string; version: number; }
-  interface Literal { type: "Literal";
-                      value: undefined | null | boolean | number | string; }
-  interface FunctionLiteral { type: "FunctionLiteral";
-                              id: number; }
-  interface ArrayExpression { type: "ArrayExpression";
-                              elements: Array<Expression>; }
+  export interface Variable { type: "Variable", name: string }
+  export interface HeapReference { type: "HeapReference", name: string, heap: Heap }
+  interface Literal { type: "Literal",
+                      value: undefined | null | boolean | number | string }
+  interface FunctionLiteral { type: "FunctionLiteral",
+                              id: number }
+  interface ArrayExpression { type: "ArrayExpression",
+                              elements: Array<Expression> }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
-  interface UnaryExpression { type: "UnaryExpression";
-                              operator: UnaryOperator;
-                              argument: Expression; }
+  interface UnaryExpression { type: "UnaryExpression",
+                              operator: UnaryOperator,
+                              argument: Expression }
   type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
                       | "<<" | ">>" | ">>>" | "+" | "-" | "*" | "/" | "%"
                       | "|" | "^" | "&";
-  interface BinaryExpression { type: "BinaryExpression";
-                               operator: BinaryOperator;
-                               left: Expression;
-                               right: Expression; }
-  interface ConditionalExpression { type: "ConditionalExpression";
-                                    test: Proposition;
-                                    consequent: Expression;
-                                    alternate: Expression; }
-  interface CallExpression { type: "CallExpression";
-                             callee: Expression;
-                             args: Array<Expression>; }
-  export type Expression = Identifier
+  interface BinaryExpression { type: "BinaryExpression",
+                               operator: BinaryOperator,
+                               left: Expression,
+                               right: Expression }
+  interface ConditionalExpression { type: "ConditionalExpression",
+                                    test: Proposition,
+                                    consequent: Expression,
+                                    alternate: Expression }
+  interface CallExpression { type: "CallExpression",
+                             callee: Expression,
+                             heap: Heap,
+                             args: Array<Expression> }
+  export type Expression = Variable
+                         | HeapReference
                          | Literal
                          | FunctionLiteral
                          | ArrayExpression
@@ -36,27 +38,37 @@ export namespace ASyntax {
                          | ConditionalExpression
                          | CallExpression;
 
-  export interface Truthy { type: "Truthy"; expr: Expression; }
-  export interface And { type: "And"; clauses: Array<Proposition>; }
-  export interface Or { type: "Or"; clauses: Array<Proposition>; }
-  export interface Eq { type: "Eq"; left: Expression, right: Expression; }
-  export interface Iff { type: "Iff"; left: Proposition, right: Proposition; }
-  export interface Not { type: "Not"; arg: Proposition; }
-  export interface True { type: "True"; }
-  export interface False { type: "False"; }
-  export interface Precondition { type: "Precondition";
-                                  callee: Expression;
-                                  args: Array<Expression>; }
-  export interface Postcondition { type: "Postcondition";
-                                   callee: Expression;
-                                   args: Array<Expression>; }
-  export interface ForAll { type: "ForAll";
-                            callee: Expression;
-                            args: Array<Identifier>;
-                            prop: Proposition; }
-  export interface CallTrigger { type: "CallTrigger";
-                                 callee: Expression;
-                                 args: Array<Expression>; }
+  export interface Truthy { type: "Truthy", expr: Expression }
+  export interface And { type: "And", clauses: Array<Proposition> }
+  export interface Or { type: "Or", clauses: Array<Proposition> }
+  export interface Eq { type: "Eq", left: Expression, right: Expression }
+  export interface Iff { type: "Iff", left: Proposition, right: Proposition }
+  export interface Not { type: "Not", arg: Proposition }
+  export interface True { type: "True" }
+  export interface False { type: "False" }
+  export interface Precondition { type: "Precondition",
+                                  callee: Expression,
+                                  heap: Heap,
+                                  args: Array<Expression> }
+  export interface Postcondition { type: "Postcondition",
+                                   callee: Expression,
+                                   heap: Heap,
+                                   args: Array<Expression> }
+  export interface ForAll { type: "ForAll",
+                            callee: Expression,
+                            args: Array<Variable>,
+                            prop: Proposition }
+  export interface CallTrigger { type: "CallTrigger",
+                                 callee: Expression,
+                                 heap: Heap,
+                                 args: Array<Expression> }
+  export interface HeapStore { type: "HeapStore",
+                               heap: Heap,
+                               name: string,
+                               expr: Expression }
+  export interface HeapPromote { type: "HeapPromote",
+                                 from: Heap,
+                                 to: Heap }
   export type Proposition = Truthy
                           | And
                           | Or
@@ -68,8 +80,18 @@ export namespace ASyntax {
                           | Precondition
                           | Postcondition
                           | ForAll
-                          | CallTrigger;
+                          | CallTrigger
+                          | HeapStore
+                          | HeapPromote;
 }
+
+export type A = ASyntax.Expression;
+export type P = ASyntax.Proposition;
+export type Vars = Set<string>;
+export type Locs = Set<string>;
+export type Heap = number;
+export type SMTInput = string;
+export type SMTOutput = string;
 
 const unOpToSMT: {[unop: string]: string} = {
   "-": "_js-negative",
@@ -104,19 +126,24 @@ const binOpToSMT: {[binop: string]: string} = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-export const tru: ASyntax.Proposition = { type: "True" };
-export const fls: ASyntax.Proposition = { type: "False" };
+export const und: A = { type: "Literal", value: undefined };
+export const tru: P = { type: "True" };
+export const fls: P = { type: "False" };
 
-export function truthy(expr: ASyntax.Expression): ASyntax.Proposition {
+export function truthy(expr: A): P {
   return { type: "Truthy", expr };
 }
 
-export function implies(cond: ASyntax.Proposition, cons: ASyntax.Proposition): ASyntax.Proposition {
+export function falsy(expr: A): P {
+  return not(truthy(expr));
+}
+
+export function implies(cond: P, cons: P): P {
   return or(not(cond), cons);
 }
 
-export function and(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
-  const clauses: Array<ASyntax.Proposition> = flatMap(props,
+export function and(...props: Array<P>): P {
+  const clauses: Array<P> = flatMap(props,
     c => c.type == "And" ? c.clauses : [c]) 
     .filter(c => c.type != "True");
   if (clauses.find(c => c.type == "False")) return fls;
@@ -125,8 +152,8 @@ export function and(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
   return { type: "And", clauses };
 }
 
-export function or(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
-  const clauses: Array<ASyntax.Proposition> = flatMap(props,
+export function or(...props: Array<P>): P {
+  const clauses: Array<P> = flatMap(props,
     c => c.type == "Or" ? c.clauses : [c]) 
     .filter(c => c.type != "False");
   if (clauses.find(c => c.type == "True")) return tru;
@@ -135,42 +162,42 @@ export function or(...props: Array<ASyntax.Proposition>): ASyntax.Proposition {
   return { type: "Or", clauses };
 }
 
-export function eq(left: ASyntax.Expression, right: ASyntax.Expression): ASyntax.Proposition {
+export function eq(left: A, right: A): P {
   return { type: "Eq", left, right };
 }
 
-export function iff(left: ASyntax.Proposition, right: ASyntax.Proposition): ASyntax.Proposition {
+export function iff(left: P, right: P): P {
   return { type: "Iff", left, right };
 }
 
-export function not(arg: ASyntax.Proposition): ASyntax.Proposition {
+export function not(arg: P): P {
   if (arg.type == "True") return fls;
   if (arg.type == "False") return tru;
   if (arg.type == "Not") return arg.arg;
   return { type: "Not", arg };
 }
 
-export function varsToSMT(vars: Vars): SMTInput {
-  let smt = '';
-  for (const v in vars) {
-    for (let i = 0; i <= vars[v]; i++) {
-      smt += `(declare-const ${v}_${i} JSVal)\n`;
-    }
-  }
-  return smt;
+export function heapStore(heap: Heap, name: string, expr: A): P {
+  return { type: "HeapStore", heap, name, expr };
 }
 
-function arrayToSMT(elements: Array<ASyntax.Expression>): SMTInput {
+export function heapPromote(from: Heap, to: Heap): P {
+  return { type: "HeapPromote", from, to };
+}
+
+function arrayToSMT(elements: Array<A>): SMTInput {
   if (elements.length === 0) return `empty`;
   const [head, ...tail] = elements;
   const h = head || {type: "Literal", value: "undefined"};
   return `(cons ${expressionToSMT(h)} ${arrayToSMT(tail)})`;
 }
 
-export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
+export function expressionToSMT(expr: A): SMTInput {
   switch (expr.type) {
-    case "Identifier":
-      return expr.name + "_" + expr.version;
+    case "Variable":
+      return "v_" + expr.name;
+    case "HeapReference":
+      return `(select h_${expr.heap} l_${expr.name})`;
     case "Literal":
       if (expr.value === undefined) return `jsundefined`;
       if (expr.value === null) return `jsnull`;
@@ -201,10 +228,12 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
             elze = expressionToSMT(expr.alternate);
       return `(ite ${test} ${then} ${elze})`;
     case "CallExpression": {
-      if (expr.args.length == 1) {
-        return `(app1 ${expressionToSMT(expr.callee)} ${expr.args.map(expressionToSMT).join(" ")})`;
+      if (expr.args.length == 0) {
+        return `(app0 ${expressionToSMT(expr.callee)} h_${expr.heap})`;
+      } else if (expr.args.length == 1) {
+        return `(app1 ${expressionToSMT(expr.callee)} h_${expr.heap} ${expr.args.map(expressionToSMT).join(" ")})`;
       } else if (expr.args.length == 2) {
-        return `(app2 ${expressionToSMT(expr.callee)} ${expr.args.map(expressionToSMT).join(" ")})`;
+        return `(app2 ${expressionToSMT(expr.callee)} h_${expr.heap} ${expr.args.map(expressionToSMT).join(" ")})`;
       } else {
         throw new Error("unsupported");
       }
@@ -212,7 +241,7 @@ export function expressionToSMT(expr: ASyntax.Expression): SMTInput {
   }
 }
 
-export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
+export function propositionToSMT(prop: P): SMTInput {
   switch (prop.type) {
     case "Truthy": {
       if (prop.expr.type == "ConditionalExpression" &&
@@ -267,40 +296,51 @@ export function propositionToSMT(prop: ASyntax.Proposition): SMTInput {
     case "True": return `true`;
     case "False": return `false`;
     case "Precondition":
-      if (prop.args.length == 1) {
-        return `(pre1 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      if (prop.args.length == 0) {
+        return `(pre0 ${expressionToSMT(prop.callee)} h_${prop.heap})`;
+      } else if (prop.args.length == 1) {
+        return `(pre1 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")})`;
       } else if (prop.args.length == 2) {
-        return `(pre2 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+        return `(pre2 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")})`;
       } else {
         throw new Error("unsupported");
       }
     case "Postcondition":
-      if (prop.args.length == 1) {
-        return `(post1 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      if (prop.args.length == 0) {
+        return `(post0 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
+      } else if (prop.args.length == 1) {
+        return `(post1 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
       } else if (prop.args.length == 2) {
-        return `(post2 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+        return `(post2 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
       } else {
         throw new Error("unsupported");
       }
     case "ForAll": {
-      const params = `(${prop.args.map(p => `(${expressionToSMT(p)} JSVal)`).join(' ')})`;
-      const triggerArgs = `${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(' ')}`;
-      if (prop.args.length != 1 && prop.args.length != 2) throw new Error("Not supported");
-      const trigger = (prop.args.length == 1 ? "call1 " : "call2 ") + triggerArgs;
-      return `(forall ${params} (! ${propositionToSMT(prop.prop)} :pattern ((${trigger}))))`;
+      const params = `${prop.args.map(p => `(${expressionToSMT(p)} JSVal)`).join(' ')}`;
+      const triggerArgs = `${expressionToSMT(prop.callee)} h_0 h_1 ${prop.args.map(expressionToSMT).join(' ')}`;
+      if (prop.args.length > 2) throw new Error("Not supported");
+      const trigger = `call${prop.args.length} ${triggerArgs}`;
+      return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (! ${propositionToSMT(prop.prop)} :pattern ((${trigger}))))`;
     }
     case "CallTrigger":
-      if (prop.args.length == 1) {
-        return `(call1 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+      if (prop.args.length == 0) {
+        return `(call0 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
+      } else if (prop.args.length == 1) {
+        return `(call1 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
       } else if (prop.args.length == 2) {
-        return `(call2 ${expressionToSMT(prop.callee)} ${prop.args.map(expressionToSMT).join(" ")})`;
+        return `(call2 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
       } else {
         throw new Error("unsupported");
       }
+    case "HeapStore":
+      return `(= h_${prop.heap + 1} (store h_${prop.heap} l_${prop.name} ${expressionToSMT(prop.expr)}))`
+    case "HeapPromote":
+      if (prop.from == prop.to) return `true`;
+      return `(= h_${prop.from} h_${prop.to})`;
   }
 }
 
-export function propositionToAssert(prop: ASyntax.Proposition): SMTInput {
+export function propositionToAssert(prop: P): SMTInput {
   if (prop.type == "And") {
     return prop.clauses.map(propositionToAssert).join("");
   }
@@ -312,7 +352,7 @@ function smtToArray(smt: SMTOutput): Array<any> {
   if (s == "empty") return [];
   const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
   if (!m) throw new Error("Cannot parse output!");
-  const [_, h, t] = m;
+  const [, h, t] = m;
   return [smtToValue(h)].concat(smtToArray(t));
 }
 
@@ -322,7 +362,7 @@ export function smtToValue(smt: SMTOutput): any {
   if (s == "jsnull") return null;
   const m = s.match(/^\((\w+)\ (.*)\)$/);
   if (!m) throw new Error("Cannot parse output!");
-  const [_, tag, v] = m;
+  const [, tag, v] = m;
   if (tag.startsWith("jsfun_")) return null;
   switch (tag) {
     case "jsbool": return v == "true";

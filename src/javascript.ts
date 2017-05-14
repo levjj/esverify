@@ -4,58 +4,56 @@ import { flatMap } from "./util";
 
 export namespace JSyntax {
   export type Declaration = { type: "Unresolved" }
-                          | { type: "Var"; decl: JSyntax.VariableDeclaration }
-                          | { type: "Func"; decl: JSyntax.FunctionDeclaration }
-                          | { type: "Param";
-                              func: JSyntax.FunctionDeclaration;
-                              decl: JSyntax.Identifier }
-                          | { type: "OuterParam";
+                          | { type: "Var", decl: JSyntax.VariableDeclaration }
+                          | { type: "Func", decl: JSyntax.FunctionDeclaration }
+                          | { type: "SpecArg", decl: JSyntax.SpecExpression }
+                          | { type: "Param",
                               func: JSyntax.FunctionDeclaration;
                               decl: JSyntax.Identifier };
 
-  export interface Identifier { type: "Identifier"; name: string;
-                                decl: Declaration; refs: Array<Identifier>; isWrittenTo: boolean }
-  export interface OldIdentifier { type: "OldIdentifier"; id: Identifier; version?: number }
-  export interface Literal { type: "Literal";
-                             value: undefined | null | boolean | number | string; }
-  export interface ArrayExpression { type: "ArrayExpression";
-                                     elements: Array<Expression>; }
+  export interface Identifier { type: "Identifier", name: string;
+                                decl: Declaration, refs: Array<Identifier>, isWrittenTo: boolean }
+  export interface OldIdentifier { type: "OldIdentifier", id: Identifier }
+  export interface Literal { type: "Literal",
+                             value: undefined | null | boolean | number | string }
+  export interface ArrayExpression { type: "ArrayExpression",
+                                     elements: Array<Expression> }
   export type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
-  export interface UnaryExpression { type: "UnaryExpression";
-                                     operator: UnaryOperator;
-                                     argument: Expression; }
+  export interface UnaryExpression { type: "UnaryExpression",
+                                     operator: UnaryOperator,
+                                     argument: Expression }
   export type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
                              | "<<" | ">>" | ">>>" | "+" | "-" | "*" | "/" | "%"
                              | "|" | "^" | "&";
-  export interface BinaryExpression { type: "BinaryExpression";
-                                      operator: BinaryOperator;
-                                      left: Expression;
-                                      right: Expression; }
+  export interface BinaryExpression { type: "BinaryExpression",
+                                      operator: BinaryOperator,
+                                      left: Expression,
+                                      right: Expression }
   export type LogicalOperator = "||" | "&&";
-  export interface LogicalExpression { type: "LogicalExpression";
-                                       operator: LogicalOperator;
-                                       left: Expression;
-                                       right: Expression; }
-  export interface ConditionalExpression { type: "ConditionalExpression";
-                                           test: Expression;
-                                           consequent: Expression;
-                                           alternate: Expression; }
-  export interface AssignmentExpression { type: "AssignmentExpression";
-                                          left: Identifier;
-                                          right: Expression; }
-  export interface SequenceExpression { type: "SequenceExpression";
-                                        expressions: Expression[]; }
-  export interface CallExpression { type: "CallExpression";
-                                    callee: Expression;
-                                    args: Array<Expression>; }
-  export interface SpecExpression { type: "SpecExpression";
-                                    callee: Expression;
-                                    args: Array<string>;
-                                    pre: Expression;
+  export interface LogicalExpression { type: "LogicalExpression",
+                                       operator: LogicalOperator,
+                                       left: Expression,
+                                       right: Expression }
+  export interface ConditionalExpression { type: "ConditionalExpression",
+                                           test: Expression,
+                                           consequent: Expression,
+                                           alternate: Expression }
+  export interface AssignmentExpression { type: "AssignmentExpression",
+                                          left: Identifier,
+                                          right: Expression }
+  export interface SequenceExpression { type: "SequenceExpression",
+                                        expressions: Expression[] }
+  export interface CallExpression { type: "CallExpression",
+                                    callee: Expression,
+                                    args: Array<Expression> }
+  export interface SpecExpression { type: "SpecExpression",
+                                    callee: Expression,
+                                    args: Array<string>,
+                                    pre: Expression,
                                     post: Expression }
-  // export interface FunctionExpression { type: "FunctionExpression";
-  //                                       params: Array<Identifier>;
-  //                                       body: Statement[]; }
+  // export interface FunctionExpression { type: "FunctionExpression",
+  //                                       params: Array<Identifier>,
+  //                                       body: Statement[] }
   export type Expression = Identifier
                          | OldIdentifier
                          | Literal
@@ -69,34 +67,34 @@ export namespace JSyntax {
                         //  | FunctionExpression
                          | CallExpression
                          | SpecExpression;
-  export interface VariableDeclaration { type: "VariableDeclaration";
-                                         id: Identifier;
-                                         init: Expression;
-                                         kind: "let" | "const"; }
-  export interface BlockStatement { type: "BlockStatement";
-                                    body: Statement[]; }
-  export interface ExpressionStatement { type: "ExpressionStatement";
-                                         expression: Expression; }
-  export interface AssertStatement { type: "AssertStatement";
-                                     expression: Expression; }
-  export interface IfStatement { type: "IfStatement";
-                                 test: Expression;
-                                 consequent: BlockStatement;
-                                 alternate: BlockStatement; }
-  export interface ReturnStatement { type: "ReturnStatement";
-                                     argument: Expression; }
-  export interface WhileStatement { type: "WhileStatement";
-                                    invariants: Array<Expression>;
-                                    test: Expression;
-                                    body: BlockStatement; }
-  export interface DebuggerStatement { type: "DebuggerStatement"; }
-  export interface FunctionDeclaration { type: "FunctionDeclaration";
-                                         id: Identifier;
-                                         params: Array<Identifier>;
-                                         requires: Array<Expression>;
-                                         ensures: Array<Expression>;
-                                         body: BlockStatement;
-                                         freeVars: Array<Declaration>; }
+  export interface VariableDeclaration { type: "VariableDeclaration",
+                                         id: Identifier,
+                                         init: Expression,
+                                         kind: "let" | "const" }
+  export interface BlockStatement { type: "BlockStatement",
+                                    body: Statement[] }
+  export interface ExpressionStatement { type: "ExpressionStatement",
+                                         expression: Expression }
+  export interface AssertStatement { type: "AssertStatement",
+                                     expression: Expression }
+  export interface IfStatement { type: "IfStatement",
+                                 test: Expression,
+                                 consequent: BlockStatement,
+                                 alternate: BlockStatement }
+  export interface ReturnStatement { type: "ReturnStatement",
+                                     argument: Expression }
+  export interface WhileStatement { type: "WhileStatement",
+                                    invariants: Array<Expression>,
+                                    test: Expression,
+                                    body: BlockStatement }
+  export interface DebuggerStatement { type: "DebuggerStatement" }
+  export interface FunctionDeclaration { type: "FunctionDeclaration",
+                                         id: Identifier,
+                                         params: Array<Identifier>,
+                                         requires: Array<Expression>,
+                                         ensures: Array<Expression>,
+                                         body: BlockStatement,
+                                         freeVars: Array<Declaration> }
  
   export type Statement = VariableDeclaration
                         | BlockStatement
@@ -137,6 +135,10 @@ function withoutPseudoCalls(type: string, stmts: Array<Syntax.Statement>): Array
     }
     return [stmt];
   });
+}
+
+function stringAsIdentifier(name: string): JSyntax.Identifier {
+  return { type: "Identifier", name, refs: [], decl: { type: "Unresolved" }, isWrittenTo: false };
 }
 
 function patternAsIdentifier(node: Syntax.Pattern): JSyntax.Identifier {
@@ -345,7 +347,6 @@ function distinct(params: Array<JSyntax.Identifier>): boolean {
 }
 
 function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
-  function assert(cond: boolean) { if (!cond) throw new Error("Not supported:\n" + JSON.stringify(expr)); }
   switch (expr.type) {
     case "ThisExpression":
     case "ObjectExpression":
@@ -517,13 +518,18 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
   }
 }
 
+export function isMutable(id: JSyntax.Identifier): boolean {
+  if (id.decl.type == "Unresolved") throw new Error("Unresolved variable");
+  return isWrittenTo(id.decl);
+}
+
 function isWrittenTo(decl: JSyntax.Declaration): boolean {
-  return decl.type == "Var" && decl.decl.kind == "let" || decl.type == "OuterParam";
+  return decl.type == "Var" && decl.decl.kind == "let";
 }
 
 export function declName(decl: JSyntax.Declaration): string {
   if (decl.type == "Unresolved") throw new Error("Unresolved variable");
-  return decl.type == "Param" || decl.type == "OuterParam" ? decl.decl.name : decl.decl.id.name;
+  return decl.type == "Param" ? decl.decl.name : decl.decl.id.name;
 }
 
 class Scope {
@@ -550,7 +556,6 @@ class Scope {
     if (sym in this.ids) return this.ids[sym];
     if (this.parent) {
       let decl: JSyntax.Declaration = this.parent.lookupUse(sym);
-      if (decl.type == "Param") decl = { type: "OuterParam", func: decl.func, decl: decl.decl };
       if (this.func && !this.func.freeVars.includes(decl) && isWrittenTo(decl)) {
         this.func.freeVars.push(decl); // a free variable
       }
@@ -601,7 +606,7 @@ function resolveStament(scope: Scope, stmt: JSyntax.Statement) {
       resolveExpression(scope, stmt.init);
       break;
     case "BlockStatement":
-      const blockScope = new Scope(scope);
+      const blockScope = new Scope(scope, scope.func);
       stmt.body.forEach(s => resolveStament(blockScope, s));
       break;
     case "ExpressionStatement":
@@ -612,17 +617,18 @@ function resolveStament(scope: Scope, stmt: JSyntax.Statement) {
       break;
     case "IfStatement":
       resolveExpression(scope, stmt.test);
-      const thenScope = new Scope(scope);
+      const thenScope = new Scope(scope, scope.func);
       stmt.consequent.body.forEach(s => resolveStament(thenScope, s));
-      const elseScope = new Scope(scope);
+      const elseScope = new Scope(scope, scope.func);
       stmt.alternate.body.forEach(s => resolveStament(elseScope, s));
       break;
     case "ReturnStatement":
+      if (scope.func == null) throw new Error("return outside function");
       resolveExpression(scope, stmt.argument);
       break;
     case "WhileStatement":
       resolveExpression(scope, stmt.test);
-      const loopScope = new Scope(scope);
+      const loopScope = new Scope(scope, scope.func);
       stmt.invariants.forEach(i => resolveExpression(loopScope, i));
       stmt.body.body.forEach(s => resolveStament(loopScope, s));
       break;
@@ -680,6 +686,15 @@ function resolveExpression(scope: Scope, expr: JSyntax.Expression, allowOld: boo
     case "CallExpression":
       expr.args.forEach(e => resolveExpression(scope, e, allowOld));
       resolveExpression(scope, expr.callee);
+      break;
+    case "SpecExpression":
+      resolveExpression(scope, expr.callee);
+      const preScope = new Scope(scope, scope.func);
+      expr.args.forEach(a => preScope.defSymbol(stringAsIdentifier(a), { type: "SpecArg", decl: expr }));
+      resolveExpression(preScope, expr.pre);
+      const postScope = new Scope(scope, scope.func);
+      expr.args.forEach(a => postScope.defSymbol(stringAsIdentifier(a), { type: "SpecArg", decl: expr }));
+      resolveExpression(postScope, expr.post, true);
       break;
     // case "FunctionExpression":
     //   const funScope = new Scope(scope);

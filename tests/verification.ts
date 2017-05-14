@@ -101,7 +101,7 @@ describe('max() with missing pre', () => {
 
   unknown('max:\n(max(a, b) >= a)');
 
-  it('returns counter-example', async () => {
+  it.skip('returns counter-example', async () => {
     await vcs[0].solve();
     expect(vcs[0].getModel()).to.containSubset({
       a: false,
@@ -351,7 +351,7 @@ describe('closure', () => {
   });
 
   verified('precondition f(0)');
-  unknownDebug('precondition f(1)');
+  unknown('precondition f(1)');
 });
 
 describe('fibonacci increasing', () => {
@@ -401,7 +401,7 @@ describe('buggy fibonacci', () => {
   verified('fib:\nprecondition fib((n - 1))');
   verified('fib:\nprecondition fib((n - 2))');
   unknown('fib:\n(fib(n) >= n)');
-  it('returns counter-example', async () => {
+  it.skip('returns counter-example', async () => {
     await vcs[4].solve();
     expect(vcs[4].getModel()).to.containSubset({
       n: 2

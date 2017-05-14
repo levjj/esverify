@@ -3,15 +3,11 @@
 declare const require: (s: string) => any;
 declare const console: { log: any };
 
-import { ASyntax, smtToValue, varsToSMT, expressionToSMT, propositionToSMT, propositionToAssert } from "./propositions";
-import { preamble } from "./preamble";
+import { P, Vars, Locs, Heap, SMTInput, SMTOutput, smtToValue } from "./propositions";
+import smt from "./smt";
 import { JSyntax, stringifyStmt } from "./javascript";
 
-export type SMTInput = string;
 export type SMTOutput = string;
-
-export type VarName = string;
-export type Vars = { [varName: string]: number; };  // latest assigned value
 
 type Model = { [varName: string]: any };
 
@@ -24,21 +20,23 @@ export type Result = { status: "unverified" }
                    | { status: "tested", model: Model };
 
 export default class VerificationCondition {
+  heap: Heap;
+  locs: Locs;
   vars: Vars;
-  prop: ASyntax.Proposition;
-  post: ASyntax.Proposition;
-  freeVars: Vars;
+  prop: P;
+  vc: P;
   body: Array<JSyntax.Statement>;
   description: string;
   _smtin: SMTInput | null;
   _smtout: SMTOutput | null;
   _result: Result;
 
-  constructor(vars: Vars, prop: ASyntax.Proposition, post: ASyntax.Proposition, description: string, freeVars: Vars = {}, body: Array<JSyntax.Statement> = []) {
- this.vars = vars;
+  constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, vc: P, description: string, body: Array<JSyntax.Statement> = []) {
+    this.heap = heap;
+    this.locs = locs;
+    this.vars = vars;
     this.prop = prop;
-    this.post = post;
-    this.freeVars = freeVars;
+    this.vc = vc;
     this.body = body;
     this.description = description;
     this._smtin = null;
@@ -47,28 +45,13 @@ export default class VerificationCondition {
   }
 
   smtInput(): SMTInput {
-    const declarations = varsToSMT(this.vars),
-          post = `(assert (not ${propositionToSMT(this.post)}))`;
-    return this._smtin =
-`${preamble}
-
-; declarations
-${declarations}
-
-; antecedents
-${propositionToAssert(this.prop)}
-
-; verification condition
-${post}
-
-(check-sat)
-(get-value (${Object.keys(this.freeVars).map(v => `${v}_${this.freeVars[v]}`).join(' ')}))`;
+    return this._smtin = smt(this.heap, this.locs, this.vars, this.prop, this.vc);
   }
 
   getModel(): Model {
     let res = this._smtout;
     if (!res || !res.startsWith("sat")) throw new Error("no model available");
-    if (Object.keys(this.freeVars).length == 0) return {};
+    if (Object.keys(this.vars).length == 0) return {};
     // remove "sat"
     res = res.slice(3, res.length);
     // remove outer parens
