@@ -35,6 +35,7 @@ function helper(description: string, expected: string, debug: boolean = false) {
   }
 }
 
+function skip(description: string) { it.skip(description.replace(/\n/g, ' ')); }
 function verified(description: string) { helper(description, 'verified'); }
 function incorrect(description: string) { helper(description, 'incorrect'); }
 function tested(description: string) { helper(description, 'tested'); }
@@ -293,7 +294,7 @@ describe('inline global call', () => {
   });
 
   verified('assert:\n(j == 4)');
-  unknown('assert:\n(k == 5)');
+  verified('assert:\n(k == 5)');
 });
 
 describe('post conditions global call', () => {
@@ -331,7 +332,7 @@ describe('post conditions global call', () => {
   verified('assert:\n(k >= 5)');
 });
 
-describe('closure', () => {
+describe('mutable variables', () => {
 
   const code = (() => {
     let x = 2;
@@ -352,6 +353,31 @@ describe('closure', () => {
 
   verified('precondition f(0)');
   unknown('precondition f(1)');
+});
+
+describe('closures', () => {
+
+  const code = (() => {
+    function cons(x) {
+      function f() { return x; }
+      return f;
+    }
+    const g = cons(1);
+    const g1 = g();
+    assert(g1 == 1);
+    const h = cons(2);
+    const h1 = h();
+    assert(h1 == 2);
+  }).toString();
+
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error('failed to find verification conditions');
+    vcs = t;
+  });
+
+  verified('assert:\n(g1 == 1)');
+  verified('assert:\n(h1 == 2)');
 });
 
 describe('fibonacci increasing', () => {
@@ -436,9 +462,9 @@ describe('fibonacci increasing (external proof)', () => {
     vcs = t;
   });
 
-  verified('fibInc:\nfibInc:\nrequires:\n(typeof(n) == "number")');
-  verified('fibInc:\nfibInc:\nrequires:\n(n >= 0)');
-  verified('fibInc:\n(fib(n) >= n)');
+  verified('fibInc:\nprecondition fibInc((n - 1))');
+  verified('fibInc:\nprecondition fibInc((n - 2))');
+  skip('fibInc:\n(fib(n) >= n)');
 });
 
 describe('simple higher-order functions', () => {
