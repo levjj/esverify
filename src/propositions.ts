@@ -57,6 +57,9 @@ export namespace ASyntax {
   export interface ForAll { type: "ForAll",
                             callee: Expression,
                             args: Array<Variable>,
+                            existsHeaps: Set<Heap>,
+                            existsLocs: Locs,
+                            existsVars: Vars,
                             prop: Proposition }
   export interface CallTrigger { type: "CallTrigger",
                                  callee: Expression,
@@ -320,7 +323,13 @@ export function propositionToSMT(prop: P): SMTInput {
       const triggerArgs = `${expressionToSMT(prop.callee)} h_0 h_1 ${prop.args.map(expressionToSMT).join(' ')}`;
       if (prop.args.length > 2) throw new Error("Not supported");
       const trigger = `call${prop.args.length} ${triggerArgs}`;
-      return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (! ${propositionToSMT(prop.prop)} :pattern ((${trigger}))))`;
+      let p = propositionToSMT(prop.prop);
+      if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
+        p = `(exists (${[...prop.existsHeaps].map(h => `(h_${h} Heap)`).join(' ')} `
+                   + `${[...prop.existsLocs].map(l => `(l_${l} Loc)`).join(' ')} `
+                   + `${[...prop.existsVars].map(v => `(v_${v} JSVal)`).join(' ')})\n  ${p})`;
+      }
+      return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (!\n  ${p}\n  :pattern ((${trigger}))))`;
     }
     case "CallTrigger":
       if (prop.args.length == 0) {

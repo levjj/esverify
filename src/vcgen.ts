@@ -74,6 +74,7 @@ function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, e
       const sPost = expr.callee.type == "Identifier" ? expr.callee.name : inPost;
       const s = truthy(transformExpression(0, 1, sPost, expr.post));
       const forAll: P = { type: "ForAll", callee, args,
+        existsHeaps: new Set(), existsLocs: new Set(), existsVars: new Set(),
         prop: and(callP, implies(r, preP), implies(and(r, postP), s))
       };
       const fnCheck: A = {
@@ -292,7 +293,7 @@ function verifyWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: JSyntax.WhileS
   return res;
 }
 
-function transformSpec(f: JSyntax.FunctionDeclaration): P {
+function transformSpec(f: JSyntax.FunctionDeclaration, fromHeap: number = 0, toHeap: number = 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
   const callee: ASyntax.Expression = { type: "Variable", name: f.id.name };
   
   // add arguments to scope 
@@ -305,16 +306,28 @@ function transformSpec(f: JSyntax.FunctionDeclaration): P {
   for (const r of f.requires) {
     req = and(req, truthy(transformExpression(0, 0, null, r)));
   }
-  let ens = tru;
+  let ens = q;
   for (const s of f.ensures) {
     ens = and(ens, truthy(transformExpression(0, 1, f.id.name, s)));
   }
   const preP: P = { type: "Precondition", callee, heap: 0, args };
   const postP: P = { type: "Postcondition", callee, heap: 0, args };
   const callP: P = { type: "CallTrigger", callee, heap: 0, args };
-  const forAll: P = { type: "ForAll", callee, heap: 0, args,
-    prop: and(callP, iff(req, preP), iff(postP, implies(req, ens)))
-  };
+  let prop: P;
+  if (q.type == "True") {
+    prop = and(callP, implies(req, preP), implies(and(req, postP), ens));
+  } else {
+    prop = and(callP, iff(req, preP), iff(postP, implies(req, ens)));
+  }
+  if (fromHeap != 0) {
+    prop = and(heapPromote(0, fromHeap), prop);
+  }
+  if (toHeap != 1) {
+    prop = and(heapPromote(1, toHeap), prop);
+  }
+  const existsHeaps: Set<Heap> = new Set([...Array(toHeap - fromHeap + 1).keys()].map(i => i + fromHeap));
+  existsHeaps.delete(0); existsHeaps.delete(1);
+  const forAll: P = { type: "ForAll", callee, heap: 0, args, existsHeaps, existsLocs, existsVars, prop };
   const fnCheck: A = {
     type: "BinaryExpression",
     left: {
@@ -328,7 +341,7 @@ function transformSpec(f: JSyntax.FunctionDeclaration): P {
   return and(truthy(fnCheck), forAll);
 }
 
-function verifyFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: JSyntax.FunctionDeclaration): Array<VerificationCondition> {
+function verifyFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: JSyntax.FunctionDeclaration): VCState {
 
   // assumes all let-bound free variables have been havoc'd
   const vars2 = new Set([...vars]);
@@ -339,39 +352,45 @@ function verifyFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: JSynta
     args.push({ type: "Variable", name: p.name });
     vars2.add(p.name);
   }
-  vars2.add("_res_");
-  const callee: A = { type: "Variable", name: f.id.name };
-  let p: P = eq({ type: "Variable", name: "_res_" },
-                { type: "CallExpression", callee, heap, args });
+
+  // assume preconditions
+  let p: P = tru;
   for (const req of f.requires) {
     const tr = transformExpression(heap, heap, null, req);
     p = and(p, truthy(tr));
   }
-  const res = verifyStatement(heap, heap, locs, vars2, f.body);
-  const vcs: Array<VerificationCondition> = res.vcs;
 
   // internal verification conditions
+  const res = verifyStatement(heap, heap, locs, vars2, f.body);
+  res.vcs.forEach(vc => vc.prop = and(p, vc.prop));
+  res.prop = and(p, res.prop);
+
+  // ensure post conditions
+  res.vars.add("_res_");
+  const callee: A = { type: "Variable", name: f.id.name };
+  res.prop = and(eq({ type: "Variable", name: "_res_" },
+                    { type: "CallExpression", callee, heap, args }),
+                 res.prop);
+
   const testBody: Array<JSyntax.Statement> = [{
     type: "VariableDeclaration",
     id: { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false},
     kind: "const",
     init: { type: "CallExpression", callee: f.id, args: f.params }
   }];
-  vcs.forEach(vc => vc.body = testBody);
+  res.vcs.forEach(vc => vc.body = testBody);
 
-  // ensure post conditions
   for (const ens of f.ensures) {
     const ens2 = replaceFunctionResult(f, ens);
     const ti = transformExpression(heap, res.heap, f.id.name, ens);
-    vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, res.prop, truthy(ti),
+    res.vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, res.prop, truthy(ti),
                                        stringifyExpr(ens),
                                        testBody.concat([{ type: "AssertStatement", expression: ens2 }])));
   }
-  vcs.forEach(vc => {
-    vc.prop = and(p, vc.prop);
+  res.vcs.forEach(vc => {
     vc.description = f.id.name + ":\n" + vc.description;
   });
-  return vcs;
+  return res;
 }
 
 export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, stmt: JSyntax.Statement): VCState {
@@ -460,10 +479,16 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
       const vars2 = new Set([...vars, stmt.id.name]);
       const id: A = { type: "Variable", name: stmt.id.name },
             eq_f: P = eq(id, { type: "FunctionLiteral", id: uniqueFuncId() }),
-            spec_f: P = transformSpec(stmt);
-      const vcs = verifyFunctionDeclaration(heap + 1, locs, vars2, stmt);
-      vcs.forEach(vc => vc.prop = and(eq_f, spec_f, vc.prop));
-      return new VCState(heap, locs, vars2, and(eq_f, spec_f), und, fls, vcs);
+            non_rec_spec: P = transformSpec(stmt),
+            fromHeap = Math.max(2, heap + 1); // H0 and H1 are reserved
+      const res = verifyFunctionDeclaration(fromHeap, locs, vars2, stmt);
+      res.vcs.forEach(vc => vc.prop = and(eq_f, non_rec_spec, vc.prop));
+      const existsLocs = new Set([...res.locs].filter(l => !locs.has(l))),
+            existsVars = new Set([...res.vars].filter(v => {
+              return !vars2.has(v) && !stmt.params.some(n => n.name == v);
+            })),
+            inlined_spec: P = transformSpec(stmt, fromHeap, res.heap, existsLocs, existsVars, res.prop);
+      return new VCState(heap, locs, vars2, and(eq_f, inlined_spec), und, fls, res.vcs);
     }
   }
 }
