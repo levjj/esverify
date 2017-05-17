@@ -69,6 +69,10 @@ export namespace ASyntax {
                                heap: Heap,
                                name: string,
                                expr: Expression }
+  export interface HeapEffect { type: "HeapEffect",
+                                callee: Expression,
+                                heap: Heap,
+                                args: Array<Expression> }
   export interface HeapPromote { type: "HeapPromote",
                                  from: Heap,
                                  to: Heap }
@@ -85,6 +89,7 @@ export namespace ASyntax {
                           | ForAll
                           | CallTrigger
                           | HeapStore
+                          | HeapEffect
                           | HeapPromote;
 }
 
@@ -195,7 +200,7 @@ function arrayToSMT(elements: Array<A>): SMTInput {
   return `(cons ${expressionToSMT(h)} ${arrayToSMT(tail)})`;
 }
 
-export function expressionToSMT(expr: A): SMTInput {
+function expressionToSMT(expr: A): SMTInput {
   switch (expr.type) {
     case "Variable":
       return "v_" + expr.name;
@@ -343,6 +348,16 @@ export function propositionToSMT(prop: P): SMTInput {
       }
     case "HeapStore":
       return `(= h_${prop.heap + 1} (store h_${prop.heap} l_${prop.name} ${expressionToSMT(prop.expr)}))`
+    case "HeapEffect":
+      if (prop.args.length == 0) {
+        return `(= h_${prop.heap + 1} (eff0 ${expressionToSMT(prop.callee)} h_${prop.heap}))`;
+      } else if (prop.args.length == 1) {
+        return `(= h_${prop.heap + 1} (eff1 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")}))`;
+      } else if (prop.args.length == 2) {
+        return `(= h_${prop.heap + 1} (eff2 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")}))`;
+      } else {
+        throw new Error("unsupported");
+      }
     case "HeapPromote":
       if (prop.from == prop.to) return `true`;
       return `(= h_${prop.from} h_${prop.to})`;
@@ -381,3 +396,101 @@ export function smtToValue(smt: SMTOutput): any {
     default: throw new Error("unsupported");
   }
 }
+
+function eraseTriggersExpr(expr: A): A {
+  switch (expr.type) {
+    case "Variable":
+    case "HeapReference":
+    case "Literal":
+    case "FunctionLiteral":
+      return expr;
+    case 'ArrayExpression':
+      return { type: "ArrayExpression", elements: expr.elements.map(eraseTriggersExpr) };
+    case "UnaryExpression":
+      return { type: "UnaryExpression", operator: expr.operator, argument: eraseTriggersExpr(expr.argument) };
+    case "BinaryExpression": {
+      return {
+       type: "BinaryExpression",
+       operator: expr.operator,
+       left: eraseTriggersExpr(expr.left),
+       right: eraseTriggersExpr(expr.right)
+      };
+    }
+    case "ConditionalExpression":
+      return {
+       type: "ConditionalExpression",
+       test: eraseTriggersProp(expr.test),
+       consequent: eraseTriggersExpr(expr.consequent),
+       alternate: eraseTriggersExpr(expr.alternate)
+      };
+    case "CallExpression": {
+      return {
+       type: "CallExpression",
+       callee: eraseTriggersExpr(expr.callee),
+       heap: expr.heap,
+       args: expr.args.map(eraseTriggersExpr)
+      };
+    }
+  }
+}
+
+export function eraseTriggersProp(prop: P): P {
+  switch (prop.type) {
+    case "True":
+    case "False":
+    case "HeapPromote":
+    case "ForAll":  // do not erase under quantifier
+      return prop;
+    case "Truthy":
+      return { type: "Truthy", expr: eraseTriggersExpr(prop.expr) };
+    case "And":
+      return { type: "And", clauses: prop.clauses.map(eraseTriggersProp) };
+    case "Or":
+      return { type: "Or", clauses: prop.clauses.map(eraseTriggersProp) };
+    case "Iff":
+      return {
+        type: "Iff",
+        left: eraseTriggersProp(prop.left),
+        right: eraseTriggersProp(prop.right)
+      };
+    case "Eq":
+      return {
+        type: "Eq",
+        left: eraseTriggersExpr(prop.left),
+        right: eraseTriggersExpr(prop.right)
+      };
+    case "Not":
+      return { type: "Not", arg: eraseTriggersProp(prop.arg) };
+    case "Precondition":
+      return {
+        type: "Precondition",
+        callee: eraseTriggersExpr(prop.callee),
+        heap: prop.heap,
+        args: prop.args.map(eraseTriggersExpr)
+      };
+    case "Postcondition":
+      return {
+        type: "Postcondition",
+        callee: eraseTriggersExpr(prop.callee),
+        heap: prop.heap,
+        args: prop.args.map(eraseTriggersExpr)
+      };
+    case "CallTrigger":
+      return tru; // remove call trigger
+    case "HeapStore":
+      return {
+        type: "HeapStore",
+        heap: prop.heap,
+        name: prop.name,
+        expr: eraseTriggersExpr(prop.expr)
+      };
+    case "HeapEffect":
+      return {
+       type: "HeapEffect",
+       callee: eraseTriggersExpr(prop.callee),
+       heap: prop.heap,
+       args: prop.args.map(eraseTriggersExpr)
+      };
+  }
+}
+

@@ -6,7 +6,7 @@ export namespace JSyntax {
   export type Declaration = { type: "Unresolved" }
                           | { type: "Var", decl: JSyntax.VariableDeclaration }
                           | { type: "Func", decl: JSyntax.FunctionDeclaration }
-                          | { type: "SpecArg", decl: JSyntax.SpecExpression }
+                          | { type: "SpecArg", decl: JSyntax.SpecExpression, argIdx: number }
                           | { type: "Param",
                               func: JSyntax.FunctionDeclaration;
                               decl: JSyntax.Identifier };
@@ -46,6 +46,7 @@ export namespace JSyntax {
   export interface CallExpression { type: "CallExpression",
                                     callee: Expression,
                                     args: Array<Expression> }
+  export interface PureExpression { type: "PureExpression" }
   export interface SpecExpression { type: "SpecExpression",
                                     callee: Expression,
                                     args: Array<string>,
@@ -66,7 +67,8 @@ export namespace JSyntax {
                          | SequenceExpression
                         //  | FunctionExpression
                          | CallExpression
-                         | SpecExpression;
+                         | SpecExpression
+                         | PureExpression;
   export interface VariableDeclaration { type: "VariableDeclaration",
                                          id: Identifier,
                                          init: Expression,
@@ -467,6 +469,11 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       };
     case "CallExpression":
       if (expr.callee.type == "Identifier" &&
+          expr.callee.name == "pure" &&
+          expr.arguments.length == 0) {
+        return { type: "PureExpression" };
+      }
+      if (expr.callee.type == "Identifier" &&
           expr.callee.name == "old" &&
           expr.arguments.length == 1 &&
           expr.arguments[0].type == "Identifier") {
@@ -529,6 +536,7 @@ function isWrittenTo(decl: JSyntax.Declaration): boolean {
 
 export function declName(decl: JSyntax.Declaration): string {
   if (decl.type == "Unresolved") throw new Error("Unresolved variable");
+  if (decl.type == "SpecArg") return decl.decl.args[decl.argIdx];
   return decl.type == "Param" ? decl.decl.name : decl.decl.id.name;
 }
 
@@ -690,10 +698,12 @@ function resolveExpression(scope: Scope, expr: JSyntax.Expression, allowOld: boo
     case "SpecExpression":
       resolveExpression(scope, expr.callee);
       const preScope = new Scope(scope, scope.func);
-      expr.args.forEach(a => preScope.defSymbol(stringAsIdentifier(a), { type: "SpecArg", decl: expr }));
-      resolveExpression(preScope, expr.pre);
       const postScope = new Scope(scope, scope.func);
-      expr.args.forEach(a => postScope.defSymbol(stringAsIdentifier(a), { type: "SpecArg", decl: expr }));
+      expr.args.forEach((a, argIdx) => {
+        preScope.defSymbol(stringAsIdentifier(a), { type: "SpecArg", decl: expr, argIdx });
+        postScope.defSymbol(stringAsIdentifier(a), { type: "SpecArg", decl: expr, argIdx });
+      });
+      resolveExpression(preScope, expr.pre);
       resolveExpression(postScope, expr.post, true);
       break;
     // case "FunctionExpression":
@@ -735,9 +745,11 @@ export function stringifyExpr(expr: JSyntax.Expression): string {
     case "CallExpression":
       return `${stringifyExpr(expr.callee)}(${expr.args.map(stringifyExpr).join(', ')})`;
     case "SpecExpression":
-      return `isFunc(${stringifyExpr(expr.callee)}, (${expr.args.join(", ")}) => (${stringifyExpr(expr.pre)}), (${expr.args.join(", ")}) => (${stringifyExpr(expr.post)}))`;
+      return `spec(${stringifyExpr(expr.callee)}, (${expr.args.join(", ")}) => (${stringifyExpr(expr.pre)}), (${expr.args.join(", ")}) => (${stringifyExpr(expr.post)}))`;
     // case "FunctionExpression":
     //   throw new Error("not implemented yet");
+    case "PureExpression":
+      return `pure()`;
   }
 }
 
@@ -792,6 +804,7 @@ export function replaceFunctionResult(f: JSyntax.FunctionDeclaration, expr: JSyn
     case "Identifier":
     case "OldIdentifier":
     case "Literal":
+    case "PureExpression":
       return expr;
     case "ArrayExpression":
       return { type: "ArrayExpression", elements: expr.elements.map(e => replaceFunctionResult(f, e)) };

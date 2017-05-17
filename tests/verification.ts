@@ -1,5 +1,5 @@
 /* eslint no-unused-expressions:0 */
-/* global describe, it, expect, requires, ensures, invariant, assert, old, spec, console */
+/* global describe, it, expect, requires, ensures, invariant, assert, old, spec, pure, console */
 
 /// <reference path="../typings/mocha/mocha.d.ts" />
 /// <reference path="../typings/chai/chai.d.ts" />
@@ -13,8 +13,8 @@ declare const ensures: (x: any) => void;
 declare const invariant: (x: any) => void;
 declare const assert: (x: any) => void;
 declare const old: (x: any) => any;
-declare const spec: (x: any, r: (rx: any) => void, s: (rs: any) => void) => void;
-declare const console: { log: any };
+declare const pure: () => boolean;
+declare const spec: (f: any, r: (rx: any) => void, s: (sx: any) => void) => boolean;
 
 use(chaiSubset);
 
@@ -29,9 +29,9 @@ function helper(description: string, expected: string, debug: boolean = false) {
     expect(vc.result().status).to.be.eql(expected);
   };
   if (debug) {
-    it.only(description.replace(/\n/g, ' '), body);
+    it.only(description.replace(/\n/g, ' ') + ' ' + expected, body);
   } else {
-    it(description.replace(/\n/g, ' '), body);
+    it(description.replace(/\n/g, ' ') + ' ' + expected, body);
   }
 }
 
@@ -294,7 +294,7 @@ describe('inline global call', () => {
   });
 
   verified('assert:\n(j == 4)');
-  verified('assert:\n(k == 5)');
+  unknown('assert:\n(k == 5)'); // only inline one level
 });
 
 describe('post conditions global call', () => {
@@ -329,7 +329,7 @@ describe('post conditions global call', () => {
   verified('precondition inc(i)');
   verified('assert:\n(j >= 4)');
   verified('precondition inc2(i)');
-  verified('assert:\n(k >= 5)');
+  unknown('assert:\n(k >= 5)'); // only inline one level, so post-cond of inc(inc(i)) not available
 });
 
 describe('mutable variables', () => {
@@ -435,10 +435,39 @@ describe('buggy fibonacci', () => {
   });
 });
 
+describe('pure functions', () => {
+
+  const code = (() => {
+    let x = 0;
+
+    function f() { ensures(pure()); x++; }
+    function g() { ensures(pure()); return x + 1; }
+    function h1() { }
+    function h2a() { h1(); }
+    function h2b() { ensures(pure()); h1(); }
+    function h3a() { ensures(pure()); h2a(); }
+    function h3b() { ensures(pure()); h2b(); }
+  }).toString();
+
+  beforeEach(() => {
+    const t = verify(code.substring(14, code.length - 2));
+    if (!t) throw new Error('failed to find verification conditions');
+    vcs = t;
+  });
+
+  unknown('f:\npure()'); // not pure
+  verified('g:\npure()'); // pure
+  verified('h2b:\npure()'); // inlined h1 pure
+  unknown('h3a:\npure()'); // pure, but only one level inlining
+  verified('h3b:\npure()'); // calling other pure function
+});
+
 describe('fibonacci increasing (external proof)', () => {
 
   const code = (() => {
     function fib(n) {
+      ensures(pure());
+
       if (n <= 1) return 1;
       return fib(n - 1) + fib(n - 2);
     }
@@ -447,6 +476,7 @@ describe('fibonacci increasing (external proof)', () => {
       requires(typeof(n) == 'number');
       requires(n >= 0);
       ensures(fib(n) >= n);
+      ensures(pure());
 
       fib(n);
       if (n >= 2) {
@@ -462,9 +492,10 @@ describe('fibonacci increasing (external proof)', () => {
     vcs = t;
   });
 
+  verified('fib:\npure()');
   verified('fibInc:\nprecondition fibInc((n - 1))');
   verified('fibInc:\nprecondition fibInc((n - 2))');
-  skip('fibInc:\n(fib(n) >= n)');
+  verified('fibInc:\n(fib(n) >= n)');
 });
 
 describe('simple higher-order functions', () => {

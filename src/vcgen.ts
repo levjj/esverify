@@ -1,6 +1,6 @@
 import VerificationCondition from "./verification";
 import { JSyntax, stringifyExpr, checkInvariants, checkPreconditions, replaceFunctionResult, isMutable } from "./javascript";
-import { ASyntax, A, P, Vars, Locs, Heap, und, tru, fls, truthy, falsy, implies, and, iff, or, eq, not, heapPromote, heapStore } from "./propositions";
+import { ASyntax, A, P, Vars, Locs, Heap, und, tru, fls, truthy, falsy, implies, and, iff, or, eq, not, heapPromote, heapStore, eraseTriggersProp } from "./propositions";
 
 class PureContextError extends Error {
   constructor() { super("not supported in pure functional context"); }
@@ -92,6 +92,11 @@ function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, e
       const alternate: A = { type: "Literal", value: false };
       return { type: "ConditionalExpression", test, consequent, alternate };
     }
+    case "PureExpression":
+      const test: P = heapPromote(oldHeap, heap);
+      const consequent: A = { type: "Literal", value: true };
+      const alternate: A = { type: "Literal", value: false };
+      return { type: "ConditionalExpression", test, consequent, alternate };
   }
 }
 
@@ -147,8 +152,6 @@ export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Va
       } else {
         return VCState.pure(heap, locs, vars, { type: "Variable", name: expr.name });
       }
-    case "OldIdentifier":
-      throw new Error("Only possible in assertions");
     case "Literal":
       return VCState.pure(heap, locs, vars, expr);
     case "ArrayExpression":
@@ -244,13 +247,17 @@ export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Va
                                            `precondition ${stringifyExpr(expr)}`));
       
       // assume postcondition and return result
-      res.prop = and(res.prop, { type: "Postcondition", callee, heap: res.heap, args });
+      res.prop = and(res.prop, { type: "Postcondition", callee, heap: res.heap, args },
+                               { type: "HeapEffect", callee, heap: res.heap, args });
       res.val = { type: "CallExpression", callee, heap: res.heap, args };
       res.heap++;
       return res;
     }
+    case "OldIdentifier":
     case "SpecExpression":
-      throw new Error("Unsupported");
+    case "PureExpression":
+      throw new Error("Only possible in assertion context");
+
     // case "FunctionExpression":
     //   throw new Error("not implemented yet"); 
   }
@@ -487,7 +494,8 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
             existsVars = new Set([...res.vars].filter(v => {
               return !vars2.has(v) && !stmt.params.some(n => n.name == v);
             })),
-            inlined_spec: P = transformSpec(stmt, fromHeap, res.heap, existsLocs, existsVars, res.prop);
+            inlined_spec: P = transformSpec(stmt, fromHeap, res.heap, existsLocs, existsVars,
+                                            eraseTriggersProp(res.prop));
       return new VCState(heap, locs, vars2, and(eq_f, inlined_spec), und, fls, res.vcs);
     }
   }
