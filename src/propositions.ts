@@ -3,31 +3,31 @@ import { flatMap } from "./util";
 export namespace ASyntax {
   export interface Variable { type: "Variable", name: string }
   export interface HeapReference { type: "HeapReference", name: string, heap: Heap }
-  interface Literal { type: "Literal",
-                      value: undefined | null | boolean | number | string }
-  interface FunctionLiteral { type: "FunctionLiteral",
-                              id: number }
-  interface ArrayExpression { type: "ArrayExpression",
-                              elements: Array<Expression> }
+  export interface Literal { type: "Literal",
+                             value: undefined | null | boolean | number | string }
+  export interface FunctionLiteral { type: "FunctionLiteral",
+                                     id: number }
+  export interface ArrayExpression { type: "ArrayExpression",
+                                     elements: Array<Expression> }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
-  interface UnaryExpression { type: "UnaryExpression",
-                              operator: UnaryOperator,
-                              argument: Expression }
+  export interface UnaryExpression { type: "UnaryExpression",
+                                     operator: UnaryOperator,
+                                     argument: Expression }
   type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
                       | "<<" | ">>" | ">>>" | "+" | "-" | "*" | "/" | "%"
                       | "|" | "^" | "&";
-  interface BinaryExpression { type: "BinaryExpression",
-                               operator: BinaryOperator,
-                               left: Expression,
-                               right: Expression }
-  interface ConditionalExpression { type: "ConditionalExpression",
-                                    test: Proposition,
-                                    consequent: Expression,
-                                    alternate: Expression }
-  interface CallExpression { type: "CallExpression",
-                             callee: Expression,
-                             heap: Heap,
-                             args: Array<Expression> }
+  export interface BinaryExpression { type: "BinaryExpression",
+                                      operator: BinaryOperator,
+                                      left: Expression,
+                                      right: Expression }
+  export interface ConditionalExpression { type: "ConditionalExpression",
+                                           test: Proposition,
+                                           consequent: Expression,
+                                           alternate: Expression }
+  export interface CallExpression { type: "CallExpression",
+                                    callee: Expression,
+                                    heap: Heap,
+                                    args: Array<Expression> }
   export type Expression = Variable
                          | HeapReference
                          | Literal
@@ -193,175 +193,275 @@ export function heapPromote(from: Heap, to: Heap): P {
   return { type: "HeapPromote", from, to };
 }
 
-function arrayToSMT(elements: Array<A>): SMTInput {
-  if (elements.length === 0) return `empty`;
-  const [head, ...tail] = elements;
-  const h = head || {type: "Literal", value: "undefined"};
-  return `(cons ${expressionToSMT(h)} ${arrayToSMT(tail)})`;
+abstract class PropVisitor<R,S> {
+
+  abstract visitVariable(expr: ASyntax.Variable): R;
+  abstract visitHeapReference(expr: ASyntax.HeapReference): R;
+  abstract visitLiteral(expr: ASyntax.Literal): R;
+  abstract visitFunctionLiteral(expr: ASyntax.FunctionLiteral): R;
+  abstract visitArrayExpression(expr: ASyntax.ArrayExpression): R;
+  abstract visitUnaryExpression(expr: ASyntax.UnaryExpression): R;
+  abstract visitBinaryExpression(expr: ASyntax.BinaryExpression): R;
+  abstract visitConditionalExpression(expr: ASyntax.ConditionalExpression): R;
+  abstract visitCallExpression(expr: ASyntax.CallExpression): R;
+
+  abstract visitTruthy(stmt: ASyntax.Truthy): S;
+  abstract visitAnd(stmt: ASyntax.And): S;
+  abstract visitOr(stmt: ASyntax.Or): S;
+  abstract visitIff(stmt: ASyntax.Iff): S;
+  abstract visitEq(stmt: ASyntax.Eq): S;
+  abstract visitNot(stmt: ASyntax.Not): S;
+  abstract visitTrue(stmt: ASyntax.True): S;
+  abstract visitFalse(stmt: ASyntax.False): S;
+  abstract visitPrecondition(stmt: ASyntax.Precondition): S;
+  abstract visitPostcondition(stmt: ASyntax.Postcondition): S;
+  abstract visitForAll(stmt: ASyntax.ForAll): S;
+  abstract visitCallTrigger(stmt: ASyntax.CallTrigger): S;
+  abstract visitHeapStore(stmt: ASyntax.HeapStore): S;
+  abstract visitHeapEffect(stmt: ASyntax.HeapEffect): S;
+  abstract visitHeapPromote(stmt: ASyntax.HeapPromote): S;
+
+  visitExpr(expr: A): R {
+    switch (expr.type) {
+      case "Variable": return this.visitVariable(expr);
+      case "HeapReference": return this.visitHeapReference(expr);
+      case "Literal": return this.visitLiteral(expr);
+      case "FunctionLiteral": return this.visitFunctionLiteral(expr);
+      case 'ArrayExpression': return this.visitArrayExpression(expr);
+      case "UnaryExpression": return this.visitUnaryExpression(expr);
+      case "BinaryExpression": return this.visitBinaryExpression(expr);
+      case "ConditionalExpression": return this.visitConditionalExpression(expr);
+      case "CallExpression": return this.visitCallExpression(expr);
+    }
+  }
+
+  visitProp(stmt: P): S {
+    switch (stmt.type) {
+      case "Truthy": return this.visitTruthy(stmt);
+      case "And": return this.visitAnd(stmt);
+      case "Or": return this.visitOr(stmt);
+      case "Iff": return this.visitIff(stmt);
+      case "Eq": return this.visitEq(stmt);
+      case "Not": return this.visitNot(stmt);
+      case "True": return this.visitTrue(stmt);
+      case "False": return this.visitFalse(stmt);
+      case "Precondition": return this.visitPrecondition(stmt);
+      case "Postcondition": return this.visitPostcondition(stmt);
+      case "ForAll": return this.visitForAll(stmt);
+      case "CallTrigger": return this.visitCallTrigger(stmt);
+      case "HeapStore": return this.visitHeapStore(stmt);
+      case "HeapEffect": return this.visitHeapEffect(stmt);
+      case "HeapPromote": return this.visitHeapPromote(stmt);
+    }
+  }
 }
 
-function expressionToSMT(expr: A): SMTInput {
-  switch (expr.type) {
-    case "Variable":
-      return "v_" + expr.name;
-    case "HeapReference":
-      return `(select h_${expr.heap} l_${expr.name})`;
-    case "Literal":
-      if (expr.value === undefined) return `jsundefined`;
-      if (expr.value === null) return `jsnull`;
-      switch (typeof expr.value) {
-        case "boolean": return `(jsbool ${expr.value})`;
-        case "number": return `(jsnum ${expr.value})`;
-        case "string": return `(jsstr "${expr.value}")`;
-        default: throw new Error("unsupported");
-      }
-    case "FunctionLiteral": {
-      return `(jsfun ${expr.id})`;
+class SMTGenerator extends PropVisitor<SMTInput, SMTInput> {
+
+  visitVariable(expr: ASyntax.Variable): SMTInput {
+    return "v_" + expr.name;
+  }
+
+  visitHeapReference(expr: ASyntax.HeapReference): SMTInput {
+    return `(select h_${expr.heap} l_${expr.name})`;
+  }
+  
+  visitLiteral(expr: ASyntax.Literal): SMTInput {
+    if (expr.value === undefined) return `jsundefined`;
+    if (expr.value === null) return `jsnull`;
+    switch (typeof expr.value) {
+      case "boolean": return `(jsbool ${expr.value})`;
+      case "number": return `(jsnum ${expr.value})`;
+      case "string": return `(jsstr "${expr.value}")`;
+      default: throw new Error("unsupported");
     }
-    case 'ArrayExpression':
-      return `(jsarray ${arrayToSMT(expr.elements)})`;
-    case "UnaryExpression":
-      const arg = expressionToSMT(expr.argument),
-            op = unOpToSMT[expr.operator];
-      return `(${op} ${arg})`;
-    case "BinaryExpression": {
-      const left = expressionToSMT(expr.left),
-            right = expressionToSMT(expr.right),
-            binop = binOpToSMT[expr.operator];
-      return `(${binop} ${left} ${right})`;
+  }
+  
+  visitFunctionLiteral(expr: ASyntax.FunctionLiteral): SMTInput {
+    return `(jsfun ${expr.id})`;
+  }
+  
+  visitArrayExpression(expr: ASyntax.ArrayExpression): SMTInput {
+    const arrayToSMT = (elements: Array<A>): SMTInput => {
+      if (elements.length === 0) return `empty`;
+      const [head, ...tail] = elements;
+      const h = head || {type: "Literal", value: "undefined"};
+      return `(cons ${this.visitExpr(h)} ${arrayToSMT(tail)})`;
+    };
+    return `(jsarray ${arrayToSMT(expr.elements)})`;
+  }
+  
+  visitUnaryExpression(expr: ASyntax.UnaryExpression): SMTInput {
+    const arg = this.visitExpr(expr.argument),
+          op = unOpToSMT[expr.operator];
+    return `(${op} ${arg})`;
+  }
+  
+  visitBinaryExpression(expr: ASyntax.BinaryExpression): SMTInput {
+    const left = this.visitExpr(expr.left),
+          right = this.visitExpr(expr.right),
+          binop = binOpToSMT[expr.operator];
+    return `(${binop} ${left} ${right})`;
+  }
+  
+  visitConditionalExpression(expr: ASyntax.ConditionalExpression): SMTInput {
+    const test = this.visitProp(expr.test),
+          then = this.visitExpr(expr.consequent),
+          elze = this.visitExpr(expr.alternate);
+    return `(ite ${test} ${then} ${elze})`;
+  }
+  
+  visitCallExpression(expr: ASyntax.CallExpression): SMTInput {
+    if (expr.args.length == 0) {
+      return `(app0 ${this.visitExpr(expr.callee)} h_${expr.heap})`;
+    } else if (expr.args.length == 1) {
+      return `(app1 ${this.visitExpr(expr.callee)} h_${expr.heap} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
+    } else if (expr.args.length == 2) {
+      return `(app2 ${this.visitExpr(expr.callee)} h_${expr.heap} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
+    } else {
+      throw new Error("unsupported");
     }
-    case "ConditionalExpression":
-      const test = propositionToSMT(expr.test),
-            then = expressionToSMT(expr.consequent),
-            elze = expressionToSMT(expr.alternate);
-      return `(ite ${test} ${then} ${elze})`;
-    case "CallExpression": {
-      if (expr.args.length == 0) {
-        return `(app0 ${expressionToSMT(expr.callee)} h_${expr.heap})`;
-      } else if (expr.args.length == 1) {
-        return `(app1 ${expressionToSMT(expr.callee)} h_${expr.heap} ${expr.args.map(expressionToSMT).join(" ")})`;
-      } else if (expr.args.length == 2) {
-        return `(app2 ${expressionToSMT(expr.callee)} h_${expr.heap} ${expr.args.map(expressionToSMT).join(" ")})`;
-      } else {
-        throw new Error("unsupported");
-      }
+  }
+
+  visitTruthy(prop: ASyntax.Truthy): SMTInput {
+    if (prop.expr.type == "ConditionalExpression" &&
+        prop.expr.consequent.type == "Literal" &&
+        prop.expr.consequent.value === true &&
+        prop.expr.alternate.type == "Literal" &&
+        prop.expr.alternate.value === false) {
+      return this.visitProp(prop.expr.test);
     }
+    return `(_truthy ${this.visitExpr(prop.expr)})`;
+  }
+  
+  visitAnd(prop: ASyntax.And): SMTInput {
+    const clauses: Array<SMTInput> = flatMap(prop.clauses,
+      c => c.type == "And" ? c.clauses : [c]) 
+      .map(p => this.visitProp(p))
+      .filter(s => s != `true`);
+    if (clauses.find(s => s == `false`)) return `false`;
+    if (clauses.length == 0) return `true`;
+    if (clauses.length == 1) return clauses[0];
+    return `(and ${clauses.join(' ')})`;
+  }
+  
+  visitOr(prop: ASyntax.Or): SMTInput {
+    const clauses: Array<SMTInput> = flatMap(prop.clauses,
+      c => c.type == "Or" ? c.clauses : [c]) 
+      .map(p => this.visitProp(p))
+      .filter(s => s != `false`);
+    if (clauses.find(s => s == `true`)) return `true`;
+    if (clauses.length == 0) return `false`;
+    if (clauses.length == 1) return clauses[0];
+    return `(or ${clauses.join(' ')})`;
+  }
+  
+  visitIff(prop: ASyntax.Iff): SMTInput {
+    const left: SMTInput = this.visitProp(prop.left);
+    const right: SMTInput = this.visitProp(prop.right);
+    if (left == `true`) return right;
+    if (right == `true`) return left;
+    if (left == right) return `true`;
+    return `(= ${left} ${right})`;
+  }
+  
+  visitEq(prop: ASyntax.Eq): SMTInput {
+    const left: SMTInput = this.visitExpr(prop.left);
+    const right: SMTInput = this.visitExpr(prop.right);
+    if (left == right) return `true`;
+    return `(= ${left} ${right})`;
+  }
+  
+  visitNot(prop: ASyntax.Not): SMTInput {
+    const arg: SMTInput = this.visitProp(prop.arg);
+    if (arg == "true") return `false`;
+    if (arg == "false") return `true`;
+    return `(not ${arg})`;
+  }
+  
+  visitTrue(prop: ASyntax.True): SMTInput {
+    return `true`;
+  }
+  
+  visitFalse(prop: ASyntax.False): SMTInput {
+    return `false`;
+  }
+  
+  visitPrecondition(prop: ASyntax.Precondition): SMTInput {
+    if (prop.args.length == 0) {
+      return `(pre0 ${this.visitExpr(prop.callee)} h_${prop.heap})`;
+    } else if (prop.args.length == 1) {
+      return `(pre1 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+    } else if (prop.args.length == 2) {
+      return `(pre2 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+    } else {
+      throw new Error("unsupported");
+    }
+  }
+  
+  visitPostcondition(prop: ASyntax.Postcondition): SMTInput {
+    if (prop.args.length == 0) {
+      return `(post0 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
+    } else if (prop.args.length == 1) {
+      return `(post1 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+    } else if (prop.args.length == 2) {
+      return `(post2 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+    } else {
+      throw new Error("unsupported");
+    }
+  }
+  
+  visitForAll(prop: ASyntax.ForAll): SMTInput {
+    const params = `${prop.args.map(p => `(${this.visitExpr(p)} JSVal)`).join(' ')}`;
+    const triggerArgs = `${this.visitExpr(prop.callee)} h_0 h_1 ${prop.args.map(a => this.visitExpr(a)).join(' ')}`;
+    if (prop.args.length > 2) throw new Error("Not supported");
+    const trigger = `call${prop.args.length} ${triggerArgs}`;
+    let p = this.visitProp(prop.prop);
+    if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
+      p = `(exists (${[...prop.existsHeaps].map(h => `(h_${h} Heap)`).join(' ')} `
+                 + `${[...prop.existsLocs].map(l => `(l_${l} Loc)`).join(' ')} `
+                 + `${[...prop.existsVars].map(v => `(v_${v} JSVal)`).join(' ')})\n  ${p})`;
+    }
+    return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (!\n  ${p}\n  :pattern ((${trigger}))))`;
+  }
+  
+  visitCallTrigger(prop: ASyntax.CallTrigger): SMTInput {
+    if (prop.args.length == 0) {
+      return `(call0 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
+    } else if (prop.args.length == 1) {
+      return `(call1 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+    } else if (prop.args.length == 2) {
+      return `(call2 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+    } else {
+      throw new Error("unsupported");
+    }
+  }
+  
+  visitHeapStore(prop: ASyntax.HeapStore): SMTInput {
+    return `(= h_${prop.heap + 1} (store h_${prop.heap} l_${prop.name} ${this.visitExpr(prop.expr)}))`
+  }
+  
+  visitHeapEffect(prop: ASyntax.HeapEffect): SMTInput {
+    if (prop.args.length == 0) {
+      return `(= h_${prop.heap + 1} (eff0 ${this.visitExpr(prop.callee)} h_${prop.heap}))`;
+    } else if (prop.args.length == 1) {
+      return `(= h_${prop.heap + 1} (eff1 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")}))`;
+    } else if (prop.args.length == 2) {
+      return `(= h_${prop.heap + 1} (eff2 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")}))`;
+    } else {
+      throw new Error("unsupported");
+    }
+  }
+  
+  visitHeapPromote(prop: ASyntax.HeapPromote): SMTInput {
+    if (prop.from == prop.to) return `true`;
+    return `(= h_${prop.from} h_${prop.to})`;
   }
 }
 
 export function propositionToSMT(prop: P): SMTInput {
-  switch (prop.type) {
-    case "Truthy": {
-      if (prop.expr.type == "ConditionalExpression" &&
-          prop.expr.consequent.type == "Literal" &&
-          prop.expr.consequent.value === true &&
-          prop.expr.alternate.type == "Literal" &&
-          prop.expr.alternate.value === false) {
-        return propositionToSMT(prop.expr.test);
-      }
-      return `(_truthy ${expressionToSMT(prop.expr)})`;
-    }
-    case "And": {
-      const clauses: Array<SMTInput> = flatMap(prop.clauses,
-        c => c.type == "And" ? c.clauses : [c]) 
-        .map(propositionToSMT)
-        .filter(s => s != `true`);
-      if (clauses.find(s => s == `false`)) return `false`;
-      if (clauses.length == 0) return `true`;
-      if (clauses.length == 1) return clauses[0];
-      return `(and ${clauses.join(' ')})`;
-    }
-    case "Or": {
-      const clauses: Array<SMTInput> = flatMap(prop.clauses,
-        c => c.type == "Or" ? c.clauses : [c]) 
-        .map(propositionToSMT)
-        .filter(s => s != `false`);
-      if (clauses.find(s => s == `true`)) return `true`;
-      if (clauses.length == 0) return `false`;
-      if (clauses.length == 1) return clauses[0];
-      return `(or ${clauses.join(' ')})`;
-    }
-    case "Iff": {
-      const left: SMTInput = propositionToSMT(prop.left);
-      const right: SMTInput = propositionToSMT(prop.right);
-      if (left == `true`) return right;
-      if (right == `true`) return left;
-      if (left == right) return `true`;
-      return `(= ${left} ${right})`;
-    }
-    case "Eq": {
-      const left: SMTInput = expressionToSMT(prop.left);
-      const right: SMTInput = expressionToSMT(prop.right);
-      if (left == right) return `true`;
-      return `(= ${left} ${right})`;
-    }
-    case "Not": {
-      const arg: SMTInput = propositionToSMT(prop.arg);
-      if (arg == "true") return `false`;
-      if (arg == "false") return `true`;
-      return `(not ${arg})`;
-    }
-    case "True": return `true`;
-    case "False": return `false`;
-    case "Precondition":
-      if (prop.args.length == 0) {
-        return `(pre0 ${expressionToSMT(prop.callee)} h_${prop.heap})`;
-      } else if (prop.args.length == 1) {
-        return `(pre1 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")})`;
-      } else if (prop.args.length == 2) {
-        return `(pre2 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")})`;
-      } else {
-        throw new Error("unsupported");
-      }
-    case "Postcondition":
-      if (prop.args.length == 0) {
-        return `(post0 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
-      } else if (prop.args.length == 1) {
-        return `(post1 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
-      } else if (prop.args.length == 2) {
-        return `(post2 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
-      } else {
-        throw new Error("unsupported");
-      }
-    case "ForAll": {
-      const params = `${prop.args.map(p => `(${expressionToSMT(p)} JSVal)`).join(' ')}`;
-      const triggerArgs = `${expressionToSMT(prop.callee)} h_0 h_1 ${prop.args.map(expressionToSMT).join(' ')}`;
-      if (prop.args.length > 2) throw new Error("Not supported");
-      const trigger = `call${prop.args.length} ${triggerArgs}`;
-      let p = propositionToSMT(prop.prop);
-      if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
-        p = `(exists (${[...prop.existsHeaps].map(h => `(h_${h} Heap)`).join(' ')} `
-                   + `${[...prop.existsLocs].map(l => `(l_${l} Loc)`).join(' ')} `
-                   + `${[...prop.existsVars].map(v => `(v_${v} JSVal)`).join(' ')})\n  ${p})`;
-      }
-      return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (!\n  ${p}\n  :pattern ((${trigger}))))`;
-    }
-    case "CallTrigger":
-      if (prop.args.length == 0) {
-        return `(call0 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
-      } else if (prop.args.length == 1) {
-        return `(call1 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
-      } else if (prop.args.length == 2) {
-        return `(call2 ${expressionToSMT(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(expressionToSMT).join(" ")})`;
-      } else {
-        throw new Error("unsupported");
-      }
-    case "HeapStore":
-      return `(= h_${prop.heap + 1} (store h_${prop.heap} l_${prop.name} ${expressionToSMT(prop.expr)}))`
-    case "HeapEffect":
-      if (prop.args.length == 0) {
-        return `(= h_${prop.heap + 1} (eff0 ${expressionToSMT(prop.callee)} h_${prop.heap}))`;
-      } else if (prop.args.length == 1) {
-        return `(= h_${prop.heap + 1} (eff1 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")}))`;
-      } else if (prop.args.length == 2) {
-        return `(= h_${prop.heap + 1} (eff2 ${expressionToSMT(prop.callee)} h_${prop.heap} ${prop.args.map(expressionToSMT).join(" ")}))`;
-      } else {
-        throw new Error("unsupported");
-      }
-    case "HeapPromote":
-      if (prop.from == prop.to) return `true`;
-      return `(= h_${prop.from} h_${prop.to})`;
-  }
+  const v = new SMTGenerator();
+  return v.visitProp(prop);
 }
 
 export function propositionToAssert(prop: P): SMTInput {
@@ -397,100 +497,181 @@ export function smtToValue(smt: SMTOutput): any {
   }
 }
 
-function eraseTriggersExpr(expr: A): A {
-  switch (expr.type) {
-    case "Variable":
-    case "HeapReference":
-    case "Literal":
-    case "FunctionLiteral":
-      return expr;
-    case 'ArrayExpression':
-      return { type: "ArrayExpression", elements: expr.elements.map(eraseTriggersExpr) };
-    case "UnaryExpression":
-      return { type: "UnaryExpression", operator: expr.operator, argument: eraseTriggersExpr(expr.argument) };
-    case "BinaryExpression": {
-      return {
-       type: "BinaryExpression",
-       operator: expr.operator,
-       left: eraseTriggersExpr(expr.left),
-       right: eraseTriggersExpr(expr.right)
-      };
-    }
-    case "ConditionalExpression":
-      return {
-       type: "ConditionalExpression",
-       test: eraseTriggersProp(expr.test),
-       consequent: eraseTriggersExpr(expr.consequent),
-       alternate: eraseTriggersExpr(expr.alternate)
-      };
-    case "CallExpression": {
-      return {
-       type: "CallExpression",
-       callee: eraseTriggersExpr(expr.callee),
-       heap: expr.heap,
-       args: expr.args.map(eraseTriggersExpr)
-      };
-    }
+class PropTransformer extends PropVisitor<A, P> {
+
+  visitVariable(expr: ASyntax.Variable): A {
+    return expr;
+  }
+
+  visitHeapReference(expr: ASyntax.HeapReference): A {
+    return expr;
+  }
+  
+  visitLiteral(expr: ASyntax.Literal): A {
+    return expr;
+  }
+  
+  visitFunctionLiteral(expr: ASyntax.FunctionLiteral): A {
+    return expr;
+  }
+  
+  visitArrayExpression(expr: ASyntax.ArrayExpression): A {
+    return { type: "ArrayExpression", elements: expr.elements.map(e => this.visitExpr(e)) };
+  }
+  
+  visitUnaryExpression(expr: ASyntax.UnaryExpression): A {
+    return {
+      type: "UnaryExpression",
+      operator: expr.operator,
+      argument: this.visitExpr(expr.argument)
+    };
+  }
+  
+  visitBinaryExpression(expr: ASyntax.BinaryExpression): A {
+    return {
+     type: "BinaryExpression",
+     operator: expr.operator,
+     left: this.visitExpr(expr.left),
+     right: this.visitExpr(expr.right)
+    };
+  }
+  
+  visitConditionalExpression(expr: ASyntax.ConditionalExpression): A {
+    return {
+     type: "ConditionalExpression",
+     test: this.visitProp(expr.test),
+     consequent: this.visitExpr(expr.consequent),
+     alternate: this.visitExpr(expr.alternate)
+    };
+  }
+  
+  visitCallExpression(expr: ASyntax.CallExpression): A {
+    return {
+     type: "CallExpression",
+     callee: this.visitExpr(expr.callee),
+     heap: expr.heap,
+     args: expr.args.map(a => this.visitExpr(a))
+    };
+  }
+
+  visitTruthy(prop: ASyntax.Truthy): P {
+    return { type: "Truthy", expr: this.visitExpr(prop.expr) };
+  }
+  
+  visitAnd(prop: ASyntax.And): P {
+    return { type: "And", clauses: prop.clauses.map(c => this.visitProp(c)) };
+  }
+  
+  visitOr(prop: ASyntax.Or): P {
+    return { type: "Or", clauses: prop.clauses.map(c => this.visitProp(c)) };
+  }
+  
+  visitIff(prop: ASyntax.Iff): P {
+    return {
+      type: "Iff",
+      left: this.visitProp(prop.left),
+      right: this.visitProp(prop.right)
+    };
+  }
+  
+  visitEq(prop: ASyntax.Eq): P {
+    return {
+      type: "Eq",
+      left: this.visitExpr(prop.left),
+      right: this.visitExpr(prop.right)
+    };
+  }
+  
+  visitNot(prop: ASyntax.Not): P {
+    return { type: "Not", arg: this.visitProp(prop.arg) };
+  }
+  
+  visitTrue(prop: ASyntax.True): P {
+    return prop;
+  }
+  
+  visitFalse(prop: ASyntax.False): P {
+    return prop;
+  }
+  
+  visitPrecondition(prop: ASyntax.Precondition): P {
+    return {
+      type: "Precondition",
+      callee: this.visitExpr(prop.callee),
+      heap: prop.heap,
+      args: prop.args.map(a => this.visitExpr(a))
+    };
+  }
+  
+  visitPostcondition(prop: ASyntax.Postcondition): P {
+    return {
+      type: "Postcondition",
+      callee: this.visitExpr(prop.callee),
+      heap: prop.heap,
+      args: prop.args.map(a => this.visitExpr(a))
+    };
+  }
+  
+  visitForAll(prop: ASyntax.ForAll): P {
+    return {
+      type: "ForAll",
+      callee: this.visitExpr(prop.callee),
+      args: prop.args,
+      existsHeaps: prop.existsHeaps,
+      existsLocs: prop.existsLocs,
+      existsVars: prop.existsVars,
+      prop: this.visitProp(prop.prop)
+    };
+  }
+  
+  visitCallTrigger(prop: ASyntax.CallTrigger): P {
+    return {
+      type: "CallTrigger",
+      callee: this.visitExpr(prop.callee),
+      heap: prop.heap,
+      args: prop.args.map(a => this.visitExpr(a))
+    };
+  }
+  
+  visitHeapStore(prop: ASyntax.HeapStore): P {
+    return {
+      type: "HeapStore",
+      heap: prop.heap,
+      name: prop.name,
+      expr: this.visitExpr(prop.expr)
+    };
+  }
+  
+  visitHeapEffect(prop: ASyntax.HeapEffect): P {
+    return {
+     type: "HeapEffect",
+     callee: this.visitExpr(prop.callee),
+     heap: prop.heap,
+     args: prop.args.map(a => this.visitExpr(a))
+    };
+  }
+  
+  visitHeapPromote(prop: ASyntax.HeapPromote): P {
+    return prop;
+  }
+}
+
+class TriggerRemoval extends PropTransformer {
+  readonly triggers: Array<ASyntax.CallTrigger> = [];
+
+  visitCallTrigger(prop: ASyntax.CallTrigger): P {
+    this.triggers.push(prop);
+    return tru;
+  }
+  
+  visitForAll(prop: ASyntax.ForAll): P {
+    // do not erase under quantifier -> leave unchanged
+    return prop;
   }
 }
 
 export function eraseTriggersProp(prop: P): P {
-  switch (prop.type) {
-    case "True":
-    case "False":
-    case "HeapPromote":
-    case "ForAll":  // do not erase under quantifier
-      return prop;
-    case "Truthy":
-      return { type: "Truthy", expr: eraseTriggersExpr(prop.expr) };
-    case "And":
-      return { type: "And", clauses: prop.clauses.map(eraseTriggersProp) };
-    case "Or":
-      return { type: "Or", clauses: prop.clauses.map(eraseTriggersProp) };
-    case "Iff":
-      return {
-        type: "Iff",
-        left: eraseTriggersProp(prop.left),
-        right: eraseTriggersProp(prop.right)
-      };
-    case "Eq":
-      return {
-        type: "Eq",
-        left: eraseTriggersExpr(prop.left),
-        right: eraseTriggersExpr(prop.right)
-      };
-    case "Not":
-      return { type: "Not", arg: eraseTriggersProp(prop.arg) };
-    case "Precondition":
-      return {
-        type: "Precondition",
-        callee: eraseTriggersExpr(prop.callee),
-        heap: prop.heap,
-        args: prop.args.map(eraseTriggersExpr)
-      };
-    case "Postcondition":
-      return {
-        type: "Postcondition",
-        callee: eraseTriggersExpr(prop.callee),
-        heap: prop.heap,
-        args: prop.args.map(eraseTriggersExpr)
-      };
-    case "CallTrigger":
-      return tru; // remove call trigger
-    case "HeapStore":
-      return {
-        type: "HeapStore",
-        heap: prop.heap,
-        name: prop.name,
-        expr: eraseTriggersExpr(prop.expr)
-      };
-    case "HeapEffect":
-      return {
-       type: "HeapEffect",
-       callee: eraseTriggersExpr(prop.callee),
-       heap: prop.heap,
-       args: prop.args.map(eraseTriggersExpr)
-      };
-  }
+  const v = new TriggerRemoval();
+  return v.visitProp(prop);
 }
 
