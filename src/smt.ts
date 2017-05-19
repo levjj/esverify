@@ -1,7 +1,8 @@
-import { P, Vars, Locs, Heap, SMTInput, propositionToAssert, propositionToSMT } from "./propositions";
+import { P, Vars, Locs, Heaps, SMTInput, SMTOutput, instantiateQuantifiers, propositionToAssert } from "./propositions";
 
-export default function smt(heap: Heap, locs: Locs, vars: Vars, prop: P, vc: P): SMTInput {
-    return `(set-option :smt.auto-config false) ; disable automatic self configuration
+export function smt(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
+  const prop = instantiateQuantifiers(heaps, locs, vars, p);
+  return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
 ; Values in JavaScript
@@ -199,20 +200,66 @@ export default function smt(heap: Heap, locs: Locs, vars: Vars, prop: P, vc: P):
 
 ; Declarations
 
-${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
+${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}
 ${[...locs].map(v => `(declare-const l_${v} Loc)\n`).join('')}
 ${locs.size == 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_'+l).join(' ')}))`}
-
-${[...Array(heap+1).keys()].map(h => `(declare-const h_${h} Heap)\n`).join('')}
-
-; Antecedents
-
-${propositionToAssert(prop)}
+${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
 
 ; Verification condition
 
-(assert (not ${propositionToSMT(vc)}))
+${propositionToAssert(prop)}
 
 (check-sat)
 (get-value (${[...vars].map(v => `v_${v}`).join(' ')}))`;
+}
+
+function smtToArray(smt: SMTOutput): Array<any> {
+  const s = smt.trim();
+  if (s == "empty") return [];
+  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
+  if (!m) throw new Error("Cannot parse output!");
+  const [, h, t] = m;
+  return [smtToValue(h)].concat(smtToArray(t));
+}
+
+function smtToValue(smt: SMTOutput): any {
+  const s = smt.trim();
+  if (s == "jsundefined") return undefined;
+  if (s == "jsnull") return null;
+  const m = s.match(/^\((\w+)\ (.*)\)$/);
+  if (!m) throw new Error("Cannot parse output!");
+  const [, tag, v] = m;
+  if (tag.startsWith("jsfun")) return ()=>0;
+  switch (tag) {
+    case "jsbool": return v == "true";
+    case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
+    case "jsstr": return v.substr(1, v.length - 2);
+    case "jsarr": return smtToArray(v);
+    default: throw new Error("unsupported");
+  }
+}
+
+export type Model = { [varName: string]: any };
+
+export function smtToModel(smt: SMTOutput): Model {
+  if (!smt || !smt.startsWith("sat")) throw new Error("no model available");
+  // remove "sat"
+  smt = smt.slice(3, smt.length);
+  if (smt.trim().startsWith("(error")) return {};
+
+  // remove outer parens
+  smt = smt.trim().slice(2, smt.length - 4);
+  const model: Model = {};
+  smt.split(/\)\s+\(/m).forEach(str => {
+    // these are now just pairs of varname value
+    const both = str.trim().split(" ");
+    if (both.length < 2) return;
+    const name = both[0].trim(),
+          value = both.slice(1, both.length).join(" ").trim();
+    const val = smtToValue(value);
+    if (typeof(val) != "function") {
+      model[name.substr(2)] = val;
+    }
+  });
+  return model;
 }

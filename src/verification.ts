@@ -3,13 +3,11 @@
 declare const require: (s: string) => any;
 declare const console: { log: any };
 
-import { P, Vars, Locs, Heap, SMTInput, SMTOutput, smtToValue } from "./propositions";
-import smt from "./smt";
+import { P, Vars, Locs, Heap, Heaps, SMTInput, SMTOutput } from "./propositions";
+import { Model, smt, smtToModel } from "./smt";
 import { JSyntax, stringifyStmt } from "./javascript";
 
 export type SMTOutput = string;
-
-type Model = { [varName: string]: any };
 
 export type Result = { status: "unverified" }
                    | { status: "inprogress" }
@@ -20,23 +18,21 @@ export type Result = { status: "unverified" }
                    | { status: "tested", model: Model };
 
 export default class VerificationCondition {
-  heap: Heap;
+  heaps: Heaps;
   locs: Locs;
   vars: Vars;
   prop: P;
-  vc: P;
   body: Array<JSyntax.Statement>;
   description: string;
   _smtin: SMTInput | null;
   _smtout: SMTOutput | null;
   _result: Result;
 
-  constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, vc: P, description: string, body: Array<JSyntax.Statement> = []) {
-    this.heap = heap;
+  constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, description: string, body: Array<JSyntax.Statement> = []) {
+    this.heaps = new Set([...Array(heap+1).keys()]);
     this.locs = locs;
     this.vars = vars;
     this.prop = prop;
-    this.vc = vc;
     this.body = body;
     this.description = description;
     this._smtin = null;
@@ -45,27 +41,12 @@ export default class VerificationCondition {
   }
 
   smtInput(): SMTInput {
-    return this._smtin = smt(this.heap, this.locs, this.vars, this.prop, this.vc);
+    return this._smtin = smt(this.heaps, this.locs, this.vars, this.prop);
   }
 
   getModel(): Model {
-    let res = this._smtout;
-    if (!res || !res.startsWith("sat")) throw new Error("no model available");
-    if (Object.keys(this.vars).length == 0) return {};
-    // remove "sat"
-    res = res.slice(3, res.length);
-    // remove outer parens
-    res = res.trim().slice(2, res.length - 4);
-    const model: Model = {};
-    res.split(/\)\s+\(/m).forEach(str => {
-      // these are now just pairs of varname value
-      const both = str.trim().split(" ");
-      if (both.length < 2) return;
-      const name = both[0].trim(),
-            value = both.slice(1, both.length).join(" ").trim();
-      model[name.substr(0, name.length - 2)] = smtToValue(value);
-    });
-    return model;
+    if (!this._smtout) throw new Error("no model available");
+    return smtToModel(this._smtout);
   }
 
   testCode(): string {
@@ -76,6 +57,7 @@ export default class VerificationCondition {
             `let ${v}_0 = ${v};\n`);
     return `
 function assert(p) { if (!p) throw new Error("assertion failed"); }
+function pure() { return true; /* not tested dynamically */ }
 ${declarations.join("")}
 ${oldValues.join("")}
 
@@ -104,7 +86,11 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
         this.runTest(m);
         this._result = { status: "tested", model: m };
       } catch (e) {
-        this._result = { status: "incorrect", model: m, error: e };
+        if (e instanceof Error && e.message == "assertion failed") {
+          this._result = { status: "incorrect", model: m, error: e };
+        } else {
+          this._result = { status: "error", error: e };
+        }
       }
     } else if (this._smtout && this._smtout.startsWith("unknown")) {
       this._result = { status: "unknown" };
@@ -118,7 +104,7 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
 
   solveLocal(): Promise<string> {
     const spawn = require('child_process').spawn;
-    const p = spawn('/home/cs/Projects/jsfxs/z3/build/z3', ['-smt2', '-in'],
+    const p = spawn('z3', ['-smt2', '-in'],
                     {stdio: ['pipe', 'pipe', 'ignore']});
     return new Promise((resolve, reject) => {
       let result: string = "";

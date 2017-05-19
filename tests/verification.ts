@@ -24,9 +24,10 @@ function helper(description: string, expected: string, debug: boolean = false) {
     const vc = vcs.find(v => v.description === description);
     expect(vc).to.not.be.undefined;
     if (!vc) throw new Error();
-    await vc.solve();
-    if (debug) vc.debugOut();
-    expect(vc.result().status).to.be.eql(expected);
+    try {
+      await vc.solve();
+      expect(vc.result().status).to.be.eql(expected);
+    } finally { if (debug) vc.debugOut(); }
   };
   if (debug) {
     it.only(description.replace(/\n/g, ' ') + ' ' + expected, body);
@@ -83,7 +84,7 @@ describe('max() with missing pre', () => {
 
   const code = (() => {
     function max(a, b) {
-      requires(typeof(b) == 'number');
+      requires(typeof(a) == 'number');
       ensures(max(a, b) >= a);
 
       if (a >= b) {
@@ -100,13 +101,12 @@ describe('max() with missing pre', () => {
     vcs = t;
   });
 
-  unknown('max:\n(max(a, b) >= a)');
+  tested('max:\n(max(a, b) >= a)');
 
-  it.skip('returns counter-example', async () => {
+  it('returns counter-example', async () => {
     await vcs[0].solve();
     expect(vcs[0].getModel()).to.containSubset({
-      a: false,
-      b: 0,
+      b: false
     });
   });
 });
@@ -294,7 +294,7 @@ describe('inline global call', () => {
   });
 
   verified('assert:\n(j == 4)');
-  unknown('assert:\n(k == 5)'); // only inline one level
+  tested('assert:\n(k == 5)'); // only inline one level
 });
 
 describe('post conditions global call', () => {
@@ -324,12 +324,12 @@ describe('post conditions global call', () => {
   });
 
   verified('inc:\n(inc(n) > n)')
-  unknown('inc2:\nprecondition inc(n)');
-  unknown('inc2:\nprecondition inc(inc(n))');
+  incorrect('inc2:\nprecondition inc(n)');
+  incorrect('inc2:\nprecondition inc(inc(n))');
   verified('precondition inc(i)');
   verified('assert:\n(j >= 4)');
   verified('precondition inc2(i)');
-  unknown('assert:\n(k >= 5)'); // only inline one level, so post-cond of inc(inc(i)) not available
+  tested('assert:\n(k >= 5)'); // only inline one level, so post-cond of inc(inc(i)) not available
 });
 
 describe('mutable variables', () => {
@@ -352,7 +352,7 @@ describe('mutable variables', () => {
   });
 
   verified('precondition f(0)');
-  unknown('precondition f(1)');
+  incorrect('precondition f(1)');
 });
 
 describe('closures', () => {
@@ -426,10 +426,10 @@ describe('buggy fibonacci', () => {
 
   verified('fib:\nprecondition fib((n - 1))');
   verified('fib:\nprecondition fib((n - 2))');
-  unknown('fib:\n(fib(n) >= n)');
-  it.skip('returns counter-example', async () => {
-    await vcs[4].solve();
-    expect(vcs[4].getModel()).to.containSubset({
+  incorrect('fib:\n(fib(n) >= n)');
+  it('returns counter-example', async () => {
+    await vcs[2].solve();
+    expect(vcs[2].getModel()).to.containSubset({
       n: 2
     });
   });
@@ -455,10 +455,10 @@ describe('pure functions', () => {
     vcs = t;
   });
 
-  unknown('f:\npure()'); // not pure
+  tested('f:\npure()'); // not pure
   verified('g:\npure()'); // pure
   verified('h2b:\npure()'); // inlined h1 pure
-  unknown('h3a:\npure()'); // pure, but only one level inlining
+  tested('h3a:\npure()'); // pure, but only one level inlining
   verified('h3b:\npure()'); // calling other pure function
 });
 

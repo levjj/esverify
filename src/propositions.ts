@@ -1,14 +1,14 @@
 import { flatMap } from "./util";
 
 export namespace ASyntax {
-  export interface Variable { type: "Variable", name: string }
-  export interface HeapReference { type: "HeapReference", name: string, heap: Heap }
-  export interface Literal { type: "Literal",
-                             value: undefined | null | boolean | number | string }
-  export interface FunctionLiteral { type: "FunctionLiteral",
-                                     id: number }
-  export interface ArrayExpression { type: "ArrayExpression",
-                                     elements: Array<Expression> }
+
+  export type Heap = number;
+  export type Location = string;
+  export type Variable = string;
+  export interface HeapReference { type: "HeapReference", loc: Location, heap: Heap }
+  export interface Literal { type: "Literal", value: undefined | null | boolean | number | string }
+  export interface FunctionLiteral { type: "FunctionLiteral", id: number }
+  export interface ArrayExpression { type: "ArrayExpression", elements: Array<Expression> }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
   export interface UnaryExpression { type: "UnaryExpression",
                                      operator: UnaryOperator,
@@ -56,7 +56,7 @@ export namespace ASyntax {
                                    args: Array<Expression> }
   export interface ForAll { type: "ForAll",
                             callee: Expression,
-                            args: Array<Variable>,
+                            args: Array<string>,
                             existsHeaps: Set<Heap>,
                             existsLocs: Locs,
                             existsVars: Vars,
@@ -67,7 +67,7 @@ export namespace ASyntax {
                                  args: Array<Expression> }
   export interface HeapStore { type: "HeapStore",
                                heap: Heap,
-                               name: string,
+                               loc: Location,
                                expr: Expression }
   export interface HeapEffect { type: "HeapEffect",
                                 callee: Expression,
@@ -93,46 +93,14 @@ export namespace ASyntax {
                           | HeapPromote;
 }
 
+export type Heap = ASyntax.Heap;
 export type A = ASyntax.Expression;
 export type P = ASyntax.Proposition;
-export type Vars = Set<string>;
-export type Locs = Set<string>;
-export type Heap = number;
+export type Heaps = Set<ASyntax.Heap>;
+export type Locs = Set<ASyntax.Location>;
+export type Vars = Set<ASyntax.Variable>;
 export type SMTInput = string;
 export type SMTOutput = string;
-
-const unOpToSMT: {[unop: string]: string} = {
-  "-": "_js-negative",
-  "+":"_js-positive",
-  "!": "_js-not",
-  "~": "_js-bnot",
-  "typeof": "_js-typeof",
-  "void": "_js-void"
-};
-
-const binOpToSMT: {[binop: string]: string} = {
-  "==": "_js-eq", // non-standard
-  "!=": "_js-neq", // non-standard
-  "===": "_js-eq", // non-standard
-  "!==": "_js-neq", // non-standard
-  "<": "_js_lt",
-  "<=": "_js_leq",
-  ">": "_js_gt",
-  ">=": "_js-geq",
-  "+": "_js-plus",
-  "-": "_js-minus",
-  "*": "_js-multiply",
-  "/": "_js-divide",
-  "%": "_js-mod",
-  "<<": "_js-lshift",
-  ">>": "_js-rshift",
-  ">>>": "_js-rzshift",
-  "|": "_js-bor",
-  "^": "_js-bxor",
-  "&": "_js-band",
-  "in": "_js-in", // unsupported
-  "instanceof": "_js-instanceof" // unsupported
-};
 
 export const und: A = { type: "Literal", value: undefined };
 export const tru: P = { type: "True" };
@@ -171,10 +139,14 @@ export function or(...props: Array<P>): P {
 }
 
 export function eq(left: A, right: A): P {
+  if (eqExpr(left, right)) return tru;
   return { type: "Eq", left, right };
 }
 
 export function iff(left: P, right: P): P {
+  if (left.type == "True") return right;
+  if (right.type == "True") return left;
+  if (eqProp(left, right)) return tru;
   return { type: "Iff", left, right };
 }
 
@@ -185,15 +157,120 @@ export function not(arg: P): P {
   return { type: "Not", arg };
 }
 
-export function heapStore(heap: Heap, name: string, expr: A): P {
-  return { type: "HeapStore", heap, name, expr };
+export function heapStore(heap: Heap, loc: string, expr: A): P {
+  return { type: "HeapStore", heap, loc, expr };
 }
 
 export function heapPromote(from: Heap, to: Heap): P {
   return { type: "HeapPromote", from, to };
 }
 
-abstract class PropVisitor<R,S> {
+
+function eqExpr(exprA: A, exprB: A): boolean {
+  if (typeof(exprA) == "string") {
+    return typeof(exprB) == "string" && exprA == exprB;
+  }
+  if (typeof(exprB) == "string") return false;
+  switch (exprA.type) {
+    case "HeapReference":
+      return exprA.type == exprB.type &&
+             exprA.heap == exprB.heap &&
+             exprA.loc == exprB.loc;
+    case "Literal":
+      return exprA.type == exprB.type &&
+             exprA.value === exprB.value;
+    case "FunctionLiteral":
+      return exprA.type == exprB.type &&
+             exprA.id === exprB.id;
+    case 'ArrayExpression':
+      return exprA.type == exprB.type &&
+             exprA.elements.length == exprB.elements.length &&
+             exprA.elements.every((e,idx) => eqExpr(e, exprB.elements[idx]));
+    case "UnaryExpression":
+      return exprA.type == exprB.type &&
+             exprA.operator == exprB.operator &&
+             eqExpr(exprA.argument, exprB.argument);
+    case "BinaryExpression":
+      return exprA.type == exprB.type &&
+             exprA.operator == exprB.operator &&
+             eqExpr(exprA.left, exprB.left) &&
+             eqExpr(exprA.right, exprB.right);
+    case "ConditionalExpression":
+      return exprA.type == exprB.type &&
+             eqProp(exprA.test, exprB.test) &&
+             eqExpr(exprA.consequent, exprB.consequent) &&
+             eqExpr(exprA.alternate, exprB.alternate);
+    case "CallExpression":
+      return exprA.type == exprB.type &&
+             exprA.heap == exprB.heap &&
+             eqExpr(exprA.callee, exprB.callee) &&
+             exprA.args.length == exprB.args.length &&
+             exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
+  }
+}
+
+function eqProp(propA: P, propB: P): boolean {
+  switch (propA.type) {
+    case "Truthy":
+      return propA.type == propB.type &&
+             eqExpr(propA.expr, propB.expr);
+    case "And":
+    case "Or":
+      return propA.type == propB.type &&
+             propA.clauses.length == propB.clauses.length &&
+             propA.clauses.every((c,idx) => eqProp(c, propB.clauses[idx]));
+    case "Iff":
+      return propA.type == propB.type &&
+             eqProp(propA.left, propB.left) &&
+             eqProp(propA.right, propB.right);
+    case "Eq":
+      return propA.type == propB.type &&
+             eqExpr(propA.left, propB.left) &&
+             eqExpr(propA.right, propB.right);
+    case "Not":
+      return propA.type == propB.type &&
+             eqProp(propA.arg, propB.arg);
+    case "True":
+    case "False":
+      return propA.type == propB.type;
+    case "CallTrigger":
+    case "Precondition":
+    case "Postcondition":
+    case "HeapEffect":
+      return propA.type == propB.type &&
+             propA.heap == propB.heap &&
+             eqExpr(propA.callee, propB.callee) &&
+             propA.args.length == propB.args.length &&
+             propA.args.every((e,idx) => eqExpr(e, propB.args[idx]));
+    case "ForAll":
+      return propA.type == propB.type &&
+             eqExpr(propA.callee, propB.callee) &&
+             propA.args.length == propB.args.length &&
+             propA.args.every((e,idx) => e == propB.args[idx]) &&
+             propA.existsHeaps.size == propB.existsHeaps.size &&
+             [...propA.existsHeaps].every(h => propB.existsHeaps.has(h)) &&
+             propA.existsLocs.size == propB.existsLocs.size &&
+             [...propA.existsLocs].every(l => propB.existsLocs.has(l)) &&
+             propA.existsVars.size == propB.existsVars.size &&
+             [...propA.existsVars].every(v => propB.existsVars.has(v)) &&
+             eqProp(propA.prop, propB.prop);
+    case "HeapStore":
+      return propA.type == propB.type &&
+             propA.heap == propB.heap &&
+             propA.loc == propB.loc &&
+             eqExpr(propA.expr, propB.expr);
+    case "HeapPromote":
+      return propA.type == propB.type &&
+             propA.from == propB.from &&
+             propA.to == propB.to;
+  }
+}
+
+abstract class PropVisitor<H,L,R,S> {
+
+  abstract visitHeap(heap: Heap): H;
+
+  abstract visitLocation(loc: ASyntax.Location): L;
 
   abstract visitVariable(expr: ASyntax.Variable): R;
   abstract visitHeapReference(expr: ASyntax.HeapReference): R;
@@ -205,25 +282,25 @@ abstract class PropVisitor<R,S> {
   abstract visitConditionalExpression(expr: ASyntax.ConditionalExpression): R;
   abstract visitCallExpression(expr: ASyntax.CallExpression): R;
 
-  abstract visitTruthy(stmt: ASyntax.Truthy): S;
-  abstract visitAnd(stmt: ASyntax.And): S;
-  abstract visitOr(stmt: ASyntax.Or): S;
-  abstract visitIff(stmt: ASyntax.Iff): S;
-  abstract visitEq(stmt: ASyntax.Eq): S;
-  abstract visitNot(stmt: ASyntax.Not): S;
-  abstract visitTrue(stmt: ASyntax.True): S;
-  abstract visitFalse(stmt: ASyntax.False): S;
-  abstract visitPrecondition(stmt: ASyntax.Precondition): S;
-  abstract visitPostcondition(stmt: ASyntax.Postcondition): S;
-  abstract visitForAll(stmt: ASyntax.ForAll): S;
-  abstract visitCallTrigger(stmt: ASyntax.CallTrigger): S;
-  abstract visitHeapStore(stmt: ASyntax.HeapStore): S;
-  abstract visitHeapEffect(stmt: ASyntax.HeapEffect): S;
-  abstract visitHeapPromote(stmt: ASyntax.HeapPromote): S;
+  abstract visitTruthy(prop: ASyntax.Truthy): S;
+  abstract visitAnd(prop: ASyntax.And): S;
+  abstract visitOr(prop: ASyntax.Or): S;
+  abstract visitIff(prop: ASyntax.Iff): S;
+  abstract visitEq(prop: ASyntax.Eq): S;
+  abstract visitNot(prop: ASyntax.Not): S;
+  abstract visitTrue(prop: ASyntax.True): S;
+  abstract visitFalse(prop: ASyntax.False): S;
+  abstract visitPrecondition(prop: ASyntax.Precondition): S;
+  abstract visitPostcondition(prop: ASyntax.Postcondition): S;
+  abstract visitForAll(prop: ASyntax.ForAll): S;
+  abstract visitCallTrigger(prop: ASyntax.CallTrigger): S;
+  abstract visitHeapStore(prop: ASyntax.HeapStore): S;
+  abstract visitHeapEffect(prop: ASyntax.HeapEffect): S;
+  abstract visitHeapPromote(prop: ASyntax.HeapPromote): S;
 
   visitExpr(expr: A): R {
+    if (typeof(expr) == "string") return this.visitVariable(expr);
     switch (expr.type) {
-      case "Variable": return this.visitVariable(expr);
       case "HeapReference": return this.visitHeapReference(expr);
       case "Literal": return this.visitLiteral(expr);
       case "FunctionLiteral": return this.visitFunctionLiteral(expr);
@@ -235,35 +312,169 @@ abstract class PropVisitor<R,S> {
     }
   }
 
-  visitProp(stmt: P): S {
-    switch (stmt.type) {
-      case "Truthy": return this.visitTruthy(stmt);
-      case "And": return this.visitAnd(stmt);
-      case "Or": return this.visitOr(stmt);
-      case "Iff": return this.visitIff(stmt);
-      case "Eq": return this.visitEq(stmt);
-      case "Not": return this.visitNot(stmt);
-      case "True": return this.visitTrue(stmt);
-      case "False": return this.visitFalse(stmt);
-      case "Precondition": return this.visitPrecondition(stmt);
-      case "Postcondition": return this.visitPostcondition(stmt);
-      case "ForAll": return this.visitForAll(stmt);
-      case "CallTrigger": return this.visitCallTrigger(stmt);
-      case "HeapStore": return this.visitHeapStore(stmt);
-      case "HeapEffect": return this.visitHeapEffect(stmt);
-      case "HeapPromote": return this.visitHeapPromote(stmt);
+  visitProp(prop: P): S {
+    switch (prop.type) {
+      case "Truthy": return this.visitTruthy(prop);
+      case "And": return this.visitAnd(prop);
+      case "Or": return this.visitOr(prop);
+      case "Iff": return this.visitIff(prop);
+      case "Eq": return this.visitEq(prop);
+      case "Not": return this.visitNot(prop);
+      case "True": return this.visitTrue(prop);
+      case "False": return this.visitFalse(prop);
+      case "Precondition": return this.visitPrecondition(prop);
+      case "Postcondition": return this.visitPostcondition(prop);
+      case "ForAll": return this.visitForAll(prop);
+      case "CallTrigger": return this.visitCallTrigger(prop);
+      case "HeapStore": return this.visitHeapStore(prop);
+      case "HeapEffect": return this.visitHeapEffect(prop);
+      case "HeapPromote": return this.visitHeapPromote(prop);
     }
   }
 }
 
-class SMTGenerator extends PropVisitor<SMTInput, SMTInput> {
+abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
+
+  abstract empty(): R;
+  abstract reduce(x: R, y: R): R;
+
+  r(...r: R[]) {
+    return r.reduce((res,r) => this.reduce(res, r), this.empty());
+  }
+
+  visitHeap(heap: Heap): R { return this.empty(); }
+  visitLocation(loc: ASyntax.Location) { return this.empty(); }
+
+  visitVariable(expr: ASyntax.Variable) { return this.empty(); }
+  visitHeapReference(expr: ASyntax.HeapReference) {
+    return this.r(this.visitHeap(expr.heap), this.visitLocation(expr.loc));
+  }
+  visitLiteral(expr: ASyntax.Literal) { return this.empty(); }
+  visitFunctionLiteral(expr: ASyntax.FunctionLiteral) { return this.empty(); }
+  visitArrayExpression(expr: ASyntax.ArrayExpression) {
+    return this.r(...expr.elements.map(e => this.visitExpr(e)));
+  }
+  visitUnaryExpression(expr: ASyntax.UnaryExpression) {
+    return this.visitExpr(expr.argument);
+  }
+  visitBinaryExpression(expr: ASyntax.BinaryExpression) {
+    return this.r(this.visitExpr(expr.left), this.visitExpr(expr.right));
+  }
+  visitConditionalExpression(expr: ASyntax.ConditionalExpression): R {
+    return this.r(this.visitProp(expr.test), this.visitExpr(expr.consequent), this.visitExpr(expr.alternate));
+  }
+  visitCallExpression(expr: ASyntax.CallExpression): R {
+    return this.r(this.visitHeap(expr.heap),
+                  this.visitExpr(expr.callee),
+                  ...expr.args.map(a => this.visitExpr(a)));
+  }
+
+  visitTruthy(prop: ASyntax.Truthy): R {
+    return this.visitExpr(prop.expr);
+  }
+  visitAnd(prop: ASyntax.And): R {
+    return this.r(...prop.clauses.map(c => this.visitProp(c)));
+  }
+  visitOr(prop: ASyntax.Or): R {
+    return this.r(...prop.clauses.map(c => this.visitProp(c)));
+  }
+  visitIff(prop: ASyntax.Iff): R {
+    return this.r(this.visitProp(prop.left), this.visitProp(prop.right));
+  }
+  visitEq(prop: ASyntax.Eq): R {
+    return this.r(this.visitExpr(prop.left), this.visitExpr(prop.right));
+  }
+  visitNot(prop: ASyntax.Not): R {
+    return this.visitProp(prop.arg);
+  }
+  visitTrue(prop: ASyntax.True): R { return this.empty(); }
+  visitFalse(prop: ASyntax.False): R { return this.empty(); }
+  visitPrecondition(prop: ASyntax.Precondition): R {
+    return this.r(this.visitHeap(prop.heap),
+                  this.visitExpr(prop.callee),
+                  ...prop.args.map(a => this.visitExpr(a)));
+  }
+  visitPostcondition(prop: ASyntax.Postcondition): R {
+    return this.r(this.visitHeap(prop.heap),
+                  this.visitExpr(prop.callee),
+                  ...prop.args.map(a => this.visitExpr(a)));
+  }
+  visitForAll(prop: ASyntax.ForAll): R {
+    return this.r(...[...prop.existsHeaps].map(h => this.visitHeap(h)),
+                  ...[...prop.existsLocs].map(l => this.visitLocation(l)),
+                  ...[...prop.existsVars].map(v => this.visitVariable(v)),
+                  this.visitExpr(prop.callee),
+                  this.visitProp(prop.prop));
+  }
+  visitCallTrigger(prop: ASyntax.CallTrigger): R {
+    return this.r(this.visitHeap(prop.heap),
+                  this.visitExpr(prop.callee),
+                  ...prop.args.map(a => this.visitExpr(a)));
+  }
+  visitHeapStore(prop: ASyntax.HeapStore): R {
+    return this.r(this.visitHeap(prop.heap),
+                  this.visitLocation(prop.loc),
+                  this.visitExpr(prop.expr));
+  }
+  visitHeapEffect(prop: ASyntax.HeapEffect): R {
+    return this.r(this.visitHeap(prop.heap),
+                  this.visitExpr(prop.callee),
+                  ...prop.args.map(a => this.visitExpr(a)));
+  }
+  visitHeapPromote(prop: ASyntax.HeapPromote): R {
+    return this.r(this.visitHeap(prop.from), this.visitHeap(prop.to));
+  }
+}
+
+const unOpToSMT: {[unop: string]: string} = {
+  "-": "_js-negative",
+  "+":"_js-positive",
+  "!": "_js-not",
+  "~": "_js-bnot",
+  "typeof": "_js-typeof",
+  "void": "_js-void"
+};
+
+const binOpToSMT: {[binop: string]: string} = {
+  "==": "_js-eq", // non-standard
+  "!=": "_js-neq", // non-standard
+  "===": "_js-eq", // non-standard
+  "!==": "_js-neq", // non-standard
+  "<": "_js_lt",
+  "<=": "_js_leq",
+  ">": "_js_gt",
+  ">=": "_js-geq",
+  "+": "_js-plus",
+  "-": "_js-minus",
+  "*": "_js-multiply",
+  "/": "_js-divide",
+  "%": "_js-mod",
+  "<<": "_js-lshift",
+  ">>": "_js-rshift",
+  ">>>": "_js-rzshift",
+  "|": "_js-bor",
+  "^": "_js-bxor",
+  "&": "_js-band",
+  "in": "_js-in", // unsupported
+  "instanceof": "_js-instanceof" // unsupported
+};
+
+class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
+
+  visitHeap(heap: Heap): SMTInput {
+    return "h_" + heap;
+  }
+
+  visitLocation(loc: ASyntax.Location): SMTInput {
+    return "l_" + loc;
+  }
 
   visitVariable(expr: ASyntax.Variable): SMTInput {
-    return "v_" + expr.name;
+    return "v_" + expr;
   }
 
   visitHeapReference(expr: ASyntax.HeapReference): SMTInput {
-    return `(select h_${expr.heap} l_${expr.name})`;
+    return `(select ${this.visitHeap(expr.heap)} ${this.visitLocation(expr.loc)})`;
   }
   
   visitLiteral(expr: ASyntax.Literal): SMTInput {
@@ -313,20 +524,23 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput> {
   
   visitCallExpression(expr: ASyntax.CallExpression): SMTInput {
     if (expr.args.length == 0) {
-      return `(app0 ${this.visitExpr(expr.callee)} h_${expr.heap})`;
+      return `(app0 ${this.visitExpr(expr.callee)} ${this.visitHeap(expr.heap)})`;
     } else if (expr.args.length == 1) {
-      return `(app1 ${this.visitExpr(expr.callee)} h_${expr.heap} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
+      return `(app1 ${this.visitExpr(expr.callee)} ${this.visitHeap(expr.heap)} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
     } else if (expr.args.length == 2) {
-      return `(app2 ${this.visitExpr(expr.callee)} h_${expr.heap} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
+      return `(app2 ${this.visitExpr(expr.callee)} ${this.visitHeap(expr.heap)} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
     } else {
       throw new Error("unsupported");
     }
   }
 
   visitTruthy(prop: ASyntax.Truthy): SMTInput {
-    if (prop.expr.type == "ConditionalExpression" &&
+    if (typeof(prop.expr) == "object" &&
+        prop.expr.type == "ConditionalExpression" &&
+        typeof(prop.expr.consequent) == "object" &&
         prop.expr.consequent.type == "Literal" &&
         prop.expr.consequent.value === true &&
+        typeof(prop.expr.alternate) == "object" &&
         prop.expr.alternate.type == "Literal" &&
         prop.expr.alternate.value === false) {
       return this.visitProp(prop.expr.test);
@@ -389,11 +603,11 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput> {
   
   visitPrecondition(prop: ASyntax.Precondition): SMTInput {
     if (prop.args.length == 0) {
-      return `(pre0 ${this.visitExpr(prop.callee)} h_${prop.heap})`;
+      return `(pre0 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)})`;
     } else if (prop.args.length == 1) {
-      return `(pre1 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+      return `(pre1 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
     } else if (prop.args.length == 2) {
-      return `(pre2 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+      return `(pre2 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
     } else {
       throw new Error("unsupported");
     }
@@ -401,26 +615,26 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput> {
   
   visitPostcondition(prop: ASyntax.Postcondition): SMTInput {
     if (prop.args.length == 0) {
-      return `(post0 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
+      return `(post0 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${this.visitHeap(prop.heap+1)})`;
     } else if (prop.args.length == 1) {
-      return `(post1 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+      return `(post1 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${this.visitHeap(prop.heap+1)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
     } else if (prop.args.length == 2) {
-      return `(post2 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
+      return `(post2 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${this.visitHeap(prop.heap+1)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
     } else {
       throw new Error("unsupported");
     }
   }
   
   visitForAll(prop: ASyntax.ForAll): SMTInput {
-    const params = `${prop.args.map(p => `(${this.visitExpr(p)} JSVal)`).join(' ')}`;
-    const triggerArgs = `${this.visitExpr(prop.callee)} h_0 h_1 ${prop.args.map(a => this.visitExpr(a)).join(' ')}`;
+    const params = `${prop.args.map(a => `(v_${a} JSVal)`).join(' ')}`;
+    const triggerArgs = `${this.visitExpr(prop.callee)} ${this.visitHeap(0)} ${this.visitHeap(1)} ${prop.args.map(a => this.visitVariable(a)).join(' ')}`;
     if (prop.args.length > 2) throw new Error("Not supported");
     const trigger = `call${prop.args.length} ${triggerArgs}`;
     let p = this.visitProp(prop.prop);
     if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
-      p = `(exists (${[...prop.existsHeaps].map(h => `(h_${h} Heap)`).join(' ')} `
-                 + `${[...prop.existsLocs].map(l => `(l_${l} Loc)`).join(' ')} `
-                 + `${[...prop.existsVars].map(v => `(v_${v} JSVal)`).join(' ')})\n  ${p})`;
+      p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
+                 + `${[...prop.existsLocs].map(l => `(${this.visitLocation(l)} Loc)`).join(' ')} `
+                 + `${[...prop.existsVars].map(v => `(${this.visitVariable(v)} JSVal)`).join(' ')})\n  ${p})`;
     }
     return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (!\n  ${p}\n  :pattern ((${trigger}))))`;
   }
@@ -438,7 +652,7 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput> {
   }
   
   visitHeapStore(prop: ASyntax.HeapStore): SMTInput {
-    return `(= h_${prop.heap + 1} (store h_${prop.heap} l_${prop.name} ${this.visitExpr(prop.expr)}))`
+    return `(= h_${prop.heap + 1} (store h_${prop.heap} ${this.visitLocation(prop.loc)} ${this.visitExpr(prop.expr)}))`
   }
   
   visitHeapEffect(prop: ASyntax.HeapEffect): SMTInput {
@@ -471,40 +685,26 @@ export function propositionToAssert(prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-function smtToArray(smt: SMTOutput): Array<any> {
-  const s = smt.trim();
-  if (s == "empty") return [];
-  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
-  const [, h, t] = m;
-  return [smtToValue(h)].concat(smtToArray(t));
-}
+class PropTransformer extends PropVisitor<Heap, ASyntax.Location, A, P> {
 
-export function smtToValue(smt: SMTOutput): any {
-  const s = smt.trim();
-  if (s == "jsundefined") return undefined;
-  if (s == "jsnull") return null;
-  const m = s.match(/^\((\w+)\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
-  const [, tag, v] = m;
-  if (tag.startsWith("jsfun_")) return null;
-  switch (tag) {
-    case "jsbool": return v == "true";
-    case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
-    case "jsstr": return v.substr(1, v.length - 2);
-    case "jsarr": return smtToArray(v);
-    default: throw new Error("unsupported");
+  visitHeap(heap: Heap): Heap {
+    return heap;
   }
-}
 
-class PropTransformer extends PropVisitor<A, P> {
+  visitLocation(loc: ASyntax.Location): ASyntax.Location {
+    return loc;
+  }
 
-  visitVariable(expr: ASyntax.Variable): A {
+  visitVariable(expr: ASyntax.Variable): ASyntax.Variable {
     return expr;
   }
 
   visitHeapReference(expr: ASyntax.HeapReference): A {
-    return expr;
+    return {
+      type: "HeapReference",
+      heap: this.visitHeap(expr.heap),
+      loc: this.visitLocation(expr.loc)
+    }
   }
   
   visitLiteral(expr: ASyntax.Literal): A {
@@ -549,7 +749,7 @@ class PropTransformer extends PropVisitor<A, P> {
     return {
      type: "CallExpression",
      callee: this.visitExpr(expr.callee),
-     heap: expr.heap,
+     heap: this.visitHeap(expr.heap),
      args: expr.args.map(a => this.visitExpr(a))
     };
   }
@@ -559,31 +759,23 @@ class PropTransformer extends PropVisitor<A, P> {
   }
   
   visitAnd(prop: ASyntax.And): P {
-    return { type: "And", clauses: prop.clauses.map(c => this.visitProp(c)) };
+    return and(...prop.clauses.map(c => this.visitProp(c)));
   }
   
   visitOr(prop: ASyntax.Or): P {
-    return { type: "Or", clauses: prop.clauses.map(c => this.visitProp(c)) };
+    return or(...prop.clauses.map(c => this.visitProp(c)));
   }
   
   visitIff(prop: ASyntax.Iff): P {
-    return {
-      type: "Iff",
-      left: this.visitProp(prop.left),
-      right: this.visitProp(prop.right)
-    };
+    return iff(this.visitProp(prop.left), this.visitProp(prop.right));
   }
   
   visitEq(prop: ASyntax.Eq): P {
-    return {
-      type: "Eq",
-      left: this.visitExpr(prop.left),
-      right: this.visitExpr(prop.right)
-    };
+    return eq(this.visitExpr(prop.left), this.visitExpr(prop.right));
   }
   
   visitNot(prop: ASyntax.Not): P {
-    return { type: "Not", arg: this.visitProp(prop.arg) };
+    return not(this.visitProp(prop.arg));
   }
   
   visitTrue(prop: ASyntax.True): P {
@@ -598,7 +790,7 @@ class PropTransformer extends PropVisitor<A, P> {
     return {
       type: "Precondition",
       callee: this.visitExpr(prop.callee),
-      heap: prop.heap,
+      heap: this.visitHeap(prop.heap),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
@@ -607,7 +799,7 @@ class PropTransformer extends PropVisitor<A, P> {
     return {
       type: "Postcondition",
       callee: this.visitExpr(prop.callee),
-      heap: prop.heap,
+      heap: this.visitHeap(prop.heap),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
@@ -617,9 +809,9 @@ class PropTransformer extends PropVisitor<A, P> {
       type: "ForAll",
       callee: this.visitExpr(prop.callee),
       args: prop.args,
-      existsHeaps: prop.existsHeaps,
-      existsLocs: prop.existsLocs,
-      existsVars: prop.existsVars,
+      existsHeaps: new Set([...prop.existsHeaps].map(h => this.visitHeap(h))),
+      existsLocs: new Set([...prop.existsLocs].map(l => this.visitLocation(l))),
+      existsVars: new Set([...prop.existsVars].map(v => this.visitVariable(v))),
       prop: this.visitProp(prop.prop)
     };
   }
@@ -628,7 +820,7 @@ class PropTransformer extends PropVisitor<A, P> {
     return {
       type: "CallTrigger",
       callee: this.visitExpr(prop.callee),
-      heap: prop.heap,
+      heap: this.visitHeap(prop.heap),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
@@ -636,8 +828,8 @@ class PropTransformer extends PropVisitor<A, P> {
   visitHeapStore(prop: ASyntax.HeapStore): P {
     return {
       type: "HeapStore",
-      heap: prop.heap,
-      name: prop.name,
+      heap: this.visitHeap(prop.heap),
+      loc: this.visitLocation(prop.loc),
       expr: this.visitExpr(prop.expr)
     };
   }
@@ -646,21 +838,22 @@ class PropTransformer extends PropVisitor<A, P> {
     return {
      type: "HeapEffect",
      callee: this.visitExpr(prop.callee),
-     heap: prop.heap,
+     heap: this.visitHeap(prop.heap),
      args: prop.args.map(a => this.visitExpr(a))
     };
   }
   
   visitHeapPromote(prop: ASyntax.HeapPromote): P {
-    return prop;
+    return {
+      type: "HeapPromote",
+      from: this.visitHeap(prop.from),
+      to: this.visitHeap(prop.to)
+    };
   }
 }
 
-class TriggerRemoval extends PropTransformer {
-  readonly triggers: Array<ASyntax.CallTrigger> = [];
-
+class TriggerEraser extends PropTransformer {
   visitCallTrigger(prop: ASyntax.CallTrigger): P {
-    this.triggers.push(prop);
     return tru;
   }
   
@@ -671,7 +864,215 @@ class TriggerRemoval extends PropTransformer {
 }
 
 export function eraseTriggersProp(prop: P): P {
-  const v = new TriggerRemoval();
+  const v = new TriggerEraser();
   return v.visitProp(prop);
+}
+
+class AlphaRenamer extends PropTransformer {
+  alphaHeap: { [heap: number]: Heap } = {};
+  alphaLoc: { [lname: string]: ASyntax.Location } = {};
+  alphaVar: { [vname: string]: ASyntax.Variable } = {};
+
+  visitHeap(heap: Heap): Heap {
+    return heap in this.alphaHeap ? this.alphaHeap[heap] : heap;
+  }
+
+  visitLocation(l: ASyntax.Location): ASyntax.Location {
+    return l in this.alphaLoc ? this.alphaLoc[l] : l;
+  }
+  
+  visitVariable(v: ASyntax.Variable): ASyntax.Variable {
+    return v in this.alphaVar ? this.alphaVar[v] : v;
+  }
+
+  renameHeap(orig: number, num: number) {
+    this.alphaHeap[orig] = num;
+  }
+  
+  renameLoc(orig: ASyntax.Location, name: ASyntax.Location) {
+    this.alphaLoc[orig] = name;
+  }
+  
+  renameVar(orig: ASyntax.Variable, name: ASyntax.Variable) {
+    this.alphaVar[orig] = name;
+  }
+  
+  visitForAll(prop: ASyntax.ForAll): P {
+    const origAlphaHeap = Object.assign({}, this.alphaHeap);
+    const origAlphaLoc = Object.assign({}, this.alphaLoc);
+    const origAlphaVar = Object.assign({}, this.alphaVar);
+    try {
+      prop.args.forEach(a => { delete this.alphaVar[a]; });
+      prop.existsHeaps.forEach(h => { delete this.alphaHeap[h]; });
+      prop.existsLocs.forEach(l => { delete this.alphaLoc[l]; });
+      prop.existsVars.forEach(v => { delete this.alphaVar[v]; });
+      return super.visitForAll(prop);
+    } finally {
+      this.alphaHeap = origAlphaHeap;
+      this.alphaLoc = origAlphaLoc;
+      this.alphaVar = origAlphaVar;
+    }
+  }
+}
+
+class QuantifierTransformer extends PropTransformer {
+  readonly heaps: Heaps;
+  readonly locs: Locs;
+  readonly vars: Vars;
+
+  constructor(heaps: Heaps, locs: Locs, vars: Vars) {
+    super();
+    this.heaps = heaps;
+    this.locs = locs;
+    this.vars = vars;
+  }
+
+  freshHeap(num: number): Heap {
+    let n = num;
+    while (this.heaps.has(n)) n++;
+    this.heaps.add(n);
+    return n;
+  }
+  
+  freshLoc(name: string): ASyntax.Location {
+    let n = name;
+    while (this.locs.has(n)) n = n + "_";
+    this.locs.add(n);
+    return n;
+  }
+  
+  freshVar(name: string): ASyntax.Variable {
+    let n = name;
+    while (this.vars.has(n)) n = n + "_";
+    this.vars.add(n);
+    return n;
+  }
+
+  liftExistantials(prop: ASyntax.ForAll): AlphaRenamer {
+    const renamer = new AlphaRenamer();
+    prop.existsHeaps.forEach(h => renamer.renameHeap(h, this.freshHeap(h)));
+    prop.existsLocs.forEach(l => renamer.renameLoc(l, this.freshLoc(l)));
+    prop.existsVars.forEach(v => renamer.renameVar(v, this.freshVar(v)));
+    return renamer;
+  }
+}
+
+class QuantifierLifter extends QuantifierTransformer {
+  position: boolean;
+
+  constructor(heaps: Heaps, locs: Locs, vars: Vars, position: boolean = false) {
+    super(heaps, locs, vars);
+    this.position = position;
+  }
+
+  visitNot(prop: ASyntax.Not): P {
+    this.position = !this.position;
+    try {
+      return super.visitNot(prop);
+    } finally {
+      this.position = !this.position;
+    }
+  }
+
+  visitForAll(prop: ASyntax.ForAll): P {
+    if (!this.position) return prop;
+    const renamer = this.liftExistantials(prop);
+    prop.args.forEach(a => renamer.renameVar(a, this.freshVar(a)));
+    const lifted = renamer.visitProp(prop);
+    return this.visitProp(lifted);
+  }
+}
+
+class TriggerCollector extends PropReducer<Array<ASyntax.CallTrigger>> {
+
+  empty(): Array<ASyntax.CallTrigger> { return []; }
+
+  reduce(a: Array<ASyntax.CallTrigger>, b: Array<ASyntax.CallTrigger>) {
+    return a.concat(b);
+  }
+
+  visitCallTrigger(prop: ASyntax.CallTrigger): Array<ASyntax.CallTrigger> {
+    return this.r([prop], super.visitCallTrigger(prop));
+  }
+  
+  visitForAll(prop: ASyntax.ForAll): Array<ASyntax.CallTrigger>  {
+    return []; // do not collect under quantifier
+  }
+}
+
+interface Instantiation { quantifier: ASyntax.ForAll, trigger: ASyntax.CallTrigger }
+
+class QuantifierInstantiator extends QuantifierTransformer {
+  readonly triggers: Array<ASyntax.CallTrigger>;
+  readonly instantiations: Array<Instantiation>;
+
+  constructor(triggers: Array<ASyntax.CallTrigger>, heaps: Heaps, locs: Locs, vars: Vars) {
+    super(heaps, locs, vars);
+    this.triggers = triggers;
+    this.instantiations = [];
+  }
+
+  instantiate(prop: ASyntax.ForAll, trigger: ASyntax.CallTrigger) {
+    const match = eq(prop.callee, trigger.callee);
+    const renamer = this.liftExistantials(prop);
+    let body: P = tru;
+    // substitute H0 and H1
+    const h0 = this.freshHeap(0);
+    body = and(body, heapPromote(trigger.heap, h0));
+    renamer.renameHeap(0, h0);
+    const h1 = this.freshHeap(1);
+    body = and(body, heapPromote(trigger.heap + 1, h1));
+    renamer.renameHeap(1, h1);
+    // substitute arguments
+    prop.args.forEach((a, idx) => {
+      const a2 = this.freshVar(a);
+      body = and(body, eq(a2, trigger.args[idx]));
+      renamer.renameVar(a, a2);
+    });
+    body = and(body, renamer.visitProp(prop.prop));
+    return implies(match, body);
+  }
+
+  visitForAll(prop: ASyntax.ForAll): P {
+    const clauses: Array<P> = [prop];
+    for (const t of this.triggers) {
+      if (prop.args.length != t.args.length ||
+          this.instantiations.some(({quantifier,trigger}) => eqProp(prop, quantifier) && eqProp(t, trigger))) {
+            continue;
+          }
+      const instantiated: P = this.instantiate(prop, t);
+      clauses.push(instantiated);
+      this.instantiations.push({ quantifier: prop, trigger: t});
+      // console.log("----");
+      // console.log("Q: " + propositionToSMT(prop));
+      // console.log("T: " + propositionToSMT(t));
+      // console.log("I: " + propositionToSMT(instantiated));
+      // console.log("----");
+    }
+    return and(...clauses);
+  }
+}
+
+class QuantifierEraser extends PropTransformer {
+  visitCallTrigger(prop: ASyntax.CallTrigger): P {
+    return tru;
+  }
+  
+  visitForAll(prop: ASyntax.ForAll): P {
+    return tru;
+  }
+}
+
+export function instantiateQuantifiers(heaps: Heaps, locs: Locs, vars: Vars, p: P): P {
+  let prop = (new QuantifierLifter(heaps, locs, vars)).visitProp(p);
+  const triggers: Array<ASyntax.CallTrigger> = (new TriggerCollector()).visitProp(prop);
+  const instantiator = new QuantifierInstantiator(triggers, heaps, locs, vars);
+  let num = -1;
+  while (instantiator.instantiations.length > num) {
+    num = instantiator.instantiations.length;
+    prop = instantiator.visitProp(prop);
+  }
+  prop = (new QuantifierEraser()).visitProp(prop);
+  return prop;
 }
 
