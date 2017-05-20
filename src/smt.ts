@@ -181,22 +181,12 @@ export function smt(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
 (define-sort Heap () (Array Loc JSVal))
 
 ; Functions
-
-(declare-fun pre0 (JSVal Heap) Bool)
-(declare-fun pre1 (JSVal Heap JSVal) Bool)
-(declare-fun pre2 (JSVal Heap JSVal JSVal) Bool)
-(declare-fun post0 (JSVal Heap Heap) Bool)
-(declare-fun post1 (JSVal Heap Heap JSVal) Bool)
-(declare-fun post2 (JSVal Heap Heap JSVal JSVal) Bool)
-(declare-fun app0 (JSVal Heap) JSVal)
-(declare-fun app1 (JSVal Heap JSVal) JSVal)
-(declare-fun app2 (JSVal Heap JSVal JSVal) JSVal)
-(declare-fun eff0 (JSVal Heap) Heap)
-(declare-fun eff1 (JSVal Heap JSVal) Heap)
-(declare-fun eff2 (JSVal Heap JSVal JSVal) Heap)
-(declare-fun call0 (JSVal Heap Heap) Bool)
-(declare-fun call1 (JSVal Heap Heap JSVal) Bool)
-(declare-fun call2 (JSVal Heap Heap JSVal JSVal) Bool)
+${[...Array(10).keys()].map(i => `
+(declare-fun pre${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
+(declare-fun post${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
+(declare-fun app${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
+(declare-fun eff${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
+(declare-fun call${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`).join('')}
 
 ; Declarations
 

@@ -65,14 +65,13 @@ function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, e
       const callee = transformExpression(oldHeap, heap, inPost, expr.callee);
       const preP: P = { type: "Precondition", callee, heap: 0, args: expr.args };
       const postP: P = { type: "Postcondition", callee, heap: 0, args: expr.args };
-      const callP: P = { type: "CallTrigger", callee, heap: 0, args: expr.args };
-      const effP: P = { type: "HeapEffect", callee, heap: 0, args: expr.args };
       const r = truthy(transformExpression(0, 0, inPost, expr.pre));
       const sPost = expr.callee.type == "Identifier" ? expr.callee.name : inPost;
       const s = truthy(transformExpression(0, 1, sPost, expr.post));
       const forAll: P = { type: "ForAll", callee, args: expr.args,
         existsHeaps: new Set(), existsLocs: new Set(), existsVars: new Set(),
-        prop: and(callP, effP, implies(r, preP), implies(and(r, postP), s))
+        prop: and(implies(r, preP), implies(and(r, postP), s)),
+        instantiations: []
       };
       const fnCheck: A = {
         type: "BinaryExpression",
@@ -96,9 +95,6 @@ function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, e
       return { type: "ConditionalExpression", test, consequent, alternate };
   }
 }
-
-let nextUniqueFuncId: number = 0;
-function uniqueFuncId() { return nextUniqueFuncId++; }
 
 class VCState {
   heap: Heap;
@@ -313,13 +309,11 @@ function transformSpec(f: JSyntax.FunctionDeclaration, fromHeap: number = 0, toH
   }
   const preP: P = { type: "Precondition", callee, heap: 0, args };
   const postP: P = { type: "Postcondition", callee, heap: 0, args };
-  const callP: P = { type: "CallTrigger", callee, heap: 0, args };
-  const effP: P = { type: "HeapEffect", callee, heap: 0, args };
   let prop: P;
   if (q.type == "True") {
-    prop = and(callP, effP, implies(req, preP), implies(and(req, postP), ens));
+    prop = and(implies(req, preP), implies(and(req, postP), ens));
   } else {
-    prop = and(callP, effP, iff(req, preP), iff(postP, implies(req, ens)));
+    prop = and(iff(req, preP), iff(postP, implies(req, ens)));
   }
   if (fromHeap != 0) {
     prop = and(heapPromote(0, fromHeap), prop);
@@ -329,7 +323,9 @@ function transformSpec(f: JSyntax.FunctionDeclaration, fromHeap: number = 0, toH
   }
   const existsHeaps: Set<Heap> = new Set([...Array(toHeap - fromHeap + 1).keys()].map(i => i + fromHeap));
   existsHeaps.delete(0); existsHeaps.delete(1);
-  const forAll: P = { type: "ForAll", callee, heap: 0, args, existsHeaps, existsLocs, existsVars, prop };
+  const forAll: P = { type: "ForAll", callee, heap: 0, args,
+                      existsHeaps, existsLocs, existsVars,
+                      prop: prop, instantiations: [] };
   const fnCheck: A = {
     type: "BinaryExpression",
     left: {
@@ -479,18 +475,17 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
     }
     case "FunctionDeclaration": {
       const vars2 = new Set([...vars, stmt.id.name]);
-      const eq_f: P = eq(stmt.id.name, { type: "FunctionLiteral", id: uniqueFuncId() }),
-            non_rec_spec: P = transformSpec(stmt),
+      const non_rec_spec: P = transformSpec(stmt),
             fromHeap = Math.max(2, heap + 1); // H0 and H1 are reserved
       const res = verifyFunctionDeclaration(fromHeap, locs, vars2, stmt);
-      res.vcs.forEach(vc => vc.prop = and(eq_f, non_rec_spec, vc.prop));
+      res.vcs.forEach(vc => vc.prop = and(non_rec_spec, vc.prop));
       const existsLocs = new Set([...res.locs].filter(l => !locs.has(l))),
             existsVars = new Set([...res.vars].filter(v => {
               return !vars2.has(v) && !stmt.params.some(n => n.name == v);
             })),
             inlined_spec: P = transformSpec(stmt, fromHeap, res.heap, existsLocs, existsVars,
                                             eraseTriggersProp(res.prop));
-      return new VCState(heap, locs, vars2, and(eq_f, inlined_spec), und, fls, res.vcs);
+      return new VCState(heap, locs, vars2, and(inlined_spec), und, fls, res.vcs);
     }
   }
 }

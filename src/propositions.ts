@@ -7,7 +7,6 @@ export namespace ASyntax {
   export type Variable = string;
   export interface HeapReference { type: "HeapReference", loc: Location, heap: Heap }
   export interface Literal { type: "Literal", value: undefined | null | boolean | number | string }
-  export interface FunctionLiteral { type: "FunctionLiteral", id: number }
   export interface ArrayExpression { type: "ArrayExpression", elements: Array<Expression> }
   type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
   export interface UnaryExpression { type: "UnaryExpression",
@@ -31,7 +30,6 @@ export namespace ASyntax {
   export type Expression = Variable
                          | HeapReference
                          | Literal
-                         | FunctionLiteral
                          | ArrayExpression
                          | UnaryExpression
                          | BinaryExpression
@@ -60,7 +58,9 @@ export namespace ASyntax {
                             existsHeaps: Set<Heap>,
                             existsLocs: Locs,
                             existsVars: Vars,
-                            prop: Proposition }
+                            prop: Proposition,
+                            instantiations: Array<CallTrigger>
+                           }
   export interface CallTrigger { type: "CallTrigger",
                                  callee: Expression,
                                  heap: Heap,
@@ -179,9 +179,6 @@ function eqExpr(exprA: A, exprB: A): boolean {
     case "Literal":
       return exprA.type == exprB.type &&
              exprA.value === exprB.value;
-    case "FunctionLiteral":
-      return exprA.type == exprB.type &&
-             exprA.id === exprB.id;
     case 'ArrayExpression':
       return exprA.type == exprB.type &&
              exprA.elements.length == exprB.elements.length &&
@@ -275,7 +272,6 @@ abstract class PropVisitor<H,L,R,S> {
   abstract visitVariable(expr: ASyntax.Variable): R;
   abstract visitHeapReference(expr: ASyntax.HeapReference): R;
   abstract visitLiteral(expr: ASyntax.Literal): R;
-  abstract visitFunctionLiteral(expr: ASyntax.FunctionLiteral): R;
   abstract visitArrayExpression(expr: ASyntax.ArrayExpression): R;
   abstract visitUnaryExpression(expr: ASyntax.UnaryExpression): R;
   abstract visitBinaryExpression(expr: ASyntax.BinaryExpression): R;
@@ -303,7 +299,6 @@ abstract class PropVisitor<H,L,R,S> {
     switch (expr.type) {
       case "HeapReference": return this.visitHeapReference(expr);
       case "Literal": return this.visitLiteral(expr);
-      case "FunctionLiteral": return this.visitFunctionLiteral(expr);
       case 'ArrayExpression': return this.visitArrayExpression(expr);
       case "UnaryExpression": return this.visitUnaryExpression(expr);
       case "BinaryExpression": return this.visitBinaryExpression(expr);
@@ -350,7 +345,6 @@ abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
     return this.r(this.visitHeap(expr.heap), this.visitLocation(expr.loc));
   }
   visitLiteral(expr: ASyntax.Literal) { return this.empty(); }
-  visitFunctionLiteral(expr: ASyntax.FunctionLiteral) { return this.empty(); }
   visitArrayExpression(expr: ASyntax.ArrayExpression) {
     return this.r(...expr.elements.map(e => this.visitExpr(e)));
   }
@@ -488,10 +482,6 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     }
   }
   
-  visitFunctionLiteral(expr: ASyntax.FunctionLiteral): SMTInput {
-    return `(jsfun ${expr.id})`;
-  }
-  
   visitArrayExpression(expr: ASyntax.ArrayExpression): SMTInput {
     const arrayToSMT = (elements: Array<A>): SMTInput => {
       if (elements.length === 0) return `empty`;
@@ -523,15 +513,11 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
   
   visitCallExpression(expr: ASyntax.CallExpression): SMTInput {
-    if (expr.args.length == 0) {
-      return `(app0 ${this.visitExpr(expr.callee)} ${this.visitHeap(expr.heap)})`;
-    } else if (expr.args.length == 1) {
-      return `(app1 ${this.visitExpr(expr.callee)} ${this.visitHeap(expr.heap)} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
-    } else if (expr.args.length == 2) {
-      return `(app2 ${this.visitExpr(expr.callee)} ${this.visitHeap(expr.heap)} ${expr.args.map(e => this.visitExpr(e)).join(" ")})`;
-    } else {
+    const {callee, heap, args} = expr;
+    if (args.length > 9) {
       throw new Error("unsupported");
     }
+    return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeap(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
   }
 
   visitTruthy(prop: ASyntax.Truthy): SMTInput {
@@ -602,74 +588,60 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
   
   visitPrecondition(prop: ASyntax.Precondition): SMTInput {
-    if (prop.args.length == 0) {
-      return `(pre0 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)})`;
-    } else if (prop.args.length == 1) {
-      return `(pre1 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
-    } else if (prop.args.length == 2) {
-      return `(pre2 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
-    } else {
+    const {callee, heap, args} = prop;
+    if (args.length > 9) {
       throw new Error("unsupported");
     }
+    return `(pre${args.length} ${this.visitExpr(callee)} ${this.visitHeap(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
   }
   
   visitPostcondition(prop: ASyntax.Postcondition): SMTInput {
-    if (prop.args.length == 0) {
-      return `(post0 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${this.visitHeap(prop.heap+1)})`;
-    } else if (prop.args.length == 1) {
-      return `(post1 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${this.visitHeap(prop.heap+1)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
-    } else if (prop.args.length == 2) {
-      return `(post2 ${this.visitExpr(prop.callee)} ${this.visitHeap(prop.heap)} ${this.visitHeap(prop.heap+1)} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
-    } else {
+    const {callee, heap, args} = prop;
+    if (args.length > 9) {
       throw new Error("unsupported");
     }
+    return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeap(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
   }
   
   visitForAll(prop: ASyntax.ForAll): SMTInput {
-    const params = `${prop.args.map(a => `(v_${a} JSVal)`).join(' ')}`;
-    const triggerArgs = `${this.visitExpr(prop.callee)} ${this.visitHeap(0)} ${this.visitHeap(1)} ${prop.args.map(a => this.visitVariable(a)).join(' ')}`;
-    if (prop.args.length > 2) throw new Error("Not supported");
-    const trigger = `call${prop.args.length} ${triggerArgs}`;
-    let p = this.visitProp(prop.prop);
+    const {args, callee} = prop;
+    const params = `${args.map(a => `(v_${a} JSVal)`).join(' ')}`;
+    if (args.length > 9) throw new Error("Not supported");
+    const callP: P = { type: "CallTrigger", callee, heap: 0, args: args };
+    const effP: P = { type: "HeapEffect", callee, heap: 0, args: args };
+    let p = this.visitProp(implies(callP, and(effP, prop.prop)));
     if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
-      p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
+      p = `(exists (${[1, ...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
                  + `${[...prop.existsLocs].map(l => `(${this.visitLocation(l)} Loc)`).join(' ')} `
                  + `${[...prop.existsVars].map(v => `(${this.visitVariable(v)} JSVal)`).join(' ')})\n  ${p})`;
     }
-    return `(forall ((h_0 Heap) (h_1 Heap) ${params}) (!\n  ${p}\n  :pattern ((${trigger}))))`;
+    const trigger = this.visitProp(callP);
+    return `(forall ((${this.visitHeap(0)} Heap) ${params}) (!\n  ${p}\n  :pattern ((${trigger}))))`;
   }
   
   visitCallTrigger(prop: ASyntax.CallTrigger): SMTInput {
-    if (prop.args.length == 0) {
-      return `(call0 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1})`;
-    } else if (prop.args.length == 1) {
-      return `(call1 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
-    } else if (prop.args.length == 2) {
-      return `(call2 ${this.visitExpr(prop.callee)} h_${prop.heap} h_${prop.heap+1} ${prop.args.map(a => this.visitExpr(a)).join(" ")})`;
-    } else {
+    const {callee, heap, args} = prop;
+    if (args.length > 9) {
       throw new Error("unsupported");
     }
+    return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeap(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
   }
   
   visitHeapStore(prop: ASyntax.HeapStore): SMTInput {
-    return `(= h_${prop.heap + 1} (store h_${prop.heap} ${this.visitLocation(prop.loc)} ${this.visitExpr(prop.expr)}))`
+    return `(= ${this.visitHeap(prop.heap + 1)} (store ${this.visitHeap(prop.heap)} ${this.visitLocation(prop.loc)} ${this.visitExpr(prop.expr)}))`
   }
   
   visitHeapEffect(prop: ASyntax.HeapEffect): SMTInput {
-    if (prop.args.length == 0) {
-      return `(= h_${prop.heap + 1} (eff0 ${this.visitExpr(prop.callee)} h_${prop.heap}))`;
-    } else if (prop.args.length == 1) {
-      return `(= h_${prop.heap + 1} (eff1 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")}))`;
-    } else if (prop.args.length == 2) {
-      return `(= h_${prop.heap + 1} (eff2 ${this.visitExpr(prop.callee)} h_${prop.heap} ${prop.args.map(a => this.visitExpr(a)).join(" ")}))`;
-    } else {
+    const {callee, heap, args} = prop;
+    if (args.length > 9) {
       throw new Error("unsupported");
     }
+    return `(= ${this.visitHeap(prop.heap + 1)} (eff${args.length} ${this.visitExpr(callee)} ${this.visitHeap(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")}))`;
   }
   
   visitHeapPromote(prop: ASyntax.HeapPromote): SMTInput {
     if (prop.from == prop.to) return `true`;
-    return `(= h_${prop.from} h_${prop.to})`;
+    return `(= ${this.visitHeap(prop.from)} ${this.visitHeap(prop.to)})`;
   }
 }
 
@@ -708,10 +680,6 @@ class PropTransformer extends PropVisitor<Heap, ASyntax.Location, A, P> {
   }
   
   visitLiteral(expr: ASyntax.Literal): A {
-    return expr;
-  }
-  
-  visitFunctionLiteral(expr: ASyntax.FunctionLiteral): A {
     return expr;
   }
   
@@ -812,7 +780,8 @@ class PropTransformer extends PropVisitor<Heap, ASyntax.Location, A, P> {
       existsHeaps: new Set([...prop.existsHeaps].map(h => this.visitHeap(h))),
       existsLocs: new Set([...prop.existsLocs].map(l => this.visitLocation(l))),
       existsVars: new Set([...prop.existsVars].map(v => this.visitVariable(v))),
-      prop: this.visitProp(prop.prop)
+      prop: this.visitProp(prop.prop),
+      instantiations: [...prop.instantiations] // shallow copy, do not process
     };
   }
   
@@ -1000,16 +969,14 @@ class TriggerCollector extends PropReducer<Array<ASyntax.CallTrigger>> {
   }
 }
 
-interface Instantiation { quantifier: ASyntax.ForAll, trigger: ASyntax.CallTrigger }
-
 class QuantifierInstantiator extends QuantifierTransformer {
   readonly triggers: Array<ASyntax.CallTrigger>;
-  readonly instantiations: Array<Instantiation>;
+  instantiations: number;
 
   constructor(triggers: Array<ASyntax.CallTrigger>, heaps: Heaps, locs: Locs, vars: Vars) {
     super(heaps, locs, vars);
     this.triggers = triggers;
-    this.instantiations = [];
+    this.instantiations = 0;
   }
 
   instantiate(prop: ASyntax.ForAll, trigger: ASyntax.CallTrigger) {
@@ -1036,18 +1003,14 @@ class QuantifierInstantiator extends QuantifierTransformer {
   visitForAll(prop: ASyntax.ForAll): P {
     const clauses: Array<P> = [prop];
     for (const t of this.triggers) {
-      if (prop.args.length != t.args.length ||
-          this.instantiations.some(({quantifier,trigger}) => eqProp(prop, quantifier) && eqProp(t, trigger))) {
-            continue;
-          }
+      debugger;
+      if (prop.args.length != t.args.length || prop.instantiations.some(trigger => eqProp(t, trigger))) {
+        continue;
+      }
       const instantiated: P = this.instantiate(prop, t);
       clauses.push(instantiated);
-      this.instantiations.push({ quantifier: prop, trigger: t});
-      // console.log("----");
-      // console.log("Q: " + propositionToSMT(prop));
-      // console.log("T: " + propositionToSMT(t));
-      // console.log("I: " + propositionToSMT(instantiated));
-      // console.log("----");
+      prop.instantiations.push(t);
+      this.instantiations++;
     }
     return and(...clauses);
   }
@@ -1068,8 +1031,8 @@ export function instantiateQuantifiers(heaps: Heaps, locs: Locs, vars: Vars, p: 
   const triggers: Array<ASyntax.CallTrigger> = (new TriggerCollector()).visitProp(prop);
   const instantiator = new QuantifierInstantiator(triggers, heaps, locs, vars);
   let num = -1;
-  while (instantiator.instantiations.length > num) {
-    num = instantiator.instantiations.length;
+  while (instantiator.instantiations> num) {
+    num = instantiator.instantiations;
     prop = instantiator.visitProp(prop);
   }
   prop = (new QuantifierEraser()).visitProp(prop);
