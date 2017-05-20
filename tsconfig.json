@@ -12,9 +12,16 @@
     "outDir": "build",
     "target": "es6",
     "strictNullChecks": true,
-    "lib": ["es2016"]
+    "lib": ["es2016"],
+    "typeRoots": ["node_modules/@types"]
   },
-  "exclude": [
-    "node_modules"
+  "files": [
+    "index.ts",
+    "src/javascript.ts",
+    "src/propositions.ts",
+    "src/smt.ts",
+    "src/util.ts",
+    "src/vcgen.ts",
+    "src/verification.ts"
   ]
 }

@@ -17,7 +17,7 @@ function run(err, js) {
   var p = Promise.resolve();
   var vcs = esverify.verify(js.toString());
   vcs.forEach(vc => {
-    p = p.then(() => vc.solve())
+    p = p.then(() => vc.solveLocal())
          .then(() => console.log(vc.description, '\n', vc.result()));
   });
   p.then(() => process.exit(0));

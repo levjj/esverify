@@ -1,11 +1,10 @@
-/* global fetch require console */
-/// <reference path="../typings/isomorphic-fetch/isomorphic-fetch.d.ts"/>
 declare const require: (s: string) => any;
 declare const console: { log: any };
 
 import { P, Vars, Locs, Heap, Heaps, SMTInput, SMTOutput } from "./propositions";
 import { Model, smt, smtToModel } from "./smt";
 import { JSyntax, stringifyStmt } from "./javascript";
+import "isomorphic-fetch";
 
 export type SMTOutput = string;
 
@@ -72,10 +71,10 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
     return this._result;
   }
 
-  async solve(): Promise<Result> {
+  process(out: SMTOutput): Result {
     this._result = { status: "inprogress" };
     try {
-      this._smtout = await (typeof fetch === "undefined" ? this.solveLocal() : this.solveRequest());
+      this._smtout = out;
     } catch (e) {
       this._result = { status: "error", error: e };
       return this._result;
@@ -102,11 +101,11 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
     return this._result;
   }
 
-  solveLocal(): Promise<string> {
+  solveLocal(z3path: string = "z3"): Promise<Result> {
     const spawn = require('child_process').spawn;
-    const p = spawn('z3', ['-smt2', '-in'],
+    const p = spawn(z3path, ['-smt2', '-in'],
                     {stdio: ['pipe', 'pipe', 'ignore']});
-    return new Promise((resolve, reject) => {
+    return new Promise<SMTOutput>((resolve, reject) => {
       let result: string = "";
       p.stdout.on('data', (data: Object) => {
          result += data.toString();
@@ -114,15 +113,16 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
       p.on('exit', (code: number) => resolve(result));
       p.stdin.write(this.smtInput());
       p.stdin.end();
-    });
+    }).then(smt => this.process(smt));
   }
 
-  async solveRequest(): Promise<string> {
-    const req = await fetch("/z3", {
+  async solveRequest(url: string = "/z3"): Promise<Result> {
+    const req = await fetch(url, {
       method: "POST",
       body: this.smtInput()
     });
-    return req.text();
+    const smt = await req.text();
+    return this.process(smt);
   }
 
   debugOut() { 

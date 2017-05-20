@@ -17,6 +17,7 @@ module.exports = {
   },
   externals: {
     esprima: 'commonjs esprima',
+    'isomorphic-fetch': 'commonjs isomorphic-fetch',
     child_process: 'commonjs child_process'
   },
   module: {

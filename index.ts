@@ -1,5 +1,5 @@
 import { parse } from "esprima";
-import { Syntax } from "spiderMonkeyParserAPI";
+import * as Syntax from "estree";
 import { programAsJavaScript } from "./src/javascript";
 import VerificationCondition from "./src/verification";
 import { transformProgram } from "./src/vcgen";

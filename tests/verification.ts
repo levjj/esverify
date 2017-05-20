@@ -1,22 +1,14 @@
-/* eslint no-unused-expressions:0 */
-/* global describe, it, expect, requires, ensures, invariant, assert, old, spec, pure, console */
-
-/// <reference path="../typings/mocha/mocha.d.ts" />
-/// <reference path="../typings/chai/chai.d.ts" />
-import { expect, use } from 'chai';
-import * as chaiSubset from 'chai-subset';
+import { expect } from 'chai';
 import { verify } from '../index';
 import VerificationCondition from '../src/verification';
 
-declare const requires: (x: any) => void;
-declare const ensures: (x: any) => void;
-declare const invariant: (x: any) => void;
-declare const assert: (x: any) => void;
+declare const requires: (x: boolean) => void;
+declare const ensures: (x: boolean) => void;
+declare const invariant: (x: boolean) => void;
+declare const assert: (x: boolean) => void;
 declare const old: (x: any) => any;
 declare const pure: () => boolean;
-declare const spec: (f: any, r: (rx: any) => void, s: (sx: any) => void) => boolean;
-
-use(chaiSubset);
+declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any) => boolean) => boolean;
 
 let vcs: Array<VerificationCondition>;
 function helper(description: string, expected: string, debug: boolean = false) {
@@ -25,7 +17,7 @@ function helper(description: string, expected: string, debug: boolean = false) {
     expect(vc).to.not.be.undefined;
     if (!vc) throw new Error();
     try {
-      await vc.solve();
+      await vc.solveLocal();
       expect(vc.result().status).to.be.eql(expected);
     } finally { if (debug) vc.debugOut(); }
   };
@@ -104,10 +96,9 @@ describe('max() with missing pre', () => {
   tested('max:\n(max(a, b) >= a)');
 
   it('returns counter-example', async () => {
-    await vcs[0].solve();
-    expect(vcs[0].getModel()).to.containSubset({
-      b: false
-    });
+    await vcs[0].solveLocal();
+    expect(vcs[0].getModel()).to.have.property("b");
+    expect(vcs[0].getModel().b).to.eql(false);
   });
 });
 
@@ -428,10 +419,9 @@ describe('buggy fibonacci', () => {
   verified('fib:\nprecondition fib((n - 2))');
   incorrect('fib:\n(fib(n) >= n)');
   it('returns counter-example', async () => {
-    await vcs[2].solve();
-    expect(vcs[2].getModel()).to.containSubset({
-      n: 2
-    });
+    await vcs[2].solveLocal();
+    expect(vcs[2].getModel()).to.have.property("n");
+    expect(vcs[2].getModel().n).to.eql(2);
   });
 });
 

@@ -1,5 +1,4 @@
-/// <reference path="../typings/mozilla-spidermonkey-parser-api.d.ts"/>
-import { Syntax } from "spiderMonkeyParserAPI";
+import * as Syntax from "estree";
 import { flatMap } from "./util";
 
 export namespace JSyntax {
@@ -120,7 +119,9 @@ function findPseudoCalls(type: string, stmts: Array<Syntax.Statement>): Array<JS
         stmt.expression.callee.type == "Identifier" &&
         stmt.expression.callee.name == type &&
         stmt.expression.arguments.length == 1) {
-      return [expressionAsJavaScript(stmt.expression.arguments[0])];
+      const arg = stmt.expression.arguments[0];
+      if (arg.type == "SpreadElement") return []; // not supported
+      return [expressionAsJavaScript(arg)];
     }
     return [];
   });
@@ -196,13 +197,23 @@ function binaryOp(op: Syntax.BinaryOperator): JSyntax.BinaryOperator {
 }
 
 export function programAsJavaScript(program: Syntax.Program): JSyntax.Program {
-  const body = flatMap(withoutPseudoCalls("invariant", program.body), statementAsJavaScript);
+  let stmts: Array<Syntax.Statement> = [];
+  for (const s of program.body) {
+    if (s.type == "ImportDeclaration" ||
+        s.type == "ExportAllDeclaration" ||
+        s.type == "ExportNamedDeclaration" ||
+        s.type == "ExportDefaultDeclaration") {
+      throw new Error("imports and exports not supported yet")
+    } 
+    stmts.push(s);
+  }
+  const body = flatMap(withoutPseudoCalls("invariant", stmts), statementAsJavaScript);
   if (body.some(stmt => stmt.type == "ReturnStatement")) {
     throw new Error("Top level return not allowed");
   }
   const prog: JSyntax.Program = {
     body,
-    invariants: findPseudoCalls("invariant", program.body),
+    invariants: findPseudoCalls("invariant", stmts),
     functions: findFunctions({ type: "BlockStatement", body })
   };
   resolveProgram(prog);
@@ -255,9 +266,10 @@ function statementAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.Statement>
           stmt.expression.callee.type == "Identifier" &&
           stmt.expression.callee.name == "assert" &&
           stmt.expression.arguments.length == 1) {
-        return [{
-          type: "AssertStatement", expression: expressionAsJavaScript(stmt.expression.arguments[0])
-        }];
+        const arg = stmt.expression.arguments[0];
+        if (arg.type != "SpreadElement") {
+          return [{ type: "AssertStatement", expression: expressionAsJavaScript(arg) }];
+        }
       }
       return [{
         type: "ExpressionStatement", expression: expressionAsJavaScript(stmt.expression)
@@ -297,8 +309,6 @@ function statementAsJavaScript(stmt: Syntax.Statement): Array<JSyntax.Statement>
         type: "ReturnStatement",
         argument: stmt.argument ? expressionAsJavaScript(stmt.argument) : { type: "Literal", value: undefined }}];
     case "FunctionDeclaration": {
-      if (stmt.defaults && stmt.defaults.length > 0) throw new Error("defaults not supported");
-      if (stmt.rest) throw new Error("Rest arguments not supported");
       if (stmt.body.type != "BlockStatement") throw new Error("unsupported");
       if (stmt.generator) throw new Error("generators not supported");
       const params: Array<JSyntax.Identifier> = stmt.params.map(patternAsIdentifier);
@@ -427,7 +437,7 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       if (expr.argument.type != "Identifier") throw new Error("only identifiers can be assigned");
       const to: JSyntax.Identifier = { type: "Identifier", name: expr.argument.name, refs: [],
                                        isWrittenTo: true, decl: { type: "Unresolved" } },
-            one: Syntax.Literal = { type: "Literal", value: 1 },
+            one: Syntax.SimpleLiteral = { type: "Literal", value: 1, raw: "1"},
             oneE: JSyntax.Literal = { type: "Literal", value: 1 };
       if (expr.prefix) {
         if (expr.operator == "++") {
@@ -485,24 +495,30 @@ function expressionAsJavaScript(expr: Syntax.Expression): JSyntax.Expression {
       }
       if (expr.callee.type == "Identifier" &&
           expr.callee.name == "spec" &&
-          expr.arguments.length == 3 &&
-          expr.arguments[1].type == "ArrowFunctionExpression" &&
-          expr.arguments[2].type == "ArrowFunctionExpression" &&
-          (expr.arguments[1] as Syntax.ArrowFunctionExpression).body.type != "BlockStatement" &&
-          (expr.arguments[2] as Syntax.ArrowFunctionExpression).body.type != "BlockStatement" &&
-          (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.length == 
-          (expr.arguments[2] as Syntax.ArrowFunctionExpression).params.length &&
-          (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.every((p, idx) => {
-            const otherP = (expr.arguments[2] as Syntax.ArrowFunctionExpression).params[idx];
-            return p.type == "Identifier" && otherP.type == "Identifier" && p.name == otherP.name; })) {
-        return {
-          type: "SpecExpression",
-          callee: expressionAsJavaScript(expr.arguments[0]),
-          args: (expr.arguments[1] as Syntax.ArrowFunctionExpression).params.map(p => (p as Syntax.Identifier).name),
-          pre: expressionAsJavaScript((expr.arguments[1] as Syntax.ArrowFunctionExpression).body as Syntax.Expression),
-          post: expressionAsJavaScript((expr.arguments[2] as Syntax.ArrowFunctionExpression).body as Syntax.Expression)
-        };
+          expr.arguments.length == 3) {
+        const [callee, arg1, arg2] = expr.arguments;
+        if (callee.type != "SpreadElement" &&
+            arg1.type == "ArrowFunctionExpression" &&
+            arg2.type == "ArrowFunctionExpression") {
+          const r: Syntax.ArrowFunctionExpression = arg1;
+          const s: Syntax.ArrowFunctionExpression = arg2;
+          if (r.body.type != "BlockStatement" &&
+              s.body.type != "BlockStatement" &&
+              r.params.length == s.params.length &&
+              r.params.every((p, idx) => {
+                const otherP = (expr.arguments[2] as Syntax.ArrowFunctionExpression).params[idx];
+                return p.type == "Identifier" && otherP.type == "Identifier" && p.name == otherP.name; })) {
+            return {
+              type: "SpecExpression",
+              callee: expressionAsJavaScript(callee),
+              args: (r as Syntax.ArrowFunctionExpression).params.map(p => (p as Syntax.Identifier).name),
+              pre: expressionAsJavaScript((expr.arguments[1] as Syntax.ArrowFunctionExpression).body as Syntax.Expression),
+              post: expressionAsJavaScript((expr.arguments[2] as Syntax.ArrowFunctionExpression).body as Syntax.Expression)
+            };
+          }
+        }
       }
+      if (expr.callee.type == "Super") throw new Error("super not supported");
       return {
         type: "CallExpression",
         callee: expressionAsJavaScript(expr.callee),
