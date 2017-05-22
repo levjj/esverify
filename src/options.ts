@@ -3,7 +3,8 @@ export interface Options {
   local: boolean,
   z3path: string,
   remoteURL: string,
-  logMessages: boolean
+  logMessages: boolean,
+  colorLog: boolean
 };
 
 const defaultOptions: Readonly<Options> = {
@@ -11,7 +12,8 @@ const defaultOptions: Readonly<Options> = {
   local: true,
   z3path: "z3",
   remoteURL: "/z3",
-  logMessages: false
+  logMessages: false,
+  colorLog: true
 };
 
 export function setOptions(opts: Partial<Options>) {

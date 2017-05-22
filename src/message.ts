@@ -41,16 +41,28 @@ function messageLevel(msg: Message): Level {
 }
 
 export function consoleLog(msg: Message): void {
-  const loc = `[${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}] `;
+  const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;
   let m = '';
   if (msg.status == "verified" || msg.status == "unverified" || msg.status == "incorrect") m = msg.description;
   const lvl = messageLevel(msg);
   if (lvl == "bad") {
-    console.error(`${loc}\x1b[91m${msg.status}\x1b[0m ${m}`);
+    if (options.colorLog) {
+      console.error(`[${loc}] \x1b[91m${msg.status}\x1b[0m ${m}`);
+    } else {
+      console.log(`${loc}: error: ${msg.status} ${m}`);
+    }
   } else if (lvl == "unknown") {
-    console.warn(`${loc}\x1b[94m${msg.status}\x1b[0m ${m}`);
+    if (options.colorLog) {
+      console.warn(`[${loc}] \x1b[94m${msg.status}\x1b[0m ${m}`);
+    } else {
+      console.log(`${loc}: warning: ${msg.status} ${m}`);
+    }
   } else {
-    console.log(`${loc}\x1b[92m${msg.status}\x1b[0m ${m}`);
+    if (options.colorLog) {
+      console.log(`[${loc}] \x1b[92m${msg.status}\x1b[0m ${m}`);
+    } else {
+      console.log(`${loc}: info: ${msg.status} ${m}`);
+    }
   }
 }
 

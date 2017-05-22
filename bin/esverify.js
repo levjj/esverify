@@ -13,6 +13,9 @@ if (process.argv.length != 3) {
 }
 
 var opts = { logMessages: true };
+if (process.env.ESVERIFY_LOG) {
+  opts.colorLog = false;
+}
 function run(err, js) {
   if (err) error('Error: ' + e.message);
   esverify.verify(js.toString(), opts)
