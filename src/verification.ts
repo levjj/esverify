@@ -1,6 +1,6 @@
-import "isomorphic-fetch";
 declare const console: { log: (s: string) => void };
 declare const require: (s: string) => any;
+declare const fetch: (s: string, opts: any) => Promise<any>;
 
 import { P, Vars, Locs, Heap, Heaps } from "./logic";
 import { Model, SMTInput, SMTOutput, vcToSMT, smtToModel } from "./smt";
