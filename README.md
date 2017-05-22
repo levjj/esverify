@@ -60,9 +60,14 @@ Usage
 Interactive Tools
 -----------------
 
-More tool support will be coming soon. As a first step, there is a
+More tool support will be coming soon.
+
+As a first step, there is a
 [verification workspace](https://github.com/levjj/esverify-editor) which allows
 inspection of verification results including potential counter-examples.
+
+Additionally, there is a [Vim Plugin](https://github.com/levjj/esverify-vim)
+which displays verification results inline.
 
 Acknowledgements
 ----------------
