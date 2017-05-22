@@ -18,7 +18,8 @@
   "files": [
     "index.ts",
     "src/javascript.ts",
-    "src/propositions.ts",
+    "src/logic.ts",
+    "src/options.ts",
     "src/smt.ts",
     "src/util.ts",
     "src/vcgen.ts",

@@ -1,56 +1,53 @@
-declare const require: (s: string) => any;
-declare const console: { log: any };
-
-import { P, Vars, Locs, Heap, Heaps, SMTInput, SMTOutput } from "./propositions";
-import { Model, smt, smtToModel } from "./smt";
-import { JSyntax, stringifyStmt } from "./javascript";
 import "isomorphic-fetch";
+declare const console: { log: (s: string) => void };
+declare const require: (s: string) => any;
+
+import { P, Vars, Locs, Heap, Heaps } from "./logic";
+import { Model, SMTInput, SMTOutput, vcToSMT, smtToModel } from "./smt";
+import { Syntax, stringifyStmt } from "./javascript";
+import { Message, MessageException } from "./message";
+import { options } from "./options";
 
 export type SMTOutput = string;
-
-export type Result = { status: "unverified" }
-                   | { status: "inprogress" }
-                   | { status: "verified" }
-                   | { status: "incorrect", model: Model, error: Error }
-                   | { status: "unknown" }
-                   | { status: "error", error: Error }
-                   | { status: "tested", model: Model };
 
 export default class VerificationCondition {
   heaps: Heaps;
   locs: Locs;
   vars: Vars;
   prop: P;
-  body: Array<JSyntax.Statement>;
+  body: Array<Syntax.Statement>;
+  loc: Syntax.SourceLocation;
   description: string;
-  _smtin: SMTInput | null;
-  _smtout: SMTOutput | null;
-  _result: Result;
+  inprocess: boolean;
+  result: Message | null;
+  debug: boolean;
 
-  constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, description: string, body: Array<JSyntax.Statement> = []) {
+  constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, body: Array<Syntax.Statement> = []) {
     this.heaps = new Set([...Array(heap+1).keys()]);
     this.locs = locs;
     this.vars = vars;
     this.prop = prop;
-    this.body = body;
+    this.loc = loc;
     this.description = description;
-    this._smtin = null;
-    this._smtout = null;
-    this._result = { status: "unverified" };
+    this.body = body;
+    this.inprocess = false;
+    this.result = null;
+    this.debug = false;
   }
 
-  smtInput(): SMTInput {
-    return this._smtin = smt(this.heaps, this.locs, this.vars, this.prop);
+  private prepareSMT(): SMTInput {
+    const smt = vcToSMT(this.heaps, this.locs, this.vars, this.prop);
+    if (this.debug) {
+      console.log('SMT Input:');
+      console.log('------------');
+      console.log(smt);
+      console.log('------------');
+    }
+    return smt;
   }
 
-  getModel(): Model {
-    if (!this._smtout) throw new Error("no model available");
-    return smtToModel(this._smtout);
-  }
-
-  testCode(): string {
-    const model = this.getModel(),
-          declarations = Object.keys(model).map(v =>
+  private testCode(model: Model): string {
+    const declarations = Object.keys(model).map(v =>
             `let ${v} = ${JSON.stringify(model[v])};\n`),
           oldValues = Object.keys(model).map(v =>
             `let ${v}_0 = ${v};\n`);
@@ -63,79 +60,71 @@ ${oldValues.join("")}
 ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   }
 
-  runTest(m: Model = this.getModel()) {
-    eval(this.testCode());
-  }
-
-  result(): Result {
-    return this._result;
-  }
-
-  process(out: SMTOutput): Result {
-    this._result = { status: "inprogress" };
-    try {
-      this._smtout = out;
-    } catch (e) {
-      this._result = { status: "error", error: e };
-      return this._result;
+  private process(out: SMTOutput): Message {
+    if (this.debug) {
+      console.log('SMT Output:');
+      console.log('------------');
+      console.log(out);
+      console.log('------------');
     }
-    if (this._smtout && this._smtout.startsWith("sat")) {
-      const m = this.getModel();
+    if (out && out.startsWith("sat")) {
+      const m = smtToModel(out);
       try {
-        this.runTest(m);
-        this._result = { status: "tested", model: m };
+        eval(this.testCode(m));
+        return { status: "unverified", description: this.description, loc: this.loc, model: m };
       } catch (e) {
         if (e instanceof Error && e.message == "assertion failed") {
-          this._result = { status: "incorrect", model: m, error: e };
+          return { status: "incorrect", description: this.description, loc: this.loc, model: m, error: e };
         } else {
-          this._result = { status: "error", error: e };
+          return { status: "error", loc: this.loc, error: e };
         }
       }
-    } else if (this._smtout && this._smtout.startsWith("unknown")) {
-      this._result = { status: "unknown" };
-    } else if (this._smtout && this._smtout.startsWith("unsat")) {
-      this._result = { status: "verified" };
+    } else if (out && out.startsWith("unsat")) {
+      return { status: "verified", description: this.description, loc: this.loc };
     } else {
-      this._result = { status: "error", error: new Error("unexpected: " + this._smtout) };
+      return { status: "error", loc: this.loc, error: new Error("unexpected: " + out) };
     }
-    return this._result;
   }
 
-  solveLocal(z3path: string = "z3"): Promise<Result> {
-    const spawn = require('child_process').spawn;
-    const p = spawn(z3path, ['-smt2', '-in'],
-                    {stdio: ['pipe', 'pipe', 'ignore']});
+  private solveLocal(smt: SMTInput): Promise<SMTOutput> {
+    if (this.debug) console.log(`${this.description}: solving locally with ${options.z3path}`);
     return new Promise<SMTOutput>((resolve, reject) => {
+      const spawn = require('child_process').spawn;
+      const p = spawn(options.z3path, ['-smt2', '-in'], {stdio: ['pipe', 'pipe', 'ignore']});
       let result: string = "";
-      p.stdout.on('data', (data: Object) => {
-         result += data.toString();
-      });
+      p.stdout.on('data', (data: Object) => { result += data.toString(); });
       p.on('exit', (code: number) => resolve(result));
-      p.stdin.write(this.smtInput());
+      p.on('error', reject);
+      p.stdin.write(smt);
       p.stdin.end();
-    }).then(smt => this.process(smt));
-  }
-
-  async solveRequest(url: string = "/z3"): Promise<Result> {
-    const req = await fetch(url, {
-      method: "POST",
-      body: this.smtInput()
     });
-    const smt = await req.text();
-    return this.process(smt);
   }
 
-  debugOut() { 
-    console.log("\n" + this.description);
-    console.log("-----------------");
-    console.log(this._result);
-    console.log("SMT Input:");
-    console.log(this._smtin);
-    console.log("SMT Output:");
-    console.log(this._smtout);
-    if (this._smtout && this._smtout.startsWith("sat")) {
-      console.log("Test Body:");
-      console.log(this.testCode());
+  private solveRemote(smt: SMTInput): Promise<SMTOutput> {
+    if (this.debug) console.log(`${this.description}: sending request to ${options.remoteURL}`);
+    return fetch(options.remoteURL, { method: "POST", body: smt }).then(req => req.text());
+  }
+
+  async verify(): Promise<Message> {
+    this.inprocess = true;
+    try {
+      const smtin = this.prepareSMT();
+      const smtout = await (options.local ? this.solveLocal(smtin) : this.solveRemote(smtin));
+      return this.result = this.process(smtout);
+    } catch (error) {
+      if (error instanceof MessageException) return this.result = error.msg;
+      return this.result = { status: "error", loc: this.loc, error };
+    } finally {
+      this.inprocess = false;
     }
   }
+
+  runTest() {
+    if (!this.result || (this.result.status != "incorrect" && this.result.status != "unverified")) {
+      throw new Error("no model available");
+    }
+    eval(this.testCode(this.result.model));
+  }
+
+  enableDebugging() { this.debug = true; }
 }

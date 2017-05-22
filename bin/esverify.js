@@ -12,20 +12,16 @@ if (process.argv.length != 3) {
   error("Usage: esverify [file.js|-]");
 }
 
+var opts = { logMessages: true };
 function run(err, js) {
   if (err) error('Error: ' + e.message);
-  var p = Promise.resolve();
-  var vcs = esverify.verify(js.toString());
-  vcs.forEach(vc => {
-    p = p.then(() => vc.solveLocal())
-         .then(() => console.log(vc.description, '\n', vc.result()));
-  });
-  p.then(() => process.exit(0));
-  p.catch(e => error('Error: ' + e));
+  esverify.verify(js.toString(), opts)
+    .then(msgs => msgs.forEach(msg => msg.status != "verified" && error("failed")));
 }
 
 var fname = process.argv[2];
 if (fname !== '-') {
+  opts.filename = fname;
   fs.readFile(fname, run);
 } else {
   var content = '';

@@ -1,5 +1,6 @@
 import { expect } from 'chai';
-import { verify } from '../index';
+import { verificationConditions } from '../index';
+import { consoleLog } from "../src/message";
 import VerificationCondition from '../src/verification';
 
 declare const requires: (x: boolean) => void;
@@ -11,37 +12,48 @@ declare const pure: () => boolean;
 declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any) => boolean) => boolean;
 
 let vcs: Array<VerificationCondition>;
-function helper(description: string, expected: string, debug: boolean = false) {
+
+function code(fn: () => any) {
+  before(() => {
+    const code = fn.toString();
+    const t = verificationConditions(code.substring(14, code.length - 2));
+    if (!(t instanceof Array)) {
+      consoleLog(t);
+      if (t.status == "error") console.log(t.error);
+      throw new Error('failed to find verification conditions');
+    }
+    vcs = t;
+  });
+}
+
+function helper(expected: "verified" | "unverified" | "incorrect", description: string, debug: boolean = false) {
   const body = async () => {
     const vc = vcs.find(v => v.description === description);
-    expect(vc).to.not.be.undefined;
-    if (!vc) throw new Error();
-    try {
-      await vc.solveLocal();
-      expect(vc.result().status).to.be.eql(expected);
-    } finally { if (debug) vc.debugOut(); }
+    expect(vc).to.be.ok;
+    if (debug) vc.enableDebugging();
+    const res = await vc.verify();
+    if (res.status == "error") console.log(res.error);
+    expect(res.status).to.be.eql(expected);
   };
   if (debug) {
-    it.only(description.replace(/\n/g, ' ') + ' ' + expected, body);
+    it.only(description + ' ' + expected, body);
   } else {
-    it(description.replace(/\n/g, ' ') + ' ' + expected, body);
+    it(description + ' ' + expected, body);
   }
 }
 
-function skip(description: string) { it.skip(description.replace(/\n/g, ' ')); }
-function verified(description: string) { helper(description, 'verified'); }
-function incorrect(description: string) { helper(description, 'incorrect'); }
-function tested(description: string) { helper(description, 'tested'); }
-function unknown(description: string) { helper(description, 'unknown'); }
+function skip(description: string) { it.skip(description); }
+function verified(description: string) { helper('verified', description); }
+function unverified(description: string) { helper('unverified', description); }
+function incorrect(description: string) { helper('incorrect', description); }
 
-function verifiedDebug(description: string) { helper(description, 'verified', true); }
-function incorrectDebug(description: string) { helper(description, 'incorrect', true); }
-function testedDebug(description: string) { helper(description, 'tested', true); }
-function unknownDebug(description: string) { helper(description, 'unknown', true); }
+function verifiedDebug(description: string) { helper('verified', description, true); }
+function unverifiedDebug(description: string) { helper('unverified', description, true); }
+function incorrectDebug(description: string) { helper('incorrect',description, true); }
 
 describe('max()', () => {
 
-  const code = (() => {
+  code(() => {
     function max(a, b) {
       requires(typeof(a) == 'number');
       requires(typeof(b) == 'number');
@@ -53,12 +65,6 @@ describe('max()', () => {
         return b;
       }
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
   it('finds a verification conditions', () => {
@@ -66,15 +72,15 @@ describe('max()', () => {
   });
 
   it('has a description', async () => {
-    expect(vcs[0].description).to.be.eql('max:\n(max(a, b) >= a)');
+    expect(vcs[0].description).to.be.eql('max: (max(a, b) >= a)');
   });
 
-  verified('max:\n(max(a, b) >= a)');
+  verified('max: (max(a, b) >= a)');
 });
 
 describe('max() with missing pre', () => {
 
-  const code = (() => {
+  code(() => {
     function max(a, b) {
       requires(typeof(a) == 'number');
       ensures(max(a, b) >= a);
@@ -85,26 +91,21 @@ describe('max() with missing pre', () => {
         return b;
       }
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  tested('max:\n(max(a, b) >= a)');
+  unverified('max: (max(a, b) >= a)');
 
   it('returns counter-example', async () => {
-    await vcs[0].solveLocal();
-    expect(vcs[0].getModel()).to.have.property("b");
-    expect(vcs[0].getModel().b).to.eql(false);
+    const m = await vcs[0].verify();
+    if (m.status != "unverified") throw new Error();
+    expect(m.model).to.have.property("b");
+    expect(m.model.b).to.eql(false);
   });
 });
 
 describe('counter', () => {
 
-  const code = (() => {
+  code(() => {
     let counter = 0;
     invariant(typeof counter == 'number');
     invariant(counter >= 0);
@@ -120,46 +121,34 @@ describe('counter', () => {
 
       if (counter > 0) counter--;
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('initially:\n(typeof(counter) == "number")');
-  verified('initially:\n(counter >= 0)');
-  verified('increment:\n(counter > old(counter))');
-  verified('increment:\n(typeof(counter) == "number")');
-  verified('increment:\n(counter >= 0)');
-  verified('decrement:\n(old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))');
-  verified('decrement:\n(typeof(counter) == "number")');
-  verified('decrement:\n(counter >= 0)');
+  verified('initially: (typeof(counter) == "number")');
+  verified('initially: (counter >= 0)');
+  verified('increment: (counter > old(counter))');
+  verified('increment: (typeof(counter) == "number")');
+  verified('increment: (counter >= 0)');
+  verified('decrement: (old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))');
+  verified('decrement: (typeof(counter) == "number")');
+  verified('decrement: (counter >= 0)');
 });
 
 describe('simple steps', () => {
 
-  const code = (() => {
+  code(() => {
     let i = 0;
     assert(i < 1);
     i = 3;
     assert(i < 2);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('assert:\n(i < 1)');
-  incorrect('assert:\n(i < 2)');
+  verified('assert: (i < 1)');
+  incorrect('assert: (i < 2)');
 });
 
 describe('loop', () => {
 
-  const code = (() => {
+  code(() => {
     let i = 0;
 
     while (i < 5) {
@@ -168,22 +157,16 @@ describe('loop', () => {
     }
 
     assert(i === 5);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('invariant on entry:\n(i <= 5)');
-  verified('invariant maintained:\n(i <= 5)');
-  verified('assert:\n(i === 5)');
+  verified('invariant on entry: (i <= 5)');
+  verified('invariant maintained: (i <= 5)');
+  verified('assert: (i === 5)');
 });
 
 describe('loop with missing invariant', () => {
 
-  const code = (() => {
+  code(() => {
     let i = 0;
 
     while (i < 5) {
@@ -191,20 +174,14 @@ describe('loop with missing invariant', () => {
     }
 
     assert(i === 5);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  tested('assert:\n(i === 5)');
+  unverified('assert: (i === 5)');
 });
 
 describe('sum', () => {
 
-  const code = (() => {
+  code(() => {
     function sumTo(n) {
       requires(typeof n == 'number');
       requires(n >= 0);
@@ -219,25 +196,19 @@ describe('sum', () => {
       }
       return s;
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('sumTo:\ninvariant on entry:\n(i <= n)');
-  verified('sumTo:\ninvariant on entry:\n(s == (((i + 1) * i) / 2))');
-  verified('sumTo:\ninvariant maintained:\n(i <= n)');
-  verified('sumTo:\ninvariant maintained:\n(s == (((i + 1) * i) / 2))');
-  verified('sumTo:\n(sumTo(n) == (((n + 1) * n) / 2))');
+  verified('sumTo: invariant on entry: (i <= n)');
+  verified('sumTo: invariant on entry: (s == (((i + 1) * i) / 2))');
+  verified('sumTo: invariant maintained: (i <= n)');
+  verified('sumTo: invariant maintained: (s == (((i + 1) * i) / 2))');
+  verified('sumTo: (sumTo(n) == (((n + 1) * n) / 2))');
 });
 
 
 describe('global call', () => {
 
-  const code = (() => {
+  code(() => {
     function inc(n) {
       requires(typeof(n) == 'number');
       ensures(inc(n) > n);
@@ -248,22 +219,16 @@ describe('global call', () => {
     let i = 3;
     let j = inc(i);
     assert(j > 3);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
   verified('precondition inc(i)');
-  verified('assert:\n(j > 3)');
-  verified('inc:\n(inc(n) > n)');
+  verified('assert: (j > 3)');
+  verified('inc: (inc(n) > n)');
 });
 
 describe('inline global call', () => {
 
-  const code = (() => {
+  code(() => {
     function inc(n) {
       return n + 1;
     }
@@ -276,21 +241,15 @@ describe('inline global call', () => {
     assert(j == 4);
     let k = inc2(i);
     assert(k == 5);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('assert:\n(j == 4)');
-  tested('assert:\n(k == 5)'); // only inline one level
+  verified('assert: (j == 4)');
+  unverified('assert: (k == 5)'); // only inline one level
 });
 
 describe('post conditions global call', () => {
 
-  const code = (() => {
+  code(() => {
     function inc(n) {
       requires(typeof(n) == 'number');
       ensures(inc(n) > n);
@@ -306,26 +265,20 @@ describe('post conditions global call', () => {
     assert(j >= 4);
     let k = inc2(i);
     assert(k >= 5);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('inc:\n(inc(n) > n)')
-  incorrect('inc2:\nprecondition inc(n)');
-  incorrect('inc2:\nprecondition inc(inc(n))');
+  verified('inc: (inc(n) > n)')
+  incorrect('inc2: precondition inc(n)');
+  incorrect('inc2: precondition inc(inc(n))');
   verified('precondition inc(i)');
-  verified('assert:\n(j >= 4)');
+  verified('assert: (j >= 4)');
   verified('precondition inc2(i)');
-  tested('assert:\n(k >= 5)'); // only inline one level, so post-cond of inc(inc(i)) not available
+  unverified('assert: (k >= 5)'); // only inline one level, so post-cond of inc(inc(i)) not available
 });
 
 describe('mutable variables', () => {
 
-  const code = (() => {
+  code(() => {
     let x = 2;
     const y = 3;
     function f(z) {
@@ -334,12 +287,6 @@ describe('mutable variables', () => {
     f(0);
     x = 4;
     f(1);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
   verified('precondition f(0)');
@@ -348,7 +295,7 @@ describe('mutable variables', () => {
 
 describe('closures', () => {
 
-  const code = (() => {
+  code(() => {
     function cons(x) {
       function f() { return x; }
       return f;
@@ -359,21 +306,15 @@ describe('closures', () => {
     const h = cons(2);
     const h1 = h();
     assert(h1 == 2);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('assert:\n(g1 == 1)');
-  verified('assert:\n(h1 == 2)');
+  verified('assert: (g1 == 1)');
+  verified('assert: (h1 == 2)');
 });
 
 describe('fibonacci increasing', () => {
 
-  const code = (() => {
+  code(() => {
     function fib(n) {
       requires(typeof(n) == 'number');
       requires(n >= 0);
@@ -383,22 +324,16 @@ describe('fibonacci increasing', () => {
       if (n <= 1) return 1;
       return fib(n - 1) + fib(n - 2);
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('fib:\nprecondition fib((n - 1))');
-  verified('fib:\nprecondition fib((n - 2))');
-  verified('fib:\n(fib(n) >= n)');
+  verified('fib: precondition fib((n - 1))');
+  verified('fib: precondition fib((n - 2))');
+  verified('fib: (fib(n) >= n)');
 });
 
 describe('buggy fibonacci', () => {
 
-  const code = (() => {
+  code(() => {
     function fib(n) {
       requires(typeof(n) == 'number');
       requires(n >= 0);
@@ -407,27 +342,22 @@ describe('buggy fibonacci', () => {
       if (n <= 1) return n;
       return fib(n - 1) + fib(n - 2);
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('fib:\nprecondition fib((n - 1))');
-  verified('fib:\nprecondition fib((n - 2))');
-  incorrect('fib:\n(fib(n) >= n)');
+  verified('fib: precondition fib((n - 1))');
+  verified('fib: precondition fib((n - 2))');
+  incorrect('fib: (fib(n) >= n)');
   it('returns counter-example', async () => {
-    await vcs[2].solveLocal();
-    expect(vcs[2].getModel()).to.have.property("n");
-    expect(vcs[2].getModel().n).to.eql(2);
+    const m = await vcs[2].verify();
+    if (m.status != "incorrect") throw new Error();
+    expect(m.model).to.have.property("n");
+    expect(m.model.n).to.eql(2);
   });
 });
 
 describe('pure functions', () => {
 
-  const code = (() => {
+  code(() => {
     let x = 0;
 
     function f() { ensures(pure()); x++; }
@@ -437,24 +367,18 @@ describe('pure functions', () => {
     function h2b() { ensures(pure()); h1(); }
     function h3a() { ensures(pure()); h2a(); }
     function h3b() { ensures(pure()); h2b(); }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  tested('f:\npure()'); // not pure
-  verified('g:\npure()'); // pure
-  verified('h2b:\npure()'); // inlined h1 pure
-  tested('h3a:\npure()'); // pure, but only one level inlining
-  verified('h3b:\npure()'); // calling other pure function
+  unverified('f: pure()'); // not pure
+  verified('g: pure()'); // pure
+  verified('h2b: pure()'); // inlined h1 pure
+  unverified('h3a: pure()'); // pure, but only one level inlining
+  verified('h3b: pure()'); // calling other pure function
 });
 
 describe('fibonacci increasing (external proof)', () => {
 
-  const code = (() => {
+  code(() => {
     function fib(n) {
       ensures(pure());
 
@@ -474,23 +398,17 @@ describe('fibonacci increasing (external proof)', () => {
         fibInc(n - 2); fib(n - 2);
       }
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('fib:\npure()');
-  verified('fibInc:\nprecondition fibInc((n - 1))');
-  verified('fibInc:\nprecondition fibInc((n - 2))');
-  verified('fibInc:\n(fib(n) >= n)');
+  verified('fib: pure()');
+  verified('fibInc: precondition fibInc((n - 1))');
+  verified('fibInc: precondition fibInc((n - 2))');
+  verified('fibInc: (fib(n) >= n)');
 });
 
 describe('simple higher-order functions', () => {
 
-  const code = (() => {
+  code(() => {
     function inc(n) {
       requires(typeof(n) == 'number');
       ensures(inc(n) > n);
@@ -509,25 +427,19 @@ describe('simple higher-order functions', () => {
     const x = 3;
     const y = twice(inc, x);
     assert(y >= 5);
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('inc:\n(inc(n) > n)');
-  verified('twice:\nprecondition f(n)');
-  verified('twice:\nprecondition f(f(n))');
-  verified('twice:\n(twice(f, n) > (n + 1))');
+  verified('inc: (inc(n) > n)');
+  verified('twice: precondition f(n)');
+  verified('twice: precondition f(f(n))');
+  verified('twice: (twice(f, n) > (n + 1))');
   verified('precondition twice(inc, x)');
-  verified('assert:\n(y >= 5)');
+  verified('assert: (y >= 5)');
 });
 
 describe.skip('mapLen example', () => {
 
-  const code = (() => {
+  code(() => {
     function map(arr, f) {
       if (arr.length == 0) return [];
       return [f(arr[0])].concat(map(arr.slice(1), f));
@@ -543,14 +455,8 @@ describe.skip('mapLen example', () => {
         map(arr.slice(1), f);
       }
     }
-  }).toString();
-
-  beforeEach(() => {
-    const t = verify(code.substring(14, code.length - 2));
-    if (!t) throw new Error('failed to find verification conditions');
-    vcs = t;
   });
 
-  verified('mapLen:\nmapLen:\nrequires:\n(arr.constructor == Array)');
-  verified('mapLen:\n(map(f, arr).length == arr.length)');
+  verified('mapLen: mapLen: requires: (arr.constructor == Array)');
+  verified('mapLen: (map(f, arr).length == arr.length)');
 });
