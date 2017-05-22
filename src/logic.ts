@@ -2,38 +2,24 @@ import { flatMap } from "./util";
 
 export namespace Syntax {
 
+  export type Location = string;
+
   export type Heap = number;
-  export interface LocalHeap { type: "LocalHeap",
-                               local: Heap,
-                               heap: HeapExpression,
-                               args: Array<Expression> }
   export interface HeapStore { type: "HeapStore",
                                target: HeapExpression,
-                               loc: LocationExpression,
+                               loc: Location,
                                expr: Expression }
   export interface HeapEffect { type: "HeapEffect",
                                 callee: Expression,
                                 heap: HeapExpression,
                                 args: Array<Expression> }
   export type HeapExpression = Heap
-                             | LocalHeap
                              | HeapStore
                              | HeapEffect;
 
-  export type Location = string;
-  export interface LocalLocation { type: "LocalLocation",
-                                   local: Location,
-                                   heap: HeapExpression,
-                                   args: Array<Expression> }
-  export type LocationExpression = Location | LocalLocation;
-
   export type Variable = string;
-  export interface LocalVariable { type: "LocalVariable",
-                                   local: Variable,
-                                   heap: HeapExpression,
-                                   args: Array<Expression> }
   export interface HeapReference { type: "HeapReference",
-                                   loc: LocationExpression,
+                                   loc: Location,
                                    heap: HeapExpression }
   export interface Literal { type: "Literal",
                              value: undefined | null | boolean | number | string }
@@ -59,7 +45,6 @@ export namespace Syntax {
                                     heap: HeapExpression,
                                     args: Array<Expression> }
   export type Expression = Variable
-                         | LocalVariable
                          | HeapReference
                          | Literal
                          | ArrayExpression
@@ -190,30 +175,12 @@ export function forAllCalls(callee: Syntax.Variable, args: Array<string>, exists
   return { type: "ForAll", callee, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [] };
 }
 
-function eqLoc(exprA: Syntax.LocationExpression, exprB: Syntax.LocationExpression): boolean {
-  if (typeof(exprA) == "string") {
-    return typeof(exprB) == "string" && exprA == exprB;
-  }
-  if (typeof(exprB) == "string") return false;
-  return exprA.type == exprB.type &&
-          exprA.local == exprB.local &&
-          eqHeap(exprA.heap, exprB.heap) &&
-          exprA.args.length == exprB.args.length &&
-          exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
-}
-
 function eqHeap(exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
   if (typeof(exprA) == "number") {
     return typeof(exprB) == "number" && exprA == exprB;
   }
   if (typeof(exprB) == "number") return false;
   switch (exprA.type) {
-    case "LocalHeap":
-      return exprA.type == exprB.type &&
-             exprA.local == exprB.local &&
-             eqHeap(exprA.heap, exprB.heap) &&
-             exprA.args.length == exprB.args.length &&
-             exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
     case "HeapEffect":
       return exprA.type == exprB.type &&
              eqExpr(exprA.callee, exprB.callee) &&
@@ -223,7 +190,7 @@ function eqHeap(exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boo
     case "HeapStore":
       return exprA.type == exprB.type &&
              eqHeap(exprA.target, exprB.target) &&
-             eqLoc(exprA.loc, exprB.loc) &&
+             exprA.loc == exprB.loc &&
              eqExpr(exprA.expr, exprB.expr);
   }
 }
@@ -234,16 +201,10 @@ function eqExpr(exprA: A, exprB: A): boolean {
   }
   if (typeof(exprB) == "string") return false;
   switch (exprA.type) {
-    case "LocalVariable":
-      return exprA.type == exprB.type &&
-             exprA.local == exprB.local &&
-             eqHeap(exprA.heap, exprB.heap) &&
-             exprA.args.length == exprB.args.length &&
-             exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
     case "HeapReference":
       return exprA.type == exprB.type &&
              eqHeap(exprA.heap, exprB.heap) &&
-             eqLoc(exprA.loc, exprB.loc);
+             exprA.loc == exprB.loc;
     case "Literal":
       return exprA.type == exprB.type &&
              exprA.value === exprB.value;
@@ -324,15 +285,12 @@ export function eqProp(propA: P, propB: P): boolean {
 export abstract class PropVisitor<L,H,R,S> {
 
   abstract visitLocation(loc: Syntax.Location): L;
-  abstract visitLocalLocation(loc: Syntax.LocalLocation): L;
 
   abstract visitHeap(heap: Heap): H;
-  abstract visitLocalHeap(prop: Syntax.LocalHeap): H;
   abstract visitHeapStore(prop: Syntax.HeapStore): H;
   abstract visitHeapEffect(prop: Syntax.HeapEffect): H;
 
   abstract visitVariable(expr: Syntax.Variable): R;
-  abstract visitLocalVariable(expr: Syntax.LocalVariable): R;
   abstract visitHeapReference(expr: Syntax.HeapReference): R;
   abstract visitLiteral(expr: Syntax.Literal): R;
   abstract visitArrayExpression(expr: Syntax.ArrayExpression): R;
@@ -354,15 +312,9 @@ export abstract class PropVisitor<L,H,R,S> {
   abstract visitForAll(prop: Syntax.ForAll): S;
   abstract visitCallTrigger(prop: Syntax.CallTrigger): S;
 
-  visitLocationExpr(loc: Syntax.LocationExpression): L {
-    if (typeof(loc) == "string") return this.visitLocation(loc);
-     return this.visitLocalLocation(loc);
-  }
-
   visitHeapExpr(heap: Syntax.HeapExpression): H {
     if (typeof(heap) == "number") return this.visitHeap(heap);
     switch (heap.type) {
-      case "LocalHeap": return this.visitLocalHeap(heap);
       case "HeapStore": return this.visitHeapStore(heap);
       case "HeapEffect": return this.visitHeapEffect(heap);
     }
@@ -371,7 +323,6 @@ export abstract class PropVisitor<L,H,R,S> {
   visitExpr(expr: A): R {
     if (typeof(expr) == "string") return this.visitVariable(expr);
     switch (expr.type) {
-      case "LocalVariable": return this.visitLocalVariable(expr);
       case "HeapReference": return this.visitHeapReference(expr);
       case "Literal": return this.visitLiteral(expr);
       case 'ArrayExpression': return this.visitArrayExpression(expr);
@@ -403,6 +354,7 @@ export abstract class PropVisitor<L,H,R,S> {
 export abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
 
   abstract empty(): R;
+
   abstract reduce(x: R, y: R): R;
 
   r(...r: R[]) {
@@ -410,21 +362,15 @@ export abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
   }
 
   visitLocation(loc: Syntax.Location) { return this.empty(); }
-  visitLocalLocation(loc: Syntax.LocalLocation) {
-    return this.r(this.visitHeapExpr(loc.heap),
-                  ...loc.args.map(a => this.visitExpr(a)));
-  }
 
   visitHeap(heap: Heap): R { return this.empty(); }
-  visitLocalHeap(expr: Syntax.LocalHeap) {
-    return this.r(this.visitHeapExpr(expr.heap),
-                  ...expr.args.map(a => this.visitExpr(a)));
-  }
+
   visitHeapStore(prop: Syntax.HeapStore): R {
     return this.r(this.visitHeapExpr(prop.target),
-                  this.visitLocationExpr(prop.loc),
+                  this.visitLocation(prop.loc),
                   this.visitExpr(prop.expr));
   }
+
   visitHeapEffect(prop: Syntax.HeapEffect): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
@@ -432,26 +378,29 @@ export abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
   }
 
   visitVariable(expr: Syntax.Variable) { return this.empty(); }
-  visitLocalVariable(expr: Syntax.LocalVariable) {
-    return this.r(this.visitHeapExpr(expr.heap),
-                  ...expr.args.map(a => this.visitExpr(a)));
-  }
+
   visitHeapReference(expr: Syntax.HeapReference) {
-    return this.r(this.visitHeapExpr(expr.heap), this.visitLocationExpr(expr.loc));
+    return this.r(this.visitHeapExpr(expr.heap), this.visitLocation(expr.loc));
   }
+
   visitLiteral(expr: Syntax.Literal) { return this.empty(); }
+
   visitArrayExpression(expr: Syntax.ArrayExpression) {
     return this.r(...expr.elements.map(e => this.visitExpr(e)));
   }
+
   visitUnaryExpression(expr: Syntax.UnaryExpression) {
     return this.visitExpr(expr.argument);
   }
+
   visitBinaryExpression(expr: Syntax.BinaryExpression) {
     return this.r(this.visitExpr(expr.left), this.visitExpr(expr.right));
   }
+
   visitConditionalExpression(expr: Syntax.ConditionalExpression): R {
     return this.r(this.visitProp(expr.test), this.visitExpr(expr.consequent), this.visitExpr(expr.alternate));
   }
+
   visitCallExpression(expr: Syntax.CallExpression): R {
     return this.r(this.visitHeapExpr(expr.heap),
                   this.visitExpr(expr.callee),
@@ -461,78 +410,71 @@ export abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
   visitTruthy(prop: Syntax.Truthy): R {
     return this.visitExpr(prop.expr);
   }
+
   visitAnd(prop: Syntax.And): R {
     return this.r(...prop.clauses.map(c => this.visitProp(c)));
   }
+
   visitOr(prop: Syntax.Or): R {
     return this.r(...prop.clauses.map(c => this.visitProp(c)));
   }
+
   visitEq(prop: Syntax.Eq): R {
     return this.r(this.visitExpr(prop.left), this.visitExpr(prop.right));
   }
+
   visitNot(prop: Syntax.Not): R {
     return this.visitProp(prop.arg);
   }
+
   visitTrue(prop: Syntax.True): R { return this.empty(); }
+
   visitFalse(prop: Syntax.False): R { return this.empty(); }
+
   visitPrecondition(prop: Syntax.Precondition): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
+
   visitPostcondition(prop: Syntax.Postcondition): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
+
   visitForAll(prop: Syntax.ForAll): R {
     return this.r(this.visitExpr(prop.callee),
                   this.visitProp(prop.prop));
   }
+
   visitCallTrigger(prop: Syntax.CallTrigger): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
+
   visitHeapEq(prop: Syntax.HeapEq): R {
     return this.r(this.visitHeapExpr(prop.left),
                   this.visitHeapExpr(prop.right));
   }
 }
 
-export class PropTransformer extends PropVisitor<Syntax.LocationExpression, Syntax.HeapExpression, A, P> {
+export class PropTransformer extends PropVisitor<Syntax.Location, Syntax.HeapExpression, A, P> {
 
-  visitLocation(loc: Syntax.Location): Syntax.LocationExpression {
+  visitLocation(loc: Syntax.Location): Syntax.Location {
     return loc;
-  }
-
-  visitLocalLocation(loc: Syntax.LocalLocation): Syntax.LocationExpression {
-    return {
-      type: "LocalLocation",
-      heap: this.visitHeapExpr(loc.heap),
-      args: loc.args.map(a => this.visitExpr(a)),
-      local: loc.local
-    };
   }
 
   visitHeap(heap: Heap): Syntax.HeapExpression {
     return heap;
   }
 
-  visitLocalHeap(heap: Syntax.LocalHeap): Syntax.HeapExpression {
-    return {
-      type: "LocalHeap",
-      heap: this.visitHeapExpr(heap.heap),
-      args: heap.args.map(a => this.visitExpr(a)),
-      local: heap.local
-    };
-  }
-
   visitHeapStore(expr: Syntax.HeapStore): Syntax.HeapExpression {
     return {
       type: "HeapStore",
       target: this.visitHeapExpr(expr.target),
-      loc: this.visitLocationExpr(expr.loc),
+      loc: this.visitLocation(expr.loc),
       expr: this.visitExpr(expr.expr)
     };
   }
@@ -550,20 +492,11 @@ export class PropTransformer extends PropVisitor<Syntax.LocationExpression, Synt
     return expr;
   }
 
-  visitLocalVariable(expr: Syntax.LocalVariable): A {
-    return {
-      type: "LocalVariable",
-      heap: this.visitHeapExpr(expr.heap),
-      args: expr.args.map(a => this.visitExpr(a)),
-      local: expr.local
-    };
-  }
-
   visitHeapReference(expr: Syntax.HeapReference): A {
     return {
       type: "HeapReference",
       heap: this.visitHeapExpr(expr.heap),
-      loc: this.visitLocationExpr(expr.loc)
+      loc: this.visitLocation(expr.loc)
     }
   }
 
@@ -689,14 +622,14 @@ export function copy(prop: P): P {
 
 export class Substituter extends PropTransformer {
   thetaHeap: { [heap: number]: Syntax.HeapExpression } = {};
-  thetaLoc: { [lname: string]: Syntax.LocationExpression } = {};
+  thetaLoc: { [lname: string]: Syntax.Location } = {};
   thetaVar: { [vname: string]: Syntax.Expression } = {};
 
   visitHeap(heap: Heap): Syntax.HeapExpression {
     return heap in this.thetaHeap ? this.thetaHeap[heap] : heap;
   }
 
-  visitLocation(l: Syntax.Location): Syntax.LocationExpression {
+  visitLocation(l: Syntax.Location): Syntax.Location {
     return l in this.thetaLoc ? this.thetaLoc[l] : l;
   }
   
@@ -709,7 +642,7 @@ export class Substituter extends PropTransformer {
     return this;
   }
   
-  replaceLoc(orig: Syntax.Location, expr: Syntax.LocationExpression): Substituter {
+  replaceLoc(orig: Syntax.Location, expr: Syntax.Location): Substituter {
     this.thetaLoc[orig] = expr;
     return this;
   }

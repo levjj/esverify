@@ -1,5 +1,4 @@
-import { Syntax, P, Heap, PropTransformer, Substituter, PropReducer, tru, and, eq, implies, eqProp, copy } from "./logic";
-import { HeapsWithLocal, LocsWithLocal, VarsWithLocal } from "./smt";
+import { Syntax, P, Heap, Heaps, Locs, Vars, PropTransformer, Substituter, PropReducer, tru, and, eq, implies, eqProp, copy } from "./logic";
 
 class TriggerEraser extends PropTransformer {
   visitCallTrigger(prop: Syntax.CallTrigger): P {
@@ -18,12 +17,12 @@ export function eraseTriggersProp(prop: P): P {
 }
 
 class QuantifierTransformer extends PropTransformer {
-  readonly heaps: HeapsWithLocal;
-  readonly locs: LocsWithLocal;
-  readonly vars: VarsWithLocal;
+  readonly heaps: Heaps;
+  readonly locs: Locs;
+  readonly vars: Vars;
   position: boolean;
 
-  constructor(heaps: HeapsWithLocal, locs: LocsWithLocal, vars: VarsWithLocal) {
+  constructor(heaps: Heaps, locs: Locs, vars: Vars) {
     super();
     this.heaps = heaps;
     this.locs = locs;
@@ -31,63 +30,33 @@ class QuantifierTransformer extends PropTransformer {
     this.position = true;
   }
 
-  freshHeap(prefered: Heap, card: number | null = null): Heap {
+  freshHeap(prefered: Heap): Heap {
     let n = prefered;
     while (this.heaps.has(n)) n++;
-    this.heaps.set(n, card);
+    this.heaps.add(n);
     return n;
   }
   
-  freshLoc(prefered: Syntax.Location, card: number | null = null): Syntax.Location {
+  freshLoc(prefered: Syntax.Location): Syntax.Location {
     let n = prefered;
     while (this.locs.has(n)) n = n + "_";
-    this.locs.set(n, card);
+    this.locs.add(n);
     return n;
   }
   
-  freshVar(prefered: Syntax.Variable, card: number | null = null): Syntax.Variable {
+  freshVar(prefered: Syntax.Variable): Syntax.Variable {
     let n = prefered;
     while (this.vars.has(n)) n = n + "_";
-    this.vars.set(n, card);
+    this.vars.add(n);
     return n;
   }
 
-  localizeHeap(prop: Syntax.ForAll, heap: number, skolemize: boolean, newHeap: Syntax.HeapExpression): Syntax.HeapExpression {
-    let h: Syntax.HeapExpression;
-    if (skolemize) {
-      h = { type: "LocalHeap", local: this.freshHeap(heap, prop.args.length), heap: newHeap, args: prop.args };
-    } else {
-      h = this.freshHeap(heap);
-    }
-    return h;
-  }
-
-  localizeLoc(prop: Syntax.ForAll, loc: Syntax.Location, skolemize: boolean, newHeap: Syntax.HeapExpression): Syntax.LocationExpression {
-    let l: Syntax.LocationExpression;
-    if (skolemize) {
-      l = { type: "LocalLocation", local: this.freshLoc(loc, prop.args.length), heap: newHeap, args: prop.args };
-    } else {
-      l = this.freshLoc(loc);
-    }
-    return l;
-  }
-
-  localizeVar(prop: Syntax.ForAll, v: Syntax.Variable, skolemize: boolean, newHeap: Syntax.HeapExpression): Syntax.Expression {
-    let e: Syntax.Expression;
-    if (skolemize) {
-      e = { type: "LocalVariable", local: this.freshVar(v, prop.args.length), heap: newHeap, args: prop.args };
-    } else {
-      e = this.freshVar(v);
-    }
-    return e;
-  }
-
-  liftExistantials(prop: Syntax.ForAll, skolemize: boolean, newHeap: Syntax.HeapExpression = this.freshHeap(0)): Substituter {
+  liftExistantials(prop: Syntax.ForAll, newHeap: Syntax.HeapExpression = this.freshHeap(0)): Substituter {
     const sub = new Substituter();
     sub.replaceHeap(0, newHeap);
-    prop.existsHeaps.forEach(h => sub.replaceHeap(h, this.localizeHeap(prop, h, skolemize, newHeap)));
-    prop.existsLocs.forEach(l => sub.replaceLoc(l, this.localizeLoc(prop, l, skolemize, newHeap)));
-    prop.existsVars.forEach(v => sub.replaceVar(v, this.localizeVar(prop, v, skolemize, newHeap)));
+    prop.existsHeaps.forEach(h => sub.replaceHeap(h, this.freshHeap(h)));
+    prop.existsLocs.forEach(l => sub.replaceLoc(l, this.freshLoc(l)));
+    prop.existsVars.forEach(v => sub.replaceVar(v, this.freshVar(v)));
     return sub;
   }
 
@@ -104,7 +73,10 @@ class QuantifierTransformer extends PropTransformer {
 class QuantifierLifter extends QuantifierTransformer {
   visitForAll(prop: Syntax.ForAll): P {
     if (this.position) return copy(prop);
-    const sub = this.liftExistantials(prop, true);
+    const sub = this.liftExistantials(prop);
+    if (prop.existsHeaps.size + prop.existsLocs.size + prop.existsVars.size > 0) {
+      throw new Error("Existentials in negative positions not supported");
+    }
     prop.args.forEach(a => sub.replaceVar(a, this.freshVar(a)));
     const callee = sub.visitExpr(prop.callee);
     const trigger = this.visitProp({ type: "CallTrigger", callee, heap: 0, args: prop.args });
@@ -149,14 +121,14 @@ class QuantifierInstantiator extends QuantifierTransformer {
   triggers: Array<Syntax.CallTrigger>; // relies on 
   instantiations: number;
 
-  constructor(heaps: HeapsWithLocal, locs: LocsWithLocal, vars: VarsWithLocal) {
+  constructor(heaps: Heaps, locs: Locs, vars: Vars) {
     super(heaps, locs, vars);
     this.instantiations = 0;
   }
 
   instantiate(prop: Syntax.ForAll, trigger: Syntax.CallTrigger) {
     const match = eq(prop.callee, trigger.callee);
-    const sub = this.liftExistantials(prop, false, trigger.heap);
+    const sub = this.liftExistantials(prop, trigger.heap);
     // substitute arguments
     prop.args.forEach((a, idx) => {
       sub.replaceVar(a, trigger.args[idx]);
@@ -196,7 +168,7 @@ class QuantifierEraser extends PropTransformer {
   }
 }
 
-export function instantiateQuantifiers(heaps: HeapsWithLocal, locs: LocsWithLocal, vars: VarsWithLocal, p: P): P {
+export function instantiateQuantifiers(heaps: Heaps, locs: Locs, vars: Vars, p: P): P {
   let prop = (new QuantifierLifter(heaps, locs, vars)).visitProp(p);
   const instantiator = new QuantifierInstantiator(heaps, locs, vars);
   let num = -1;

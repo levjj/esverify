@@ -46,20 +46,12 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return "l_" + loc;
   }
 
-  visitLocalLocation(loc: Syntax.LocalLocation): SMTInput {
-    return `(l_${loc.local} ${this.visitHeapExpr(loc.heap)}${loc.args.map(a => ' ' + this.visitExpr(a)).join("")})`;
-  }
-
   visitHeap(heap: Heap): SMTInput {
     return "h_" + heap;
   }
 
-  visitLocalHeap(heap: Syntax.LocalHeap): SMTInput {
-    return `(h_${heap.local} ${this.visitHeapExpr(heap.heap)}${heap.args.map(a => ' ' + this.visitExpr(a)).join("")})`;
-  }
-
   visitHeapStore(expr: Syntax.HeapStore): SMTInput {
-    return `(store ${this.visitHeapExpr(expr.target)} ${this.visitLocationExpr(expr.loc)} ${this.visitExpr(expr.expr)})`;
+    return `(store ${this.visitHeapExpr(expr.target)} ${this.visitLocation(expr.loc)} ${this.visitExpr(expr.expr)})`;
   }
   
   visitHeapEffect(expr: Syntax.HeapEffect): SMTInput {
@@ -71,12 +63,8 @@ class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return "v_" + expr;
   }
 
-  visitLocalVariable(expr: Syntax.LocalVariable): SMTInput {
-    return `(v_${expr.local} ${this.visitHeapExpr(expr.heap)}${expr.args.map(a => ' ' + this.visitExpr(a)).join("")})`;
-  }
-
   visitHeapReference(expr: Syntax.HeapReference): SMTInput {
-    return `(select ${this.visitHeapExpr(expr.heap)} ${this.visitLocationExpr(expr.loc)})`;
+    return `(select ${this.visitHeapExpr(expr.heap)} ${this.visitLocation(expr.loc)})`;
   }
   
   visitLiteral(expr: Syntax.Literal): SMTInput {
@@ -232,37 +220,8 @@ function propositionToAssert(prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-export type HeapsWithLocal = Map<Heap, null | number>;
-export type LocsWithLocal = Map<Syntax.Location, null | number>;
-export type VarsWithLocal = Map<Syntax.Variable, null | number>;
-
-function declareHeap([heap, card]: [Heap, null | number]): SMTInput {
-  if (card === null) {
-    return `(declare-const h_${heap} Heap)\n`;
-  }
-  return `(declare-fun h_${heap} (Heap ${[...Array(card).keys()].map(_ => ' JSVal').join('')}) Heap)\n`;
-}
-
-function declareLoc([loc, card]: [Syntax.Location, null | number]): SMTInput {
-  if (card === null) {
-    return `(declare-const l_${loc} Loc)\n`;
-  }
-  return `(declare-fun l_${loc} (Heap ${[...Array(card).keys()].map(_ => ' JSVal').join('')}) Loc)\n`;
-}
-
-function declareVar([v, card]: [Syntax.Variable, null | number]): SMTInput {
-  if (card === null) {
-    return `(declare-const v_${v} JSVal)\n`;
-  }
-  return `(declare-fun v_${v} (Heap ${[...Array(card).keys()].map(_ => ' JSVal').join('')}) JSVal)\n`;
-}
-
 export function vcToSMT(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
-  const heaps2: HeapsWithLocal = new Map([...heaps.keys()].map((k): [Heap, null] => [k, null]));
-  const locs2: LocsWithLocal = new Map([...locs.keys()].map((l): [Syntax.Location, null] => [l, null]));
-  // FIXME ensure local locations are also distinct
-  const vars2: LocsWithLocal = new Map([...vars.keys()].map((v): [Syntax.Variable, null] => [v, null]));
-  const prop = instantiateQuantifiers(heaps2, locs2, vars2, p);
+  const prop = instantiateQuantifiers(heaps, locs, vars, p);
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
@@ -451,10 +410,10 @@ ${[...Array(10).keys()].map(i => `
 
 ; Declarations
 
-${[...heaps2.entries()].map(declareHeap).join('')}
-${[...locs2.entries()].map(declareLoc).join('')}
+${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}
+${[...locs].map(l => `(declare-const l_${l} Loc)\n`).join('')}
 ${locs.size == 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_'+l).join(' ')}))`}
-${[...vars2.entries()].map(declareVar).join('')}
+${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
 
 ; Verification condition
 
