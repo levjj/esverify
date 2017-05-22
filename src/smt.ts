@@ -1,7 +1,268 @@
-import { P, Vars, Locs, Heaps, SMTInput, SMTOutput, instantiateQuantifiers, propositionToAssert } from "./propositions";
+import { flatMap } from "./util";
+import { Syntax, A, P, Vars, Locs, Heap, Heaps, PropVisitor, implies } from "./logic";
+import { instantiateQuantifiers } from "./qi";
+import { MessageException } from "./message";
+import { options } from "./options";
 
-export function smt(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
-  const prop = instantiateQuantifiers(heaps, locs, vars, p);
+export type SMTInput = string;
+export type SMTOutput = string;
+
+const unOpToSMT: {[unop: string]: SMTInput} = {
+  "-": "_js-negative",
+  "+":"_js-positive",
+  "!": "_js-not",
+  "~": "_js-bnot",
+  "typeof": "_js-typeof",
+  "void": "_js-void"
+};
+
+const binOpToSMT: {[binop: string]: SMTInput} = {
+  "==": "_js-eq", // non-standard
+  "!=": "_js-neq", // non-standard
+  "===": "_js-eq", // non-standard
+  "!==": "_js-neq", // non-standard
+  "<": "_js_lt",
+  "<=": "_js_leq",
+  ">": "_js_gt",
+  ">=": "_js-geq",
+  "+": "_js-plus",
+  "-": "_js-minus",
+  "*": "_js-multiply",
+  "/": "_js-divide",
+  "%": "_js-mod",
+  "<<": "_js-lshift",
+  ">>": "_js-rshift",
+  ">>>": "_js-rzshift",
+  "|": "_js-bor",
+  "^": "_js-bxor",
+  "&": "_js-band",
+  "in": "_js-in", // unsupported
+  "instanceof": "_js-instanceof" // unsupported
+};
+
+class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
+
+  visitLocation(loc: Syntax.Location): SMTInput {
+    return "l_" + loc;
+  }
+
+  visitLocalLocation(loc: Syntax.LocalLocation): SMTInput {
+    return `(l_${loc.local} ${this.visitHeapExpr(loc.heap)}${loc.args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+
+  visitHeap(heap: Heap): SMTInput {
+    return "h_" + heap;
+  }
+
+  visitLocalHeap(heap: Syntax.LocalHeap): SMTInput {
+    return `(h_${heap.local} ${this.visitHeapExpr(heap.heap)}${heap.args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+
+  visitHeapStore(expr: Syntax.HeapStore): SMTInput {
+    return `(store ${this.visitHeapExpr(expr.target)} ${this.visitLocationExpr(expr.loc)} ${this.visitExpr(expr.expr)})`;
+  }
+  
+  visitHeapEffect(expr: Syntax.HeapEffect): SMTInput {
+    const {callee, heap, args} = expr;
+    return `(eff${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+
+  visitVariable(expr: Syntax.Variable): SMTInput {
+    return "v_" + expr;
+  }
+
+  visitLocalVariable(expr: Syntax.LocalVariable): SMTInput {
+    return `(v_${expr.local} ${this.visitHeapExpr(expr.heap)}${expr.args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+
+  visitHeapReference(expr: Syntax.HeapReference): SMTInput {
+    return `(select ${this.visitHeapExpr(expr.heap)} ${this.visitLocationExpr(expr.loc)})`;
+  }
+  
+  visitLiteral(expr: Syntax.Literal): SMTInput {
+    if (expr.value === undefined) return `jsundefined`;
+    if (expr.value === null) return `jsnull`;
+    switch (typeof expr.value) {
+      case "boolean": return `(jsbool ${expr.value})`;
+      case "number": return `(jsnum ${expr.value})`;
+      case "string": return `(jsstr "${expr.value}")`;
+      default: throw new Error("unreachable");
+    }
+  }
+  
+  visitArrayExpression(expr: Syntax.ArrayExpression): SMTInput {
+    const arrayToSMT = (elements: Array<A>): SMTInput => {
+      if (elements.length === 0) return `empty`;
+      const [head, ...tail] = elements;
+      const h = head || {type: "Literal", value: "undefined"};
+      return `(cons ${this.visitExpr(h)} ${arrayToSMT(tail)})`;
+    };
+    return `(jsarray ${arrayToSMT(expr.elements)})`;
+  }
+  
+  visitUnaryExpression(expr: Syntax.UnaryExpression): SMTInput {
+    const arg = this.visitExpr(expr.argument),
+          op = unOpToSMT[expr.operator];
+    return `(${op} ${arg})`;
+  }
+  
+  visitBinaryExpression(expr: Syntax.BinaryExpression): SMTInput {
+    const left = this.visitExpr(expr.left),
+          right = this.visitExpr(expr.right),
+          binop = binOpToSMT[expr.operator];
+    return `(${binop} ${left} ${right})`;
+  }
+  
+  visitConditionalExpression(expr: Syntax.ConditionalExpression): SMTInput {
+    const test = this.visitProp(expr.test),
+          then = this.visitExpr(expr.consequent),
+          elze = this.visitExpr(expr.alternate);
+    return `(ite ${test} ${then} ${elze})`;
+  }
+  
+  visitCallExpression(expr: Syntax.CallExpression): SMTInput {
+    const {callee, heap, args} = expr;
+    return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+
+  visitTruthy(prop: Syntax.Truthy): SMTInput {
+    if (typeof(prop.expr) == "object" &&
+        prop.expr.type == "ConditionalExpression" &&
+        typeof(prop.expr.consequent) == "object" &&
+        prop.expr.consequent.type == "Literal" &&
+        prop.expr.consequent.value === true &&
+        typeof(prop.expr.alternate) == "object" &&
+        prop.expr.alternate.type == "Literal" &&
+        prop.expr.alternate.value === false) {
+      return this.visitProp(prop.expr.test);
+    }
+    return `(_truthy ${this.visitExpr(prop.expr)})`;
+  }
+  
+  visitAnd(prop: Syntax.And): SMTInput {
+    const clauses: Array<SMTInput> = flatMap(prop.clauses,
+      c => c.type == "And" ? c.clauses : [c]) 
+      .map(p => this.visitProp(p))
+      .filter(s => s != `true`);
+    if (clauses.find(s => s == `false`)) return `false`;
+    if (clauses.length == 0) return `true`;
+    if (clauses.length == 1) return clauses[0];
+    return `(and ${clauses.join(' ')})`;
+  }
+  
+  visitOr(prop: Syntax.Or): SMTInput {
+    const clauses: Array<SMTInput> = flatMap(prop.clauses,
+      c => c.type == "Or" ? c.clauses : [c]) 
+      .map(p => this.visitProp(p))
+      .filter(s => s != `false`);
+    if (clauses.find(s => s == `true`)) return `true`;
+    if (clauses.length == 0) return `false`;
+    if (clauses.length == 1) return clauses[0];
+    return `(or ${clauses.join(' ')})`;
+  }
+  
+  visitEq(prop: Syntax.Eq): SMTInput {
+    const left: SMTInput = this.visitExpr(prop.left);
+    const right: SMTInput = this.visitExpr(prop.right);
+    if (left == right) return `true`;
+    return `(= ${left} ${right})`;
+  }
+  
+  visitHeapEq(prop: Syntax.HeapEq): SMTInput {
+    const left: SMTInput = this.visitHeapExpr(prop.left);
+    const right: SMTInput = this.visitHeapExpr(prop.right);
+    if (left == right) return `true`;
+    return `(= ${left} ${right})`;
+  }
+  
+  visitNot(prop: Syntax.Not): SMTInput {
+    const arg: SMTInput = this.visitProp(prop.arg);
+    if (arg == "true") return `false`;
+    if (arg == "false") return `true`;
+    return `(not ${arg})`;
+  }
+  
+  visitTrue(prop: Syntax.True): SMTInput {
+    return `true`;
+  }
+  
+  visitFalse(prop: Syntax.False): SMTInput {
+    return `false`;
+  }
+  
+  visitPrecondition(prop: Syntax.Precondition): SMTInput {
+    const {callee, heap, args} = prop;
+    return `(pre${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+  
+  visitPostcondition(prop: Syntax.Postcondition): SMTInput {
+    const {callee, heap, args} = prop;
+    return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+  
+  visitForAll(prop: Syntax.ForAll): SMTInput {
+    const {args, callee} = prop;
+    const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
+    const callP: P = { type: "CallTrigger", callee, heap: 0, args: args };
+    let p = this.visitProp(implies(callP, prop.prop));
+    if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
+      p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
+                 + `${[...prop.existsLocs].map(l => `(${this.visitLocation(l)} Loc)`).join(' ')} `
+                 + `${[...prop.existsVars].map(v => `(${this.visitVariable(v)} JSVal)`).join(' ')})\n  ${p})`;
+    }
+    const trigger: SMTInput = this.visitProp(callP);
+    return `(forall ((${this.visitHeap(0)} Heap) ${params}) (!\n  ${p}\n  :pattern (${trigger})))`;
+  }
+  
+  visitCallTrigger(prop: Syntax.CallTrigger): SMTInput {
+    const {callee, heap, args} = prop;
+    return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+}
+
+function propositionToSMT(prop: P): SMTInput {
+  const v = new SMTGenerator();
+  return v.visitProp(prop);
+}
+
+function propositionToAssert(prop: P): SMTInput {
+  if (prop.type == "And") {
+    return prop.clauses.map(propositionToAssert).join("");
+  }
+  return `(assert ${propositionToSMT(prop)})\n`;
+}
+
+export type HeapsWithLocal = Map<Heap, null | number>;
+export type LocsWithLocal = Map<Syntax.Location, null | number>;
+export type VarsWithLocal = Map<Syntax.Variable, null | number>;
+
+function declareHeap([heap, card]: [Heap, null | number]): SMTInput {
+  if (card === null) {
+    return `(declare-const h_${heap} Heap)\n`;
+  }
+  return `(declare-fun h_${heap} (Heap ${[...Array(card).keys()].map(_ => ' JSVal').join('')}) Heap)\n`;
+}
+
+function declareLoc([loc, card]: [Syntax.Location, null | number]): SMTInput {
+  if (card === null) {
+    return `(declare-const l_${loc} Loc)\n`;
+  }
+  return `(declare-fun l_${loc} (Heap ${[...Array(card).keys()].map(_ => ' JSVal').join('')}) Loc)\n`;
+}
+
+function declareVar([v, card]: [Syntax.Variable, null | number]): SMTInput {
+  if (card === null) {
+    return `(declare-const v_${v} JSVal)\n`;
+  }
+  return `(declare-fun v_${v} (Heap ${[...Array(card).keys()].map(_ => ' JSVal').join('')}) JSVal)\n`;
+}
+
+export function vcToSMT(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
+  const heaps2: HeapsWithLocal = new Map([...heaps.keys()].map((k): [Heap, null] => [k, null]));
+  const locs2: LocsWithLocal = new Map([...locs.keys()].map((l): [Syntax.Location, null] => [l, null]));
+  // FIXME ensure local locations are also distinct
+  const vars2: LocsWithLocal = new Map([...vars.keys()].map((v): [Syntax.Variable, null] => [v, null]));
+  const prop = instantiateQuantifiers(heaps2, locs2, vars2, p);
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
@@ -190,10 +451,10 @@ ${[...Array(10).keys()].map(i => `
 
 ; Declarations
 
-${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}
-${[...locs].map(v => `(declare-const l_${v} Loc)\n`).join('')}
+${[...heaps2.entries()].map(declareHeap).join('')}
+${[...locs2.entries()].map(declareLoc).join('')}
 ${locs.size == 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_'+l).join(' ')}))`}
-${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
+${[...vars2.entries()].map(declareVar).join('')}
 
 ; Verification condition
 
@@ -203,11 +464,16 @@ ${propositionToAssert(prop)}
 (get-value (${[...vars].map(v => `v_${v}`).join(' ')}))`;
 }
 
+function modelError(smt: string): MessageException {
+  const loc = { file: options.filename, start: { line: 0, column: 0}, end: { line: 0, column: 0} };
+  return new MessageException({ status: "unrecognized-model", loc, smt });
+}
+
 function smtToArray(smt: SMTOutput): Array<any> {
   const s = smt.trim();
   if (s == "empty") return [];
   const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
+  if (!m) throw modelError(s);
   const [, h, t] = m;
   return [smtToValue(h)].concat(smtToArray(t));
 }
@@ -217,7 +483,7 @@ function smtToValue(smt: SMTOutput): any {
   if (s == "jsundefined") return undefined;
   if (s == "jsnull") return null;
   const m = s.match(/^\((\w+)\ (.*)\)$/);
-  if (!m) throw new Error("Cannot parse output!");
+  if (!m) throw modelError(s);
   const [, tag, v] = m;
   if (tag.startsWith("jsfun")) return ()=>0;
   switch (tag) {
@@ -225,15 +491,14 @@ function smtToValue(smt: SMTOutput): any {
     case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
     case "jsstr": return v.substr(1, v.length - 2);
     case "jsarr": return smtToArray(v);
-    default: throw new Error("unsupported");
+    default: throw modelError(tag);
   }
 }
 
 export type Model = { [varName: string]: any };
 
 export function smtToModel(smt: SMTOutput): Model {
-  if (!smt || !smt.startsWith("sat")) throw new Error("no model available");
-  // remove "sat"
+  // assumes smt starts with "sat", so remove "sat"
   smt = smt.slice(3, smt.length);
   if (smt.trim().startsWith("(error")) return {};
 

@@ -1,12 +1,13 @@
 import VerificationCondition from "./verification";
-import { JSyntax, stringifyExpr, checkInvariants, checkPreconditions, replaceFunctionResult, isMutable } from "./javascript";
-import { ASyntax, A, P, Vars, Locs, Heap, und, tru, fls, truthy, falsy, implies, and, iff, or, eq, not, heapPromote, heapStore, eraseTriggersProp } from "./propositions";
+import { Syntax, stringifyExpr, checkInvariants, checkPreconditions, replaceFunctionResult, isMutable } from "./javascript";
+import { A, P, Vars, Locs, Heap, und, tru, fls, truthy, falsy, implies, and, or, eq, not, heapEq, heapStore, forAllCalls } from "./logic";
+import { eraseTriggersProp } from "./qi";
 
 class PureContextError extends Error {
   constructor() { super("not supported in pure functional context"); }
 }
 
-function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, expr: JSyntax.Expression): A {
+function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, expr: Syntax.Expression): A {
   switch (expr.type) {
     case "Identifier":
       if (isMutable(expr)) {
@@ -62,17 +63,11 @@ function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, e
         args: expr.args.map(a => transformExpression(oldHeap, heap, inPost, a))
       };
     case "SpecExpression": {
-      const callee = transformExpression(oldHeap, heap, inPost, expr.callee);
-      const preP: P = { type: "Precondition", callee, heap: 0, args: expr.args };
-      const postP: P = { type: "Postcondition", callee, heap: 0, args: expr.args };
+      const callee: string = expr.callee.name;
       const r = truthy(transformExpression(0, 0, inPost, expr.pre));
       const sPost = expr.callee.type == "Identifier" ? expr.callee.name : inPost;
       const s = truthy(transformExpression(0, 1, sPost, expr.post));
-      const forAll: P = { type: "ForAll", callee, args: expr.args,
-        existsHeaps: new Set(), existsLocs: new Set(), existsVars: new Set(),
-        prop: and(implies(r, preP), implies(and(r, postP), s)),
-        instantiations: []
-      };
+      const forAll: P = forAllCalls(callee, expr.args, new Set(), new Set(), new Set(), r, s);
       const fnCheck: A = {
         type: "BinaryExpression",
         left: {
@@ -89,14 +84,14 @@ function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, e
       return { type: "ConditionalExpression", test, consequent, alternate };
     }
     case "PureExpression":
-      const test: P = heapPromote(oldHeap, heap);
+      const test: P = heapEq(oldHeap, heap);
       const consequent: A = { type: "Literal", value: true };
       const alternate: A = { type: "Literal", value: false };
       return { type: "ConditionalExpression", test, consequent, alternate };
   }
 }
 
-class VCState {
+class VCGenState {
   heap: Heap;
   locs: Locs;
   vars: Vars;
@@ -115,17 +110,17 @@ class VCState {
     this.vcs = vcs;
   }
 
-  map(f: (x: A) => A): VCState {
-    return new VCState(this.heap, this.locs, this.vars, this.prop, f(this.val), this.bc, this.vcs);
+  map(f: (x: A) => A): VCGenState {
+    return new VCGenState(this.heap, this.locs, this.vars, this.prop, f(this.val), this.bc, this.vcs);
   }
 
-  then(t: VCState): VCState {
-    return new VCState(
+  then(t: VCGenState): VCGenState {
+    return new VCGenState(
       t.heap,
       t.locs,
       t.vars,
       and(this.prop,
-          implies(this.bc, heapPromote(this.heap, t.heap)),
+          implies(this.bc, heapEq(this.heap, t.heap)),
           implies(not(this.bc), t.prop)),
       t.val,
       or(this.bc, t.bc),
@@ -133,43 +128,43 @@ class VCState {
   }
 
   static pure(heap: number, locs: Locs, vars: Vars, expr: A) {
-    return new VCState(heap, locs, vars, tru, expr);
+    return new VCGenState(heap, locs, vars, tru, expr);
   }
 }
 
-export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, expr: JSyntax.Expression): VCState {
+export function vcgenExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, expr: Syntax.Expression): VCGenState {
   switch (expr.type) {
     case "Identifier":
       if (isMutable(expr)) {
-        return VCState.pure(heap, locs, vars, { type: "HeapReference", heap, loc: expr.name });
+        return VCGenState.pure(heap, locs, vars, { type: "HeapReference", heap, loc: expr.name });
       } else {
-        return VCState.pure(heap, locs, vars, expr.name);
+        return VCGenState.pure(heap, locs, vars, expr.name);
       }
     case "Literal":
-      return VCState.pure(heap, locs, vars, expr);
+      return VCGenState.pure(heap, locs, vars, expr);
     case "ArrayExpression":
       const elements: Array<A> = [];
-      let res = VCState.pure(heap, locs, vars, und);
+      let res = VCGenState.pure(heap, locs, vars, und);
       for (const elem of expr.elements) {
-        const t = verifyExpression(oldHeap, res.heap, res.locs, res.vars, elem);
+        const t = vcgenExpression(oldHeap, res.heap, res.locs, res.vars, elem);
         res = res.then(t);
         elements.push(t.val);
       }
       return res.map(v => ({ type: "ArrayExpression", elements }));
     case "UnaryExpression":
-      const t = verifyExpression(oldHeap, heap, locs, vars, expr.argument);
+      const t = vcgenExpression(oldHeap, heap, locs, vars, expr.argument);
       return t.map(v => ({ type: "UnaryExpression", operator: expr.operator, argument: v }));
     case "BinaryExpression": {
-      const tl = verifyExpression(oldHeap, heap, locs, vars, expr.left);
-      const tr = verifyExpression(oldHeap, tl.heap, tl.locs, tl.vars, expr.right);
+      const tl = vcgenExpression(oldHeap, heap, locs, vars, expr.left);
+      const tr = vcgenExpression(oldHeap, tl.heap, tl.locs, tl.vars, expr.right);
       const res: A = { type: "BinaryExpression", operator: expr.operator, left: tl.val, right: tr.val };
       return tl.then(tr).map(v => res);
     }
     case "LogicalExpression": {
-      const l = verifyExpression(oldHeap, heap, locs, vars, expr.left);
-      const r = verifyExpression(oldHeap, l.heap, l.locs, l.vars, expr.right);
+      const l = vcgenExpression(oldHeap, heap, locs, vars, expr.left);
+      const r = vcgenExpression(oldHeap, l.heap, l.locs, l.vars, expr.right);
       if (expr.operator == "&&") {
-        return new VCState(
+        return new VCGenState(
           r.heap,
           r.locs,
           r.vars,
@@ -178,7 +173,7 @@ export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Va
           or(l.bc, and(truthy(l.val), r.bc)),
           l.vcs.concat(r.vcs.map(vc => ((vc.prop = and(l.prop, not(l.bc), truthy(l.val), vc.prop)), vc))));
       } else {
-        return new VCState(
+        return new VCGenState(
           r.heap,
           r.locs,
           r.vars,
@@ -189,44 +184,44 @@ export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Va
       }
     }
     case "ConditionalExpression": {
-      const t = verifyExpression(oldHeap, heap, locs, vars, expr.test);
-      const l = verifyExpression(oldHeap, t.heap, t.locs, t.vars, expr.consequent);
-      const r = verifyExpression(oldHeap, t.heap, l.locs, l.vars, expr.alternate);
+      const t = vcgenExpression(oldHeap, heap, locs, vars, expr.test);
+      const l = vcgenExpression(oldHeap, t.heap, t.locs, t.vars, expr.consequent);
+      const r = vcgenExpression(oldHeap, t.heap, l.locs, l.vars, expr.alternate);
       const newHeap = Math.max(l.heap, r.heap);
-      return new VCState(
+      return new VCGenState(
         newHeap,
         r.locs,
         r.vars,
         and(t.prop,
-            implies(truthy(t.val), and(l.prop, heapPromote(l.heap, newHeap))),
-            implies(falsy(t.val), and(r.prop, heapPromote(r.heap, newHeap)))),
+            implies(truthy(t.val), and(l.prop, heapEq(l.heap, newHeap))),
+            implies(falsy(t.val), and(r.prop, heapEq(r.heap, newHeap)))),
         { type: "ConditionalExpression", test: truthy(t.val), consequent: l.val, alternate: r.val },
         or(t.bc, and(truthy(t.val), l.bc), and(falsy(t.val), r.bc)),
         t.vcs.concat(l.vcs.map(vc => ((vc.prop = and(t.prop, not(t.bc), truthy(t.val), vc.prop)), vc)))
              .concat(r.vcs.map(vc => ((vc.prop = and(t.prop, not(t.bc), falsy(t.val), vc.prop)), vc))));
     }
     case "AssignmentExpression": {
-      const t = verifyExpression(oldHeap, heap, locs, vars, expr.right);
+      const t = vcgenExpression(oldHeap, heap, locs, vars, expr.right);
       t.prop = and(t.prop, heapStore(t.heap, expr.left.name, t.val));
       t.heap++;
       return t;
     }
     case "SequenceExpression": {
-      let res = VCState.pure(heap, locs, vars, und);
+      let res = VCGenState.pure(heap, locs, vars, und);
       for (const e of expr.expressions) {
-        res = res.then(verifyExpression(oldHeap, res.heap, res.locs, res.vars, e));
+        res = res.then(vcgenExpression(oldHeap, res.heap, res.locs, res.vars, e));
       }
       return res;
     }
     case "CallExpression": {
       // evaluate callee
-      let res = verifyExpression(oldHeap, heap, locs, vars, expr.callee);
+      let res = vcgenExpression(oldHeap, heap, locs, vars, expr.callee);
       const callee = res.val;
 
       // evaluate arguments
       const args: Array<A> = [];
       for (const arg of expr.args) {
-        const t = verifyExpression(oldHeap, res.heap, res.locs, res.vars, arg);
+        const t = vcgenExpression(oldHeap, res.heap, res.locs, res.vars, arg);
         res = res.then(t);
         args.push(t.val);
       }
@@ -236,12 +231,13 @@ export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Va
 
       // verify precondition
       const vc = and(res.prop, not({ type: "Precondition", callee, heap: res.heap, args }));
-      res.vcs.push(new VerificationCondition(res.heap + 1, res.locs, res.vars, vc,
+      res.vcs.push(new VerificationCondition(res.heap + 1, res.locs, res.vars, vc, expr.loc,
                                            `precondition ${stringifyExpr(expr)}`));
       
       // assume postcondition and return result
       res.prop = and(res.prop, { type: "Postcondition", callee, heap: res.heap, args },
-                               { type: "HeapEffect", callee, heap: res.heap, args });
+                               heapEq(res.heap + 1,
+                                      { type: "HeapEffect", callee, heap: res.heap, args }));
       res.val = { type: "CallExpression", callee, heap: res.heap, args };
       res.heap++;
       return res;
@@ -256,7 +252,7 @@ export function verifyExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Va
   }
 }
 
-function verifyWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: JSyntax.WhileStatement): VCState {
+function vcgenWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: Syntax.WhileStatement): VCGenState {
   // return verification conditions:
   // - call req in test, invariants and body
   // - assert in body
@@ -264,20 +260,28 @@ function verifyWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: JSyntax.WhileS
   // break condition: test && return in body
 
   // assume loop condition true and invariants true
-  let res = verifyExpression(heap, heap, locs, vars, whl.test);
+  let res = vcgenExpression(heap, heap, locs, vars, whl.test);
   const enter = truthy(res.val);
   res.prop = and(res.prop, enter);
   for (const inv of whl.invariants) {
     const ti = transformExpression(heap, res.heap, null, inv); // TODO old() for previous iteration
     res.prop = and(res.prop, truthy(ti));
   }
-  res = res.then(verifyStatement(heap, res.heap, res.locs, res.vars, whl.body));
+  res = res.then(vcgenStatement(heap, res.heap, res.locs, res.vars, whl.body));
 
   // internal verification conditions
-  const testBody: Array<JSyntax.Statement> = [checkInvariants(whl), {
+  const testBody: Array<Syntax.Statement> = [checkInvariants(whl), {
     type: "ExpressionStatement",
-    expression: { type: "CallExpression", args: [],
-                  callee: { type: "Identifier", name: "test", decl: {type: "Unresolved"}, refs: [], isWrittenTo: false}}
+    expression: {
+      type: "CallExpression",
+      args: [],
+      callee: {
+        type: "Identifier", name: "test", decl: {type: "Unresolved"},
+        refs: [], isWrittenTo: false, loc: whl.loc
+      },
+      loc: whl.loc
+    },
+    loc: whl.loc
   }];
     
   res.vcs.forEach(vc => vc.body = testBody);
@@ -287,45 +291,35 @@ function verifyWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: JSyntax.WhileS
   for (const inv of whl.invariants) {
     const ti = transformExpression(heap, res.heap, null, inv);
     res.vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(res.prop, not(truthy(ti))),
-                "invariant maintained:\n" + stringifyExpr(inv),
-                 testBody.concat([{ type: "AssertStatement", expression: inv }])));
+                 inv.loc, "invariant maintained: " + stringifyExpr(inv),
+                 testBody.concat([{ type: "AssertStatement", loc: inv.loc, expression: inv }])));
   }
   return res;
 }
 
-function transformSpec(f: JSyntax.FunctionDeclaration, fromHeap: number = 0, toHeap: number = 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
-  const callee: ASyntax.Expression = f.id.name;
+function transformSpec(f: Syntax.FunctionDeclaration, fromHeap: number = 0, toHeap: number = 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+  const callee: A = f.id.name;
   
   // add arguments to scope 
-  const args: Array<ASyntax.Variable> = f.params.map(p => p.name);
+  const args: Array<string> = f.params.map(p => p.name);
 
   let req = tru;
   for (const r of f.requires) {
     req = and(req, truthy(transformExpression(0, 0, null, r)));
   }
   let ens = q;
+  if (fromHeap != 0) {
+    ens = and(heapEq(0, fromHeap), ens);
+  }
+  if (toHeap != 1) {
+    ens = and(heapEq(1, toHeap), ens);
+  }
   for (const s of f.ensures) {
     ens = and(ens, truthy(transformExpression(0, 1, f.id.name, s)));
   }
-  const preP: P = { type: "Precondition", callee, heap: 0, args };
-  const postP: P = { type: "Postcondition", callee, heap: 0, args };
-  let prop: P;
-  if (q.type == "True") {
-    prop = and(implies(req, preP), implies(and(req, postP), ens));
-  } else {
-    prop = and(iff(req, preP), iff(postP, implies(req, ens)));
-  }
-  if (fromHeap != 0) {
-    prop = and(heapPromote(0, fromHeap), prop);
-  }
-  if (toHeap != 1) {
-    prop = and(heapPromote(1, toHeap), prop);
-  }
   const existsHeaps: Set<Heap> = new Set([...Array(toHeap - fromHeap + 1).keys()].map(i => i + fromHeap));
   existsHeaps.delete(0); existsHeaps.delete(1);
-  const forAll: P = { type: "ForAll", callee, heap: 0, args,
-                      existsHeaps, existsLocs, existsVars,
-                      prop: prop, instantiations: [] };
+  const forAll: P = forAllCalls(callee, args, existsHeaps, existsLocs, existsVars, req, ens);
   const fnCheck: A = {
     type: "BinaryExpression",
     left: {
@@ -339,7 +333,7 @@ function transformSpec(f: JSyntax.FunctionDeclaration, fromHeap: number = 0, toH
   return and(truthy(fnCheck), forAll);
 }
 
-function verifyFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: JSyntax.FunctionDeclaration): VCState {
+function vcgenFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: Syntax.FunctionDeclaration): VCGenState {
 
   // assumes all let-bound free variables have been havoc'd
   const vars2 = new Set([...vars]);
@@ -352,50 +346,51 @@ function verifyFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: JSynta
   }
 
   // assume preconditions
-  let p: P = tru;
-  for (const req of f.requires) {
-    const tr = transformExpression(heap, heap, null, req);
-    p = and(p, truthy(tr));
+  let req: P = tru;
+  for (const r of f.requires) {
+    const tr = transformExpression(heap, heap, null, r);
+    req = and(req, truthy(tr));
   }
 
   // internal verification conditions
-  const res = verifyStatement(heap, heap, locs, vars2, f.body);
-  res.vcs.forEach(vc => vc.prop = and(p, vc.prop));
-  res.prop = and(p, res.prop);
+  const res = vcgenStatement(heap, heap, locs, vars2, f.body);
+  res.vcs.forEach(vc => vc.prop = and(req, vc.prop));
 
   // ensure post conditions
   res.vars.add("_res_");
   const callee: A = f.id.name;
-  res.prop = and(eq("_res_", { type: "CallExpression", callee, heap, args }),
-                 res.prop);
+  res.prop = and(eq("_res_", { type: "CallExpression", callee, heap, args }), res.prop);
 
-  const testBody: Array<JSyntax.Statement> = [{
+  const testBody: Array<Syntax.Statement> = [{
     type: "ExpressionStatement",
     expression: {
       type: "AssignmentExpression",
-      left: { type: "Identifier", name: "_res_", decl: { type: "Unresolved" }, refs: [], isWrittenTo: false},
-      right: { type: "CallExpression", callee: f.id, args: f.params }
-    }
+      left: { type: "Identifier", name: "_res_", decl: { type: "Unresolved" },
+              loc: f.loc, refs: [], isWrittenTo: false},
+      right: { type: "CallExpression", callee: f.id, args: f.params, loc: f.loc },
+      loc: f.loc
+    },
+    loc: f.loc
   }];
   res.vcs.forEach(vc => vc.body = testBody);
 
   for (const ens of f.ensures) {
     const ens2 = replaceFunctionResult(f, ens);
     const ti = transformExpression(heap, res.heap, f.id.name, ens);
-    res.vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(res.prop, not(truthy(ti))),
-                                           stringifyExpr(ens),
-                                           testBody.concat([{ type: "AssertStatement", expression: ens2 }])));
+    res.vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(req, res.prop, not(truthy(ti))),
+                                           ens.loc, stringifyExpr(ens),
+                                           testBody.concat([{type:"AssertStatement",loc:ens.loc,expression:ens2}])));
   }
   res.vcs.forEach(vc => {
-    vc.description = f.id.name + ":\n" + vc.description;
+    vc.description = f.id.name + ": " + vc.description;
   });
   return res;
 }
 
-export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, stmt: JSyntax.Statement): VCState {
+export function vcgenStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, stmt: Syntax.Statement): VCGenState {
   switch (stmt.type) {
     case "VariableDeclaration": {
-      const t = verifyExpression(oldHeap, heap, locs, vars, stmt.init);
+      const t = vcgenExpression(oldHeap, heap, locs, vars, stmt.init);
       if (stmt.kind == "const") {
         t.vars.add(stmt.id.name);
         t.prop = and(t.prop, eq(stmt.id.name, t.val));
@@ -407,40 +402,40 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
       return t;
     }
     case "BlockStatement": {
-      let res = VCState.pure(heap, locs, vars, und);
+      let res = VCGenState.pure(heap, locs, vars, und);
       for (const s of stmt.body) {
-        res = res.then(verifyStatement(oldHeap, res.heap, res.locs, res.vars, s));
+        res = res.then(vcgenStatement(oldHeap, res.heap, res.locs, res.vars, s));
       }
       return res;
     }
     case "ExpressionStatement": {
-      return verifyExpression(oldHeap, heap, locs, vars, stmt.expression);
+      return vcgenExpression(oldHeap, heap, locs, vars, stmt.expression);
     }
     case "AssertStatement": {
       const a = transformExpression(oldHeap, heap, null, stmt.expression);
-      const vc = new VerificationCondition(heap, locs, vars, not(truthy(a)),
-                                           "assert:\n" + stringifyExpr(stmt.expression));
-      return new VCState(heap, locs, vars, tru, und, not(truthy(a)), [vc]);
+      const vc = new VerificationCondition(heap, locs, vars, not(truthy(a)), stmt.loc,
+                                           "assert: " + stringifyExpr(stmt.expression));
+      return new VCGenState(heap, locs, vars, tru, und, not(truthy(a)), [vc]);
     }
     case "IfStatement": {
-      const t = verifyExpression(oldHeap, heap, locs, vars, stmt.test);
-      const l = verifyStatement(oldHeap, t.heap, t.locs, t.vars, stmt.consequent);
-      const r = verifyStatement(oldHeap, t.heap, l.locs, l.vars, stmt.alternate);
+      const t = vcgenExpression(oldHeap, heap, locs, vars, stmt.test);
+      const l = vcgenStatement(oldHeap, t.heap, t.locs, t.vars, stmt.consequent);
+      const r = vcgenStatement(oldHeap, t.heap, l.locs, l.vars, stmt.alternate);
       const newHeap = Math.max(l.heap, r.heap);
-      return new VCState(
+      return new VCGenState(
         newHeap,
         r.locs,
         r.vars,
         and(t.prop,
-            implies(truthy(t.val), and(l.prop, heapPromote(l.heap, newHeap))),
-            implies(falsy(t.val), and(r.prop, heapPromote(r.heap, newHeap)))),
+            implies(truthy(t.val), and(l.prop, heapEq(l.heap, newHeap))),
+            implies(falsy(t.val), and(r.prop, heapEq(r.heap, newHeap)))),
         { type: "ConditionalExpression", test: truthy(t.val), consequent: l.val, alternate: r.val },
         or(t.bc, and(truthy(t.val), l.bc), and(falsy(t.val), r.bc)),
         t.vcs.concat(l.vcs.map(vc => ((vc.prop = and(t.prop, not(t.bc), truthy(t.val), vc.prop)), vc)))
              .concat(r.vcs.map(vc => ((vc.prop = and(t.prop, not(t.bc), falsy(t.val), vc.prop)), vc))));
     }
     case "ReturnStatement": {
-      const t = verifyExpression(oldHeap, heap, locs, vars, stmt.argument);
+      const t = vcgenExpression(oldHeap, heap, locs, vars, stmt.argument);
       t.prop = and(t.prop, eq("_res_", t.val));
       t.bc = tru;
       return t;
@@ -450,15 +445,16 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
       let vcs: Array<VerificationCondition> = [];
       for (const inv of stmt.invariants) {
         const t = transformExpression(oldHeap, heap, null, inv);
-        vcs.push(new VerificationCondition(heap, locs, vars, not(truthy(t)), "invariant on entry:\n" + stringifyExpr(inv)));
+        vcs.push(new VerificationCondition(heap, locs, vars, not(truthy(t)),
+                                           inv.loc, "invariant on entry: " + stringifyExpr(inv)));
       }
 
       // havoc heap and verify loop itself
-      const twhile = verifyWhileLoop(heap + 1, locs, vars, stmt);
+      const twhile = vcgenWhileLoop(heap + 1, locs, vars, stmt);
 
       // we are going to use the returned verification conditions and break condition
       // but we will ignore its effects
-      const res = verifyExpression(oldHeap, twhile.heap + 1, twhile.locs, twhile.vars, stmt.test);
+      const res = vcgenExpression(oldHeap, twhile.heap + 1, twhile.locs, twhile.vars, stmt.test);
 
       // assume loop conditions false and invariants true
       res.prop = and(res.prop, not(truthy(res.val)));
@@ -471,13 +467,13 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
       return res;
     }
     case "DebuggerStatement": {
-      return VCState.pure(heap, locs, vars, und);
+      return VCGenState.pure(heap, locs, vars, und);
     }
     case "FunctionDeclaration": {
       const vars2 = new Set([...vars, stmt.id.name]);
       const non_rec_spec: P = transformSpec(stmt),
             fromHeap = Math.max(2, heap + 1); // H0 and H1 are reserved
-      const res = verifyFunctionDeclaration(fromHeap, locs, vars2, stmt);
+      const res = vcgenFunctionDeclaration(fromHeap, locs, vars2, stmt);
       res.vcs.forEach(vc => vc.prop = and(non_rec_spec, vc.prop));
       const existsLocs = new Set([...res.locs].filter(l => !locs.has(l))),
             existsVars = new Set([...res.vars].filter(v => {
@@ -485,44 +481,40 @@ export function verifyStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Var
             })),
             inlined_spec: P = transformSpec(stmt, fromHeap, res.heap, existsLocs, existsVars,
                                             eraseTriggersProp(res.prop));
-      return new VCState(heap, locs, vars2, and(inlined_spec), und, fls, res.vcs);
+      return new VCGenState(heap, locs, vars2, and(inlined_spec), und, fls, res.vcs);
     }
   }
 }
 
-function convertToAssignment(decl: JSyntax.VariableDeclaration): JSyntax.ExpressionStatement {
+function convertToAssignment(decl: Syntax.VariableDeclaration): Syntax.ExpressionStatement {
   return {
     type: "ExpressionStatement",
     expression: {
       type: "AssignmentExpression",
       left: decl.id,
-      right: decl.init
-    }
+      right: decl.init,
+      loc: decl.loc
+    },
+    loc: decl.loc
   }
 }
 
-export function transformProgram(prog: JSyntax.Program): Array<VerificationCondition> {
-
-  // function should maintain invariants
-  for (const inv of prog.invariants) {
-    for (const f of prog.functions) {
-      f.requires.push(inv);
-      f.ensures.push(inv);
-    }
-  }
+export function vcgenProgram(prog: Syntax.Program): Array<VerificationCondition> {
 
   // go through all statements
-  let res = new VCState();
-  let testBody: Array<JSyntax.Statement> = [];
+  let res = new VCGenState();
+  let testBody: Array<Syntax.Statement> = [];
   for (const stmt of prog.body) {
     if (stmt.type == "FunctionDeclaration") {
+      // function should maintain invariants
+      prog.invariants.forEach(inv => { stmt.requires.push(inv); stmt.ensures.push(inv); });
       testBody = testBody.concat([checkPreconditions(stmt)]);
     } else if (stmt.type == "VariableDeclaration" && stmt.kind == "const") {
       testBody = testBody.concat([convertToAssignment(stmt)]);
     } else {
       testBody = testBody.concat([stmt]);
     }
-    const t = verifyStatement(res.heap, res.heap, res.locs, res.vars, stmt);
+    const t = vcgenStatement(res.heap, res.heap, res.locs, res.vars, stmt);
     t.vcs.forEach(vc => vc.body = testBody.concat(vc.body));
     res = res.then(t);
   }
@@ -534,8 +526,8 @@ export function transformProgram(prog: JSyntax.Program): Array<VerificationCondi
   for (const inv of prog.invariants) {
     const ti = transformExpression(res.heap, res.heap, null, inv);
     vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(res.prop, not(truthy(ti))),
-      "initially:\n" + stringifyExpr(inv),
-      prog.body.concat([{ type: "AssertStatement", expression: inv }])));
+      inv.loc, "initially: " + stringifyExpr(inv),
+      prog.body.concat([{ type: "AssertStatement", loc: inv.loc, expression: inv }])));
   }
   return vcs;
 }
