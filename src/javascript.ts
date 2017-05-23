@@ -560,7 +560,7 @@ export function programAsJavaScript(program: JSyntax.Program): Syntax.Program {
   return prog;
 }
 
-abstract class Visitor<E,S> {
+export abstract class Visitor<E,S> {
 
   abstract visitIdentifier(expr: Syntax.Identifier): E;
   abstract visitOldIdentifier(expr: Syntax.OldIdentifier): E;

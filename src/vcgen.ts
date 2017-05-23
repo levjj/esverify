@@ -1,5 +1,5 @@
 import VerificationCondition from "./verification";
-import { Syntax, stringifyExpr, checkInvariants, checkPreconditions, replaceFunctionResult, isMutable } from "./javascript";
+import { Syntax, stringifyExpr, checkInvariants, checkPreconditions, replaceFunctionResult, isMutable, Visitor } from "./javascript";
 import { A, P, Vars, Locs, Heap, und, tru, fls, truthy, falsy, implies, and, or, eq, not, heapEq, heapStore, forAllCalls } from "./logic";
 import { eraseTriggersProp } from "./qi";
 
@@ -7,88 +7,131 @@ class PureContextError extends Error {
   constructor() { super("not supported in pure functional context"); }
 }
 
-function transformExpression(oldHeap: Heap, heap: Heap, inPost: string | null, expr: Syntax.Expression): A {
-  switch (expr.type) {
-    case "Identifier":
-      if (isMutable(expr)) {
-        return { type: "HeapReference", heap, loc: expr.name };
-      } else {
-        return expr.name;
-      }
-    case "OldIdentifier":
-      if (!isMutable(expr.id)) { throw new Error("not mutable"); }
-      return { type: "HeapReference", heap: oldHeap, loc: expr.id.name };
-    case "Literal":
-      return expr;
-    case "ArrayExpression":
-      return {
-        type: "ArrayExpression",
-        elements: expr.elements.map(e => transformExpression(oldHeap, heap, inPost, e))
-      };
-    case "UnaryExpression":
-      const argument = transformExpression(oldHeap, heap, inPost, expr.argument);
-      return { type: "UnaryExpression", operator: expr.operator, argument };
-    case "BinaryExpression": {
-      const left = transformExpression(oldHeap, heap, inPost, expr.left);
-      const right = transformExpression(oldHeap, heap, inPost, expr.right);
-      return { type: "BinaryExpression", operator: expr.operator, left, right };
-    }
-    case "LogicalExpression": {
-      const left = transformExpression(oldHeap, heap, inPost, expr.left);
-      const right = transformExpression(oldHeap, heap, inPost, expr.right);
-      if (expr.operator == "&&") {
-        return { type: "ConditionalExpression", test: truthy(left), consequent: right, alternate: left };
-      } else {
-        return { type: "ConditionalExpression", test: truthy(left), consequent: left, alternate: right };
-      }
-    }
-    case "ConditionalExpression": {
-      const test = truthy(transformExpression(oldHeap, heap, inPost, expr.test));
-      const consequent = transformExpression(oldHeap, heap, inPost, expr.consequent);
-      const alternate = transformExpression(oldHeap, heap, inPost, expr.alternate);
-      return { type: "ConditionalExpression", test, consequent, alternate };
-    }
-    case "AssignmentExpression": {
-      throw new PureContextError();
-    }
-    case "SequenceExpression": {
-      // ignore all expressions but the last
-      return transformExpression(oldHeap, heap, inPost, expr.expressions[expr.expressions.length - 1]);
-    }
-    case "CallExpression":
-      return {
-        type: "CallExpression",
-        callee: transformExpression(oldHeap, heap, inPost, expr.callee),
-        heap: inPost && expr.callee.type == "Identifier" && inPost == expr.callee.name ? oldHeap : heap,
-        args: expr.args.map(a => transformExpression(oldHeap, heap, inPost, a))
-      };
-    case "SpecExpression": {
-      const callee: string = expr.callee.name;
-      const r = truthy(transformExpression(0, 0, inPost, expr.pre));
-      const sPost = expr.callee.type == "Identifier" ? expr.callee.name : inPost;
-      const s = truthy(transformExpression(0, 1, sPost, expr.post));
-      const forAll: P = forAllCalls(callee, expr.args, new Set(), new Set(), new Set(), r, s);
-      const fnCheck: A = {
-        type: "BinaryExpression",
-        left: {
-          type: "UnaryExpression",
-          operator: "typeof",
-          argument: callee
-        },
-        operator: "==",
-        right: { type: "Literal", value: "function" }
-      };
-      const test = and(truthy(fnCheck), forAll);
-      const consequent: A = { type: "Literal", value: true };
-      const alternate: A = { type: "Literal", value: false };
-      return { type: "ConditionalExpression", test, consequent, alternate };
-    }
-    case "PureExpression":
-      const test: P = heapEq(oldHeap, heap);
-      const consequent: A = { type: "Literal", value: true };
-      const alternate: A = { type: "Literal", value: false };
-      return { type: "ConditionalExpression", test, consequent, alternate };
+class AssertionTranslator extends Visitor<A, void> {
+  oldHeap: Heap;
+  heap: Heap;
+  inPost: string | null;
+
+  constructor(oldHeap: Heap, heap: Heap, inPost: string | null) {
+    super();
+    this.oldHeap = oldHeap;
+    this.heap = heap;
+    this.inPost = inPost;
   }
+
+  visitIdentifier(expr: Syntax.Identifier): A {
+    if (isMutable(expr)) {
+      return { type: "HeapReference", heap: this.heap, loc: expr.name };
+    } else {
+      return expr.name;
+    }
+  }
+
+  visitOldIdentifier(expr: Syntax.OldIdentifier): A {
+    if (!isMutable(expr.id)) { throw new Error("not mutable"); }
+    return { type: "HeapReference", heap: this.oldHeap, loc: expr.id.name };
+  }
+
+  visitLiteral(expr: Syntax.Literal): A {
+    return expr;
+  }
+
+  visitArrayExpression(expr: Syntax.ArrayExpression): A {
+    return {
+      type: "ArrayExpression",
+      elements: expr.elements.map(e => this.visitExpression(e))
+    };
+  }
+
+  visitUnaryExpression(expr: Syntax.UnaryExpression): A {
+    const argument = this.visitExpression(expr.argument);
+    return { type: "UnaryExpression", operator: expr.operator, argument };
+  }
+
+  visitBinaryExpression(expr: Syntax.BinaryExpression): A {
+    const left = this.visitExpression(expr.left);
+    const right = this.visitExpression(expr.right);
+    return { type: "BinaryExpression", operator: expr.operator, left, right };
+  }
+
+  visitLogicalExpression(expr: Syntax.LogicalExpression): A {
+    const left = this.visitExpression(expr.left);
+    const right = this.visitExpression(expr.right);
+    if (expr.operator == "&&") {
+      return { type: "ConditionalExpression", test: truthy(left), consequent: right, alternate: left };
+    } else {
+      return { type: "ConditionalExpression", test: truthy(left), consequent: left, alternate: right };
+    }
+  }
+
+  visitConditionalExpression(expr: Syntax.ConditionalExpression): A {
+    const test = truthy(this.visitExpression(expr.test));
+    const consequent = this.visitExpression(expr.consequent);
+    const alternate = this.visitExpression(expr.alternate);
+    return { type: "ConditionalExpression", test, consequent, alternate };
+  }
+
+  visitAssignmentExpression(expr: Syntax.AssignmentExpression): A {
+    throw new PureContextError();
+  }
+
+  visitSequenceExpression(expr: Syntax.SequenceExpression): A {
+    // ignore all expressions but the last
+    return this.visitExpression(expr.expressions[expr.expressions.length - 1]);
+  }
+
+  visitCallExpression(expr: Syntax.CallExpression): A {
+    return {
+      type: "CallExpression",
+      callee: this.visitExpression(expr.callee),
+      heap: this.inPost && expr.callee.type == "Identifier" && this.inPost == expr.callee.name ? this.oldHeap : this.heap,
+      args: expr.args.map(a => this.visitExpression(a))
+    };
+  }
+
+  visitSpecExpression(expr: Syntax.SpecExpression): A {
+    const callee: string = expr.callee.name;
+    const r = truthy(translateExpression(0, 0, this.inPost, expr.pre));
+    const sPost = expr.callee.type == "Identifier" ? expr.callee.name : this.inPost;
+    const s = truthy(translateExpression(0, 1, sPost, expr.post));
+    const forAll: P = forAllCalls(callee, expr.args, new Set(), new Set(), new Set(), r, s);
+    const fnCheck: A = {
+      type: "BinaryExpression",
+      left: {
+        type: "UnaryExpression",
+        operator: "typeof",
+        argument: callee
+      },
+      operator: "==",
+      right: { type: "Literal", value: "function" }
+    };
+    const test = and(truthy(fnCheck), forAll);
+    const consequent: A = { type: "Literal", value: true };
+    const alternate: A = { type: "Literal", value: false };
+    return { type: "ConditionalExpression", test, consequent, alternate };
+  }
+  visitPureExpression(expr: Syntax.PureExpression): A {
+    const test: P = heapEq(this.oldHeap, this.heap);
+    const consequent: A = { type: "Literal", value: true };
+    const alternate: A = { type: "Literal", value: false };
+    return { type: "ConditionalExpression", test, consequent, alternate };
+  }
+
+  visitVariableDeclaration(stmt: Syntax.VariableDeclaration) {}
+  visitBlockStatement(stmt: Syntax.BlockStatement) {}
+  visitExpressionStatement(stmt: Syntax.ExpressionStatement) {}
+  visitAssertStatement(stmt: Syntax.AssertStatement) {}
+  visitIfStatement(stmt: Syntax.IfStatement) {}
+  visitReturnStatement(stmt: Syntax.ReturnStatement) {}
+  visitWhileStatement(stmt: Syntax.WhileStatement) {}
+  visitDebuggerStatement(stmt: Syntax.DebuggerStatement) {}
+  visitFunctionDeclaration(stmt: Syntax.FunctionDeclaration) {}
+  visitProgram(prog: Syntax.Program) {}
+}
+
+function translateExpression(oldHeap: Heap, heap: Heap, inPost: string | null, expr: Syntax.Expression): A {
+  const translator = new AssertionTranslator(oldHeap, heap, inPost);
+  return translator.visitExpression(expr);
 }
 
 class VCGenState {
@@ -131,6 +174,22 @@ class VCGenState {
     return new VCGenState(heap, locs, vars, tru, expr);
   }
 }
+
+// class VCGenerator extends Visitor<VCGenState, VCGenState> {
+//   oldHeap: Heap;
+//   heap: Heap;
+//   locs: Locs;
+//   vars: Vars;
+
+//   constructor(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars) {
+//     super();
+//     this.oldHeap = oldHeap;
+//     this.heap = heap;
+//     this.locs = locs;
+//     this.vars = vars;
+//   }
+
+// }
 
 export function vcgenExpression(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, expr: Syntax.Expression): VCGenState {
   switch (expr.type) {
@@ -264,7 +323,7 @@ function vcgenWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: Syntax.WhileSta
   const enter = truthy(res.val);
   res.prop = and(res.prop, enter);
   for (const inv of whl.invariants) {
-    const ti = transformExpression(heap, res.heap, null, inv); // TODO old() for previous iteration
+    const ti = translateExpression(heap, res.heap, null, inv); // TODO old() for previous iteration
     res.prop = and(res.prop, truthy(ti));
   }
   res = res.then(vcgenStatement(heap, res.heap, res.locs, res.vars, whl.body));
@@ -289,7 +348,7 @@ function vcgenWhileLoop(heap: Heap, locs: Locs, vars: Vars, whl: Syntax.WhileSta
 
   // ensure invariants maintained
   for (const inv of whl.invariants) {
-    const ti = transformExpression(heap, res.heap, null, inv);
+    const ti = translateExpression(heap, res.heap, null, inv);
     res.vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(res.prop, not(truthy(ti))),
                  inv.loc, "invariant maintained: " + stringifyExpr(inv),
                  testBody.concat([{ type: "AssertStatement", loc: inv.loc, expression: inv }])));
@@ -305,7 +364,7 @@ function transformSpec(f: Syntax.FunctionDeclaration, fromHeap: number = 0, toHe
 
   let req = tru;
   for (const r of f.requires) {
-    req = and(req, truthy(transformExpression(0, 0, null, r)));
+    req = and(req, truthy(translateExpression(0, 0, null, r)));
   }
   let ens = q;
   if (fromHeap != 0) {
@@ -315,7 +374,7 @@ function transformSpec(f: Syntax.FunctionDeclaration, fromHeap: number = 0, toHe
     ens = and(heapEq(1, toHeap), ens);
   }
   for (const s of f.ensures) {
-    ens = and(ens, truthy(transformExpression(0, 1, f.id.name, s)));
+    ens = and(ens, truthy(translateExpression(0, 1, f.id.name, s)));
   }
   const existsHeaps: Set<Heap> = new Set([...Array(toHeap - fromHeap + 1).keys()].map(i => i + fromHeap));
   existsHeaps.delete(0); existsHeaps.delete(1);
@@ -348,7 +407,7 @@ function vcgenFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: Syntax.
   // assume preconditions
   let req: P = tru;
   for (const r of f.requires) {
-    const tr = transformExpression(heap, heap, null, r);
+    const tr = translateExpression(heap, heap, null, r);
     req = and(req, truthy(tr));
   }
 
@@ -376,7 +435,7 @@ function vcgenFunctionDeclaration(heap: Heap, locs: Locs, vars: Vars, f: Syntax.
 
   for (const ens of f.ensures) {
     const ens2 = replaceFunctionResult(f, ens);
-    const ti = transformExpression(heap, res.heap, f.id.name, ens);
+    const ti = translateExpression(heap, res.heap, f.id.name, ens);
     res.vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(req, res.prop, not(truthy(ti))),
                                            ens.loc, stringifyExpr(ens),
                                            testBody.concat([{type:"AssertStatement",loc:ens.loc,expression:ens2}])));
@@ -412,7 +471,7 @@ export function vcgenStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars
       return vcgenExpression(oldHeap, heap, locs, vars, stmt.expression);
     }
     case "AssertStatement": {
-      const a = transformExpression(oldHeap, heap, null, stmt.expression);
+      const a = translateExpression(oldHeap, heap, null, stmt.expression);
       const vc = new VerificationCondition(heap, locs, vars, not(truthy(a)), stmt.loc,
                                            "assert: " + stringifyExpr(stmt.expression));
       return new VCGenState(heap, locs, vars, tru, und, not(truthy(a)), [vc]);
@@ -444,7 +503,7 @@ export function vcgenStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars
       // invariants on entry
       let vcs: Array<VerificationCondition> = [];
       for (const inv of stmt.invariants) {
-        const t = transformExpression(oldHeap, heap, null, inv);
+        const t = translateExpression(oldHeap, heap, null, inv);
         vcs.push(new VerificationCondition(heap, locs, vars, not(truthy(t)),
                                            inv.loc, "invariant on entry: " + stringifyExpr(inv)));
       }
@@ -461,7 +520,7 @@ export function vcgenStatement(oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars
       res.vcs = vcs.concat(twhile.vcs).concat(res.vcs);
       res.bc = or(twhile.bc, res.bc);
       for (const inv of stmt.invariants) {
-        const ti = transformExpression(oldHeap, res.heap, null, inv);
+        const ti = translateExpression(oldHeap, res.heap, null, inv);
         res.prop = and(res.prop, truthy(ti));
       }
       return res;
@@ -524,7 +583,7 @@ export function vcgenProgram(prog: Syntax.Program): Array<VerificationCondition>
 
   // main program body needs to establish invariants
   for (const inv of prog.invariants) {
-    const ti = transformExpression(res.heap, res.heap, null, inv);
+    const ti = translateExpression(res.heap, res.heap, null, inv);
     vcs.push(new VerificationCondition(res.heap, res.locs, res.vars, and(res.prop, not(truthy(ti))),
       inv.loc, "initially: " + stringifyExpr(inv),
       prog.body.concat([{ type: "AssertStatement", loc: inv.loc, expression: inv }])));
