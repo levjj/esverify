@@ -31,12 +31,12 @@ var opts = minimist(process.argv.slice(2), {
   alias: {q: "quiet", v: "version", h: "help", r: "remote", f: "logformat"},
   unknown: function(opt) { if (opt[0] == '-' && opt != '-') usage(true); }
 });
-if (opts.version) { console.log("0.1.2"); process.exit(0); }
+if (opts.version) { console.log("0.1.3"); process.exit(0); }
 if (opts._.length != 1 || opts.help) usage(!opts.help);
 opts.filename = opts._[0];
 
 function run(err, js) {
-  if (err) error('Error: ' + e.message);
+  if (err) error('Error: ' + err.message);
   esverify.verify(js.toString(), opts)
     .then(msgs => msgs.forEach(msg => msg.status != "verified" && error("failed")));
 }

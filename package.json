@@ -1,6 +1,6 @@
 {
   "name": "esverify",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "ECMAScript verification with SMT solvers",
   "author": "Christopher Schuster <cs@livoris.net>",
   "license": "MIT",
