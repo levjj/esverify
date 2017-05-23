@@ -95,17 +95,17 @@ msgs.forEach(msg => console.log(msg.status));
 
 The options and returned messages have the following structure:
 
-```ts
-opts: {
+```TypeScript
+type opts = {
   filename: string,
-  remote: boolean,
-  z3path: string,
+  logformat: "simple" | "colored" = "colored",
+  quiet: boolean = true,
+  z3path: string = "z3",
   z3url: string,
-  quiet: boolean,
-  logformat: "simple" | "colored"
+  remote: boolean = false
 }
 
-msg: {
+type msg = {
   status: "verified" | "unverified" | "error",
   loc: { file: string, start: { line: number, column: number },
                        end:   { line: number, column: number }},
