@@ -1,19 +1,19 @@
 export interface Options {
   filename: string,
-  local: boolean,
+  remote: boolean,
   z3path: string,
-  remoteURL: string,
-  logMessages: boolean,
-  colorLog: boolean
+  z3url: string,
+  quiet: boolean,
+  logformat: "simple" | "colored"
 };
 
 const defaultOptions: Readonly<Options> = {
   filename: "",
-  local: true,
+  remote: false,
   z3path: "z3",
-  remoteURL: "/z3",
-  logMessages: false,
-  colorLog: true
+  z3url: "/z3",
+  quiet: true,
+  logformat: "colored"
 };
 
 export function setOptions(opts: Partial<Options>) {
