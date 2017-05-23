@@ -282,7 +282,7 @@ export function eqProp(propA: P, propB: P): boolean {
   }
 }
 
-export abstract class PropVisitor<L,H,R,S> {
+export abstract class Visitor<L,H,R,S> {
 
   abstract visitLocation(loc: Syntax.Location): L;
 
@@ -351,7 +351,7 @@ export abstract class PropVisitor<L,H,R,S> {
   }
 }
 
-export abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
+export abstract class Reducer<R> extends Visitor<R,R,R,R> {
 
   abstract empty(): R;
 
@@ -460,7 +460,7 @@ export abstract class PropReducer<R> extends PropVisitor<R,R,R,R> {
   }
 }
 
-export class PropTransformer extends PropVisitor<Syntax.Location, Syntax.HeapExpression, A, P> {
+export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression, A, P> {
 
   visitLocation(loc: Syntax.Location): Syntax.Location {
     return loc;
@@ -617,10 +617,10 @@ export class PropTransformer extends PropVisitor<Syntax.Location, Syntax.HeapExp
 }
 
 export function copy(prop: P): P {
-  return (new PropTransformer()).visitProp(prop);
+  return (new Transformer()).visitProp(prop);
 }
 
-export class Substituter extends PropTransformer {
+export class Substituter extends Transformer {
   thetaHeap: { [heap: number]: Syntax.HeapExpression } = {};
   thetaLoc: { [lname: string]: Syntax.Location } = {};
   thetaVar: { [vname: string]: Syntax.Expression } = {};

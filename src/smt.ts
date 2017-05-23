@@ -1,5 +1,5 @@
 import { flatMap } from "./util";
-import { Syntax, A, P, Vars, Locs, Heap, Heaps, PropVisitor, implies } from "./logic";
+import { Syntax, A, P, Vars, Locs, Heap, Heaps, Visitor, implies } from "./logic";
 import { instantiateQuantifiers } from "./qi";
 import { MessageException } from "./message";
 import { options } from "./options";
@@ -40,7 +40,7 @@ const binOpToSMT: {[binop: string]: SMTInput} = {
   "instanceof": "_js-instanceof" // unsupported
 };
 
-class SMTGenerator extends PropVisitor<SMTInput, SMTInput, SMTInput, SMTInput> {
+class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
 
   visitLocation(loc: Syntax.Location): SMTInput {
     return "l_" + loc;

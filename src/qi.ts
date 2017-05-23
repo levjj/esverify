@@ -1,6 +1,6 @@
-import { Syntax, P, Heap, Heaps, Locs, Vars, PropTransformer, Substituter, PropReducer, tru, and, eq, implies, eqProp, copy } from "./logic";
+import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Reducer, tru, and, eq, implies, eqProp, copy } from "./logic";
 
-class TriggerEraser extends PropTransformer {
+class TriggerEraser extends Transformer {
   visitCallTrigger(prop: Syntax.CallTrigger): P {
     return tru;
   }
@@ -16,7 +16,7 @@ export function eraseTriggersProp(prop: P): P {
   return v.visitProp(prop);
 }
 
-class QuantifierTransformer extends PropTransformer {
+class QuantifierTransformer extends Transformer {
   readonly heaps: Heaps;
   readonly locs: Locs;
   readonly vars: Vars;
@@ -84,7 +84,7 @@ class QuantifierLifter extends QuantifierTransformer {
   }
 }
 
-class TriggerCollector extends PropReducer<Array<Syntax.CallTrigger>> {
+class TriggerCollector extends Reducer<Array<Syntax.CallTrigger>> {
   position: boolean;
 
   constructor(position: boolean) {
@@ -158,7 +158,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
   }
 }
 
-class QuantifierEraser extends PropTransformer {
+class QuantifierEraser extends Transformer {
   visitCallTrigger(prop: Syntax.CallTrigger): P {
     return tru;
   }
