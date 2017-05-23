@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { verificationConditions } from '../index';
-import { consoleLog } from "../src/message";
+import { log } from "../src/message";
 import VerificationCondition from '../src/verification';
 
 declare const requires: (x: boolean) => void;
@@ -18,8 +18,8 @@ function code(fn: () => any) {
     const code = fn.toString();
     const t = verificationConditions(code.substring(14, code.length - 2));
     if (!(t instanceof Array)) {
-      consoleLog(t);
-      if (t.status == "error") console.log(t.error);
+      log(t);
+      if (t.status == "error" && t.type == "unexpected") console.log(t.error);
       throw new Error('failed to find verification conditions');
     }
     vcs = t;
@@ -32,8 +32,12 @@ function helper(expected: "verified" | "unverified" | "incorrect", description: 
     expect(vc).to.be.ok;
     if (debug) vc.enableDebugging();
     const res = await vc.verify();
-    if (res.status == "error") console.log(res.error);
-    expect(res.status).to.be.eql(expected);
+    if (res.status == "error" && res.type == "unexpected") console.log(res.error);
+    if (expected == "verified" || expected == "unverified") {
+      expect(res.status).to.be.eql(expected);
+    } else {
+      expect(res.status == "error" && res.type == expected).to.be.true;
+    }
   };
   if (debug) {
     it.only(description + ' ' + expected, body);
@@ -349,7 +353,7 @@ describe('buggy fibonacci', () => {
   incorrect('fib: (fib(n) >= n)');
   it('returns counter-example', async () => {
     const m = await vcs[2].verify();
-    if (m.status != "incorrect") throw new Error();
+    if (m.status != "error" || m.type != "incorrect") throw new Error();
     expect(m.model).to.have.property("n");
     expect(m.model.n).to.eql(2);
   });

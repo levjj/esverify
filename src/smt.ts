@@ -423,9 +423,9 @@ ${propositionToAssert(prop)}
 (get-value (${[...vars].map(v => `v_${v}`).join(' ')}))`;
 }
 
-function modelError(smt: string): MessageException {
+function modelError(smt: SMTOutput): MessageException {
   const loc = { file: options.filename, start: { line: 0, column: 0}, end: { line: 0, column: 0} };
-  return new MessageException({ status: "unrecognized-model", loc, smt });
+  return new MessageException({ status: "error", type: "unrecognized-model", loc, description: `cannot parse ${smt}` });
 }
 
 function smtToArray(smt: SMTOutput): Array<any> {

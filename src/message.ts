@@ -4,74 +4,66 @@ import { Model } from "./smt";
 import { Syntax } from "./javascript";
 import { options } from "./options";
 
-interface ParseError { status: "parse-error", loc: Syntax.SourceLocation, msg: string }
-interface Unsupported { status: "unsupported", loc: Syntax.SourceLocation }
-interface UndefinedIdentifier { status: "undefined-identifier", loc: Syntax.SourceLocation }
-interface AlreadyDefinedIdentifier { status: "already-defined", loc: Syntax.SourceLocation }
-interface AssignmentToConst { status: "assignment-to-const", loc: Syntax.SourceLocation }
-interface Verified { status: "verified", loc: Syntax.SourceLocation, description: string }
-interface Incorrect { status: "incorrect", loc: Syntax.SourceLocation, description: string, model: Model, error: Error }
-interface Unverified { status: "unverified", loc: Syntax.SourceLocation, description: string, model: Model }
-interface ModelError { status: "unrecognized-model", loc: Syntax.SourceLocation, smt: string }
-interface UnknownError { status: "error", loc: Syntax.SourceLocation, error: Error }
-export type Message = ParseError | Unsupported | UndefinedIdentifier | Verified | Incorrect | Unverified | UnknownError
-                    | AlreadyDefinedIdentifier | AssignmentToConst | ModelError;
+interface BaseMessage { status: string, loc: Syntax.SourceLocation, description: string }
 
-function shortDescription(msg: Message): string {
-  let m = msg.status;
-  if (msg.status == "verified" || msg.status == "unverified" || msg.status == "incorrect") m += " " + msg.description;
-  return `[${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}] ${m}`;
-}
+interface Verified extends BaseMessage { status: "verified" }
+interface Unverified  extends BaseMessage { status: "unverified", model: Model }
 
-type Level = "bad" | "unknown" | "good";
+interface BaseError extends BaseMessage { status: "error", type: string }
 
-function messageLevel(msg: Message): Level {
-  switch (msg.status) {
-    case "parse-error": return "bad";
-    case "unsupported": return "bad";
-    case "undefined-identifier": return "bad";
-    case "already-defined": return "bad";
-    case "assignment-to-const": return "bad";
-    case "verified": return "good";
-    case "incorrect": return "bad";
-    case "unverified": return "unknown";
-    case "unrecognized-model": return "bad";
-    case "error": return "bad";
+interface Incorrect extends BaseError { type: "incorrect", model: Model, error: Error }
+interface ParseError extends BaseError { type: "parse-error" }
+interface Unsupported extends BaseError { type: "unsupported", loc: Syntax.SourceLocation }
+interface UndefinedIdentifier extends BaseError { type: "undefined-identifier" }
+interface AlreadyDefinedIdentifier extends BaseError { type: "already-defined" }
+interface AssignmentToConst extends BaseError { type: "assignment-to-const" }
+interface ModelError extends BaseError { type: "unrecognized-model" }
+interface UnexpectedError extends BaseError { type: "unexpected", error: Error }
+export type Message = Verified | Unverified | Incorrect | ParseError | Unsupported | UndefinedIdentifier
+                    | AlreadyDefinedIdentifier | AssignmentToConst | ModelError | UnexpectedError;
+
+function formatSimple(msg: Message): string {
+  const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;
+  if (msg.status == "verified") {
+    return `${loc}: info: verified ${msg.description}`;
+  } else if (msg.status == "unverified") {
+    return `${loc}: warning: unverified ${msg.description}`;
+  } else {
+    return `${loc}: error: ${msg.type} ${msg.description}`;
   }
 }
 
-export function consoleLog(msg: Message): void {
+function formatColored(msg: Message): string {
   const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;
-  let m = '';
-  if (msg.status == "verified" || msg.status == "unverified" || msg.status == "incorrect") m = msg.description;
-  const lvl = messageLevel(msg);
-  if (lvl == "bad") {
-    if (options.colorLog) {
-      console.error(`[${loc}] \x1b[91m${msg.status}\x1b[0m ${m}`);
-    } else {
-      console.log(`${loc}: error: ${msg.status} ${m}`);
-    }
-  } else if (lvl == "unknown") {
-    if (options.colorLog) {
-      console.warn(`[${loc}] \x1b[94m${msg.status}\x1b[0m ${m}`);
-    } else {
-      console.log(`${loc}: warning: ${msg.status} ${m}`);
-    }
+  if (msg.status == "verified") {
+    return `[${loc}] \x1b[92mverified\x1b[0m ${msg.description}`;
+  } else if (msg.status == "unverified") {
+    return `[${loc}] \x1b[94munverified\x1b[0m ${msg.description}`;
   } else {
-    if (options.colorLog) {
-      console.log(`[${loc}] \x1b[92m${msg.status}\x1b[0m ${m}`);
-    } else {
-      console.log(`${loc}: info: ${msg.status} ${m}`);
-    }
+    return `[${loc}] \x1b[91m${msg.type}\x1b[0m ${msg.description}`;
+  }
+}
+
+function format(msg: Message): string {
+  return options.logformat ==  "colored" ? formatColored(msg) : formatSimple(msg);
+}
+
+export function log(msg: Message): void {
+  if (msg.status == "verified") {
+    console.log(format(msg));
+  } else if (msg.status == "unverified") {
+    console.warn(format(msg));
+  } else {
+    console.error(format(msg));
   }
 }
 
 export class MessageException extends Error {
   readonly msg: Message;
-  constructor(msg: Message) { super(shortDescription(msg)); this.msg = msg; }
+  constructor(msg: Message) { super(formatSimple(msg)); this.msg = msg; }
 }
 
-export function err(e: Error): Message {
-  const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 }};
-  return { status: "error", loc, error: e };
+export function unexpected(error: Error,
+                           loc: Syntax.SourceLocation = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 }}): Message {
+  return { status: "error", type: "unexpected", loc, error, description: error.message };
 }

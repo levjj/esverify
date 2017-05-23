@@ -5,7 +5,7 @@ declare const fetch: (s: string, opts: any) => Promise<any>;
 import { P, Vars, Locs, Heap, Heaps } from "./logic";
 import { Model, SMTInput, SMTOutput, vcToSMT, smtToModel } from "./smt";
 import { Syntax, stringifyStmt } from "./javascript";
-import { Message, MessageException } from "./message";
+import { Message, MessageException, unexpected } from "./message";
 import { options } from "./options";
 
 export type SMTOutput = string;
@@ -74,15 +74,15 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
         return { status: "unverified", description: this.description, loc: this.loc, model: m };
       } catch (e) {
         if (e instanceof Error && e.message == "assertion failed") {
-          return { status: "incorrect", description: this.description, loc: this.loc, model: m, error: e };
+          return { status: "error", type: "incorrect", description: this.description, loc: this.loc, model: m, error: e };
         } else {
-          return { status: "error", loc: this.loc, error: e };
+          return unexpected(e, this.loc);
         }
       }
     } else if (out && out.startsWith("unsat")) {
       return { status: "verified", description: this.description, loc: this.loc };
     } else {
-      return { status: "error", loc: this.loc, error: new Error("unexpected: " + out) };
+      return unexpected(new Error("unexpected: " + out), this.loc);
     }
   }
 
@@ -101,28 +101,28 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   }
 
   private solveRemote(smt: SMTInput): Promise<SMTOutput> {
-    if (this.debug) console.log(`${this.description}: sending request to ${options.remoteURL}`);
-    return fetch(options.remoteURL, { method: "POST", body: smt }).then(req => req.text());
+    if (this.debug) console.log(`${this.description}: sending request to ${options.z3url}`);
+    return fetch(options.z3url, { method: "POST", body: smt }).then(req => req.text());
   }
 
   async verify(): Promise<Message> {
     this.inprocess = true;
     try {
       const smtin = this.prepareSMT();
-      const smtout = await (options.local ? this.solveLocal(smtin) : this.solveRemote(smtin));
+      const smtout = await (options.remote ? this.solveRemote(smtin) : this.solveLocal(smtin));
       return this.result = this.process(smtout);
     } catch (error) {
       if (error instanceof MessageException) return this.result = error.msg;
-      return this.result = { status: "error", loc: this.loc, error };
+      return this.result = unexpected(error, this.loc);
     } finally {
       this.inprocess = false;
     }
   }
 
   runTest() {
-    if (!this.result || (this.result.status != "incorrect" && this.result.status != "unverified")) {
-      throw new Error("no model available");
-    }
+    if (!this.result) throw new Error("no model available");
+    if (this.result.status == "verified") throw new Error("no model available");
+    if (this.result.status == "error" && this.result.type != "incorrect") throw new Error("no model available");
     eval(this.testCode(this.result.model));
   }
 

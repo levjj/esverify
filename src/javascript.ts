@@ -1,6 +1,6 @@
 import * as JSyntax from "estree";
 import { flatMap } from "./util";
-import { MessageException, err } from "./message";
+import { MessageException, unexpected } from "./message";
 import { options } from "./options";
 
 export namespace Syntax {
@@ -134,10 +134,12 @@ export namespace Syntax {
                           invariants: Array<Expression> };
 }
 
-function unsupported(node: JSyntax.Node): MessageException {
+function unsupported(node: JSyntax.Node, description: string = "unsupported syntax"): MessageException {
   return new MessageException({
-    status: "unsupported",
-    loc: loc(node)
+    status: "error",
+    type: "unsupported",
+    loc: loc(node),
+    description
   });
 }
 
@@ -147,7 +149,7 @@ function findPseudoCalls(type: string, stmts: Array<JSyntax.Statement>): Array<S
         stmt.expression.type == "CallExpression" &&
         stmt.expression.callee.type == "Identifier" &&
         stmt.expression.callee.name == type) {
-      if (stmt.expression.arguments.length != 1) throw unsupported(stmt.expression);
+      if (stmt.expression.arguments.length != 1) throw unsupported(stmt.expression, `${type} expects proposition as one single argument`);
       const arg = stmt.expression.arguments[0];
       if (arg.type == "SpreadElement") throw unsupported(arg);
       return [expressionAsJavaScript(arg)];
@@ -172,7 +174,7 @@ function withoutPseudoCalls(type: string, stmts: Array<JSyntax.Statement>): Arra
 function loc(n: JSyntax.Node): Syntax.SourceLocation {
   if (!n.loc) {
     debugger;
-    throw new MessageException(err(new Error("No location information available on nodes")));
+    throw new MessageException(unexpected(new Error("No location information available on nodes")));
   }
   return { file: options.filename, start: n.loc.start, end: n.loc.end };
 }
@@ -489,13 +491,13 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
     case "CallExpression":
       if (expr.callee.type == "Identifier" &&
           expr.callee.name == "pure") {
-        if (expr.arguments.length != 0) throw unsupported(expr);
+        if (expr.arguments.length != 0) throw unsupported(expr, "pure modifier has no arguments");
         return { type: "PureExpression", loc: loc(expr) };
       }
       if (expr.callee.type == "Identifier" &&
           expr.callee.name == "old") {
         if (expr.arguments.length != 1 || expr.arguments[0].type != "Identifier") {
-          throw unsupported(expr);
+          throw unsupported(expr, "old modifier has exactly one argument");
         }
         return {
           type: "OldIdentifier",
@@ -506,20 +508,20 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
       }
       if (expr.callee.type == "Identifier" &&
           expr.callee.name == "spec") {
-        if (expr.arguments.length != 3) throw unsupported(expr);
+        if (expr.arguments.length != 3) throw unsupported(expr, "spec(f,req,ens) has three arguments");
         const [callee, arg1, arg2] = expr.arguments;
-        if (callee.type != "Identifier" ||
-            arg1.type != "ArrowFunctionExpression" ||
-            arg2.type != "ArrowFunctionExpression") throw unsupported(expr);
+        if (callee.type != "Identifier") throw unsupported(expr, "spec(f, req, ens) requires f to be an identifier");
+        if (arg1.type != "ArrowFunctionExpression") throw unsupported(expr, "spec(f, req, ens) requires req to be an arrow function");
+        if (arg2.type != "ArrowFunctionExpression") throw unsupported(expr, "spec(f, req, ens) requires ens to be an arrow function");
         const r: JSyntax.ArrowFunctionExpression = arg1;
         const s: JSyntax.ArrowFunctionExpression = arg2;
-        if (r.body.type == "BlockStatement" ||
-            s.body.type == "BlockStatement" ||
-            r.params.length != s.params.length &&
+        if (r.body.type == "BlockStatement") throw unsupported(expr, "spec(f, req, ens) requires req to be an arrow function with an expression as body");
+        if (s.body.type == "BlockStatement") throw unsupported(expr, "spec(f, req, ens) requires ens to be an arrow function with an expression as body");
+        if ( r.params.length != s.params.length &&
             !r.params.every((p, idx) => {
               const otherP = s.params[idx];
               return p.type == "Identifier" && otherP.type == "Identifier" && p.name == otherP.name; })) {
-          throw unsupported(expr);
+          throw unsupported(expr, "spec(f, req, ens) requires req and ens to have same parameters");
         }
         return {
           type: "SpecExpression",
@@ -532,7 +534,7 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
         };
       }
       if (expr.callee.type == "Super") throw unsupported(expr.callee);
-      if (expr.arguments.length > 9) throw unsupported(expr);
+      if (expr.arguments.length > 9) throw unsupported(expr, "more than 9 arguments not supported yet");
       return {
         type: "CallExpression",
         callee: expressionAsJavaScript(expr.callee),
@@ -557,10 +559,21 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
   }
 }
 
-function unsupportedLoc(loc: Syntax.SourceLocation) {return new MessageException({status:"unsupported",loc})}
-function undefinedId(loc: Syntax.SourceLocation) {return new MessageException({status:"undefined-identifier",loc})}
-function alreadyDefined(loc: Syntax.SourceLocation) {return new MessageException({status:"already-defined",loc})}
-function assignToConst(loc: Syntax.SourceLocation) {return new MessageException({status:"assignment-to-const",loc})}
+function unsupportedLoc(loc: Syntax.SourceLocation, description: string = "") {
+  return new MessageException({ status: "error", type:"unsupported", loc, description });
+}
+function undefinedId(loc: Syntax.SourceLocation) {
+  return new MessageException({ status: "error", type:"undefined-identifier", loc, description: ""});
+}
+function alreadyDefined(loc: Syntax.SourceLocation, decl: Syntax.Declaration) {
+  if (decl.type == "Unresolved") throw unexpected(new Error("decl should be resolved"));
+  const { file, start } = decl.decl.loc;
+  return new MessageException({ status: "error", type:"already-defined", loc,
+                                description: `at ${file}:${start.line}:${start.column}` });
+}
+function assignToConst(loc: Syntax.SourceLocation) {
+  return new MessageException({ status: "error", type: "assignment-to-const", loc, description: "" });
+}
 
 export function isMutable(id: Syntax.Identifier): boolean {
   if (id.decl.type == "Unresolved") throw undefinedId(id.loc);
@@ -581,7 +594,7 @@ class Scope {
   }
 
   lookupDef(sym: Syntax.Identifier) {
-    if (sym.name in this.ids) throw alreadyDefined(sym.loc);
+    if (sym.name in this.ids) throw alreadyDefined(sym.loc, this.ids[sym.name]);
     if (this.parent) this.parent.lookupDef(sym);
   }
 
@@ -696,7 +709,7 @@ function resolveExpression(scope: Scope, expr: Syntax.Expression, allowOld: bool
       scope.useSymbol(expr);
       break;
     case "OldIdentifier":
-      if (!allowOld) throw unsupportedLoc(expr.loc);
+      if (!allowOld) throw unsupportedLoc(expr.loc, "old() not allowed in this context");
       scope.useSymbol(expr.id);
     case "Literal":
       break;
@@ -732,7 +745,7 @@ function resolveExpression(scope: Scope, expr: Syntax.Expression, allowOld: bool
       break;
     case "SpecExpression":
       resolveExpression(scope, expr.callee);
-      if (isMutable(expr.callee)) throw unsupportedLoc(expr.callee.loc);
+      if (isMutable(expr.callee)) throw unsupportedLoc(expr.callee.loc, "spec(f,req,ens) requires f to be const");
       const preScope = new Scope(scope, scope.func);
       const postScope = new Scope(scope, scope.func);
       expr.args.forEach((a, argIdx) => {
