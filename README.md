@@ -51,11 +51,67 @@ trigger heuristics and thereby timeouts and other unpredictable results by
 requiring manual instantiation with function calls which will be used for a
 deterministic trigger instantiation.
 
-Usage
------
+Usage as Command Line Tool
+--------------------------
 
-    npm install -g esverify
-    esverify max.js
+```
+$ npm install -g esverify
+
+...
+
+$ esverify --help
+Usage: esverify [OPTIONS] FILE
+
+Options:
+  -f, --logformat FORMAT  Format can be either "simple" or "colored"
+                          (default format is "colored")
+  --z3path PATH           Path to local z3 executable
+                          (default path is "z3")
+  -r, --remote            Invokes z3 remotely via HTTP request
+  --z3url URL             URL to remote z3 web server
+  -q, --quiet             Suppresses output
+  -h, --help              Prints this help text and exit
+  -v, --version           Prints version information
+```
+
+Usage as Library
+----------------
+
+Installation via npm:
+
+```
+$ npm install esverify --save
+```
+
+Can now import `verify` which returns a promise of messages:
+
+```js
+import { verify } from "esverify";
+
+const opts = { };
+const msgs = await verify("assert(1 > 2);", opts);
+msgs.forEach(msg => console.log(msg.status));
+```
+
+The options and returned messages have the following structure:
+
+```ts
+opts: {
+  filename: string,
+  remote: boolean,
+  z3path: string,
+  z3url: string,
+  quiet: boolean,
+  logformat: "simple" | "colored"
+}
+
+msg: {
+  status: "verified" | "unverified" | "error",
+  loc: { file: string, start: { line: number, column: number },
+                       end:   { line: number, column: number }},
+  description: string
+}
+```
 
 Interactive Tools
 -----------------
