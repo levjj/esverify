@@ -51,9 +51,9 @@ class QuantifierTransformer extends Transformer {
     return n;
   }
 
-  liftExistantials(prop: Syntax.ForAll, newHeap: Syntax.HeapExpression = this.freshHeap(0)): Substituter {
+  liftExistantials(prop: Syntax.ForAll, newHeap: Syntax.HeapExpression = this.freshHeap(prop.heap)): Substituter {
     const sub = new Substituter();
-    sub.replaceHeap(0, newHeap);
+    sub.replaceHeap(prop.heap, newHeap);
     prop.existsHeaps.forEach(h => sub.replaceHeap(h, this.freshHeap(h)));
     prop.existsLocs.forEach(l => sub.replaceLoc(l, this.freshLoc(l)));
     prop.existsVars.forEach(v => sub.replaceVar(v, this.freshVar(v)));
@@ -79,7 +79,7 @@ class QuantifierLifter extends QuantifierTransformer {
     }
     prop.args.forEach(a => sub.replaceVar(a, this.freshVar(a)));
     const callee = sub.visitExpr(prop.callee);
-    const trigger = this.visitProp({ type: "CallTrigger", callee, heap: 0, args: prop.args });
+    const trigger = this.visitProp({ type: "CallTrigger", callee, heap: prop.heap, args: prop.args });
     return sub.visitProp(implies(trigger, prop.prop));
   }
 }

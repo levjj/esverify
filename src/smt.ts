@@ -189,17 +189,17 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
   
   visitForAll(prop: Syntax.ForAll): SMTInput {
-    const {args, callee} = prop;
+    const {callee, heap, args} = prop;
     const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
-    const callP: P = { type: "CallTrigger", callee, heap: 0, args: args };
+    const callP: P = { type: "CallTrigger", callee, heap, args: args };
     let p = this.visitProp(implies(callP, prop.prop));
-    if (prop.existsLocs.size > 0 || prop.existsHeaps.size > 0) {
+    if (prop.existsLocs.size + prop.existsHeaps.size + prop.existsVars.size > 0) {
       p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
                  + `${[...prop.existsLocs].map(l => `(${this.visitLocation(l)} Loc)`).join(' ')} `
                  + `${[...prop.existsVars].map(v => `(${this.visitVariable(v)} JSVal)`).join(' ')})\n  ${p})`;
     }
     const trigger: SMTInput = this.visitProp(callP);
-    return `(forall ((${this.visitHeap(0)} Heap) ${params}) (!\n  ${p}\n  :pattern (${trigger})))`;
+    return `(forall ((${this.visitHeap(heap)} Heap) ${params}) (!\n  ${p}\n  :pattern (${trigger})))`;
   }
   
   visitCallTrigger(prop: Syntax.CallTrigger): SMTInput {
@@ -221,7 +221,7 @@ function propositionToAssert(prop: P): SMTInput {
 }
 
 export function vcToSMT(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
-  const prop = instantiateQuantifiers(heaps, locs, vars, p);
+  const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
