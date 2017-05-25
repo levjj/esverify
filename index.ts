@@ -19,7 +19,8 @@ export function verificationConditions(src: string, opts: Partial<Options> = {})
   }
   try {
     const prog = programAsJavaScript(node);
-    return vcgenProgram(prog);
+    const vcs = vcgenProgram(prog);
+    return vcs;
   } catch (e) {
     return e instanceof MessageException ? e.msg : unexpected(e);
   }

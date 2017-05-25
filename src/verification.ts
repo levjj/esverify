@@ -15,29 +15,27 @@ export default class VerificationCondition {
   locs: Locs;
   vars: Vars;
   prop: P;
-  body: Array<Syntax.Statement>;
+  testBody: Array<Syntax.Statement>;
   loc: Syntax.SourceLocation;
   description: string;
   inprocess: boolean;
   result: Message | null;
-  debug: boolean;
 
   constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, body: Array<Syntax.Statement> = []) {
     this.heaps = new Set([...Array(heap+1).keys()]);
-    this.locs = locs;
-    this.vars = vars;
+    this.locs = new Set([...locs]);
+    this.vars = new Set([...vars]);
     this.prop = prop;
     this.loc = loc;
     this.description = description;
-    this.body = body;
+    this.testBody = body;
     this.inprocess = false;
     this.result = null;
-    this.debug = false;
   }
 
   private prepareSMT(): SMTInput {
     const smt = vcToSMT(this.heaps, this.locs, this.vars, this.prop);
-    if (this.debug) {
+    if (options.verbose) {
       console.log('SMT Input:');
       console.log('------------');
       console.log(smt);
@@ -54,14 +52,15 @@ export default class VerificationCondition {
     return `
 function assert(p) { if (!p) throw new Error("assertion failed"); }
 function pure() { return true; /* not tested dynamically */ }
+function spec() { return true; /* not tested dynamically */ }
 ${declarations.join("")}
 ${oldValues.join("")}
 
-${this.body.map(s => stringifyStmt(s)).join("\n")}`;
+${this.testBody.map(s => stringifyStmt(s)).join("\n")}`;
   }
 
   private process(out: SMTOutput): Message {
-    if (this.debug) {
+    if (!options.quiet && options.verbose) {
       console.log('SMT Output:');
       console.log('------------');
       console.log(out);
@@ -69,8 +68,15 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
     }
     if (out && out.startsWith("sat")) {
       const m = smtToModel(out);
+      const code = this.testCode(m);
+      if (!options.quiet && options.verbose) {
+        console.log('Test Code:');
+        console.log('------------');
+        console.log(code);
+        console.log('------------');
+      }
       try {
-        eval(this.testCode(m));
+        eval(code);
         return { status: "unverified", description: this.description, loc: this.loc, model: m };
       } catch (e) {
         if (e instanceof Error && e.message == "assertion failed") {
@@ -87,7 +93,9 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   }
 
   private solveLocal(smt: SMTInput): Promise<SMTOutput> {
-    if (this.debug) console.log(`${this.description}: solving locally with ${options.z3path}`);
+    if (!options.quiet && options.verbose) {
+      console.log(`${this.description}: solving locally with ${options.z3path}`);
+    }
     return new Promise<SMTOutput>((resolve, reject) => {
       const spawn = require('child_process').spawn;
       const p = spawn(options.z3path, ['-smt2', '-in'], {stdio: ['pipe', 'pipe', 'ignore']});
@@ -101,7 +109,9 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
   }
 
   private solveRemote(smt: SMTInput): Promise<SMTOutput> {
-    if (this.debug) console.log(`${this.description}: sending request to ${options.z3url}`);
+    if (!options.quiet && options.verbose) {
+      console.log(`${this.description}: sending request to ${options.z3url}`);
+    }
     return fetch(options.z3url, { method: "POST", body: smt }).then(req => req.text());
   }
 
@@ -125,6 +135,4 @@ ${this.body.map(s => stringifyStmt(s)).join("\n")}`;
     if (this.result.status == "error" && this.result.type != "incorrect") throw new Error("no model available");
     eval(this.testCode(this.result.model));
   }
-
-  enableDebugging() { this.debug = true; }
 }
