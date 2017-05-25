@@ -79,6 +79,7 @@ export namespace Syntax {
                                    args: Array<Expression> }
   export interface ForAll { type: "ForAll",
                             callee: Expression,
+                            heap: Heap,
                             args: Array<string>,
                             existsHeaps: Set<Heap>,
                             existsLocs: Locs,
@@ -163,16 +164,36 @@ export function heapStore(target: Heap, loc: string, expr: A): P {
 }
 
 export function heapEq(left: Syntax.HeapExpression, right: Syntax.HeapExpression): P {
+  if (eqHeap(left, right)) return tru;
   return { type: "HeapEq", left, right };
 }
 
-export function forAllCalls(callee: Syntax.Variable, args: Array<string>, existsHeaps: Set<Heap>, existsLocs: Locs, existsVars: Vars, r: P, s: P): P {
-  const preP: P = { type: "Precondition", callee, heap: 0, args };
-  const postP: P = { type: "Postcondition", callee, heap: 0, args };
-  const resHeap: Syntax.HeapExpression = { type: "HeapEffect", callee, heap: 0, args };
-  const sub = (new Substituter()).replaceHeap(1, resHeap).visitProp(s);
-  const prop = and(implies(r, preP), implies(and(r, postP), sub));
-  return { type: "ForAll", callee, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [] };
+export function transformSpec(callee: A, args: Array<string>, req: P, ens: P, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+  const numHeaps = Math.max(0, toHeap - heap - 1);
+  const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
+  const preP: P = { type: "Precondition", callee, heap, args };
+  const postP: P = { type: "Postcondition", callee, heap, args };
+  let s;
+  if (heap != toHeap) {
+    const sub = new Substituter();
+    sub.replaceHeap(toHeap, { type: "HeapEffect", callee, heap, args });
+    s = sub.visitProp(ens);
+  } else {
+    s = and(ens, heapEq(heap, { type: "HeapEffect", callee, heap, args }));
+  }
+  const prop = and(implies(req, preP), implies(and(req, postP), s));
+  const forAll: P =  { type: "ForAll", callee, heap, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [] };
+  const fnCheck: A = {
+    type: "BinaryExpression",
+    left: {
+      type: "UnaryExpression",
+      operator: "typeof",
+      argument: callee
+    },
+    operator: "==",
+    right: { type: "Literal", value: "function" }
+  };
+  return and(truthy(fnCheck), forAll);
 }
 
 function eqHeap(exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
@@ -597,6 +618,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     return {
       type: "ForAll",
       callee: this.visitExpr(prop.callee),
+      heap: prop.heap,
       args: prop.args,
       existsHeaps: new Set([...prop.existsHeaps]),
       existsLocs: new Set([...prop.existsLocs]),
@@ -657,7 +679,7 @@ export class Substituter extends Transformer {
     const origAlphaLoc = Object.assign({}, this.thetaLoc);
     const origAlphaVar = Object.assign({}, this.thetaVar);
     try {
-      delete this.thetaHeap[0];
+      delete this.thetaHeap[prop.heap];
       prop.args.forEach(a => { delete this.thetaVar[a]; });
       prop.existsHeaps.forEach(h => { delete this.thetaHeap[h]; });
       prop.existsLocs.forEach(l => { delete this.thetaLoc[l]; });
@@ -669,4 +691,15 @@ export class Substituter extends Transformer {
       this.thetaVar = origAlphaVar;
     }
   }
+}
+
+export function removePrefix(prefix: P, prop: P): P {
+  if (prefix.type != "And" || prop.type != "And") return prop;
+  let prefix_length = 0;
+  while (prefix.clauses.length > prefix_length &&
+         prop.clauses.length > prefix_length &&
+         eqProp(prefix.clauses[prefix_length], prop.clauses[prefix_length])) {
+    prefix_length++;
+  }
+  return and(...prop.clauses.slice(prefix_length));
 }

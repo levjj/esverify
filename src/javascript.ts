@@ -1151,8 +1151,8 @@ export function replaceFunctionResult(f: Syntax.FunctionDeclaration, expr: Synta
   return sub.visitExpression(expr);
 }
 
-export function checkInvariants(whl: Syntax.WhileStatement): Syntax.FunctionDeclaration {
-  return {
+export function loopTestingCode(whl: Syntax.WhileStatement): Array<Syntax.Statement> {
+  return [{
     type: "FunctionDeclaration",
     id: { type: "Identifier", name: "test", decl: {type: "Unresolved"}, refs: [], isWrittenTo: false, loc: whl.loc },
     params: [],
@@ -1168,7 +1168,20 @@ export function checkInvariants(whl: Syntax.WhileStatement): Syntax.FunctionDecl
     },
     freeVars: [],
     loc: whl.loc
-  };
+  },
+  {
+    type: "ExpressionStatement",
+    expression: {
+      type: "CallExpression",
+      args: [],
+      callee: {
+        type: "Identifier", name: "test", decl: {type: "Unresolved"},
+        refs: [], isWrittenTo: false, loc: whl.loc
+      },
+      loc: whl.loc
+    },
+    loc: whl.loc
+  }];
 }
 
 export function checkPreconditions(f: Syntax.FunctionDeclaration): Syntax.FunctionDeclaration {
@@ -1189,4 +1202,17 @@ export function checkPreconditions(f: Syntax.FunctionDeclaration): Syntax.Functi
     freeVars: f.freeVars,
     loc: f.loc
   };
+}
+
+export function convertToAssignment(decl: Syntax.VariableDeclaration): Syntax.ExpressionStatement {
+  return {
+    type: "ExpressionStatement",
+    expression: {
+      type: "AssignmentExpression",
+      left: decl.id,
+      right: decl.init,
+      loc: decl.loc
+    },
+    loc: decl.loc
+  }
 }
