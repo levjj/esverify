@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import { verificationConditions } from '../index';
 import { log } from "../src/message";
+import { setOptions } from "../src/options";
 import VerificationCondition from '../src/verification';
 
 declare const requires: (x: boolean) => void;
@@ -30,7 +31,7 @@ function helper(expected: "verified" | "unverified" | "incorrect", description: 
   const body = async () => {
     const vc = vcs.find(v => v.description === description);
     expect(vc).to.be.ok;
-    if (debug) vc.enableDebugging();
+    if (debug) setOptions({ quiet: false, verbose: true });
     const res = await vc.verify();
     if (res.status == "error" && res.type == "unexpected") console.log(res.error);
     if (expected == "verified" || expected == "unverified") {
@@ -316,7 +317,7 @@ describe('closures', () => {
   verified('assert: (h1 == 2)');
 });
 
-describe('fibonacci increasing', () => {
+describe('fibonacci', () => {
 
   code(() => {
     function fib(n) {
@@ -439,6 +440,91 @@ describe('simple higher-order functions', () => {
   verified('twice: (twice(f, n) > (n + 1))');
   verified('precondition twice(inc, x)');
   verified('assert: (y >= 5)');
+});
+
+describe('higher-order proofs', () => {
+
+  code(() => {
+    function fib(n) {
+      requires(n >= 0);
+      ensures(pure());
+      ensures(typeof (fib(n)) == "number");
+
+      if (n <= 1) {
+        return 1;
+      } else {
+        return fib(n - 1) + fib(n - 2);
+      }
+    }
+
+    function fibInc(n) {
+      requires(n >= 0);
+      ensures(fib(n) <= fib(n + 1));
+      ensures(pure());
+
+      fib(n);
+      fib(n + 1);
+
+      if (n > 0) {
+        fib(n - 1);
+        fibInc(n - 1);
+      }
+
+      if (n > 1) {
+        fib(n - 2);
+        fibInc(n - 2);
+      }
+    }
+
+    function fMono(f, fInc, n, m) {
+      requires(spec(f, x => x >= 0, x => pure() && typeof (f(x)) == "number"));
+      requires(spec(fInc, x => x >= 0, x => pure() && f(x) <= f(x + 1)));
+      requires(n >= 0);
+      requires(m >= 0);
+      requires(n < m);
+      ensures(pure());
+      ensures(f(n) <= f(m));
+
+      if (n + 1 == m) {
+        fInc(n);
+      } else {
+        fInc(n);
+        fMono(f, fInc, n + 1, m);
+      }
+    }
+
+    function fibMono(n, m) {
+      requires(n >= 0);
+      requires(m >= 0);
+      requires(n < m);
+      ensures(pure());
+      ensures(fib(n) <= fib(m));
+
+      fMono(fib, fibInc, n, m);
+    }
+
+  });
+
+  verified('fib: precondition fib((n - 1))');
+  verified('fib: precondition fib((n - 2))');
+  verified('fib: pure()');
+  verified('fib: (typeof(fib(n)) == "number")');
+  verified('fibInc: precondition fib(n)');
+  verified('fibInc: precondition fib((n + 1))');
+  verified('fibInc: precondition fib((n - 1))');
+  verified('fibInc: precondition fibInc((n - 1))');
+  verified('fibInc: precondition fib((n - 2))');
+  verified('fibInc: precondition fibInc((n - 2))');
+  verified('fibInc: (fib(n) <= fib((n + 1)))');
+  verified('fibInc: pure()');
+  verified('fMono: precondition fInc(n)');
+  verified('fMono: precondition fInc(n)');
+  verified('fMono: precondition fMono(f, fInc, (n + 1), m)');
+  verified('fMono: pure()');
+  verified('fMono: (f(n) <= f(m))');
+  verified('fibMono: precondition fMono(fib, fibInc, n, m)');
+  verified('fibMono: pure()');
+  verified('fibMono: (fib(n) <= fib(m))');
 });
 
 describe.skip('mapLen example', () => {
