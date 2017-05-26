@@ -1,10 +1,10 @@
-esverify
-========
+# esverify
+
+[![Build Status](https://travis-ci.org/levjj/esverify.svg?branch=master)](https://travis-ci.org/levjj/esverify)
 
 Program Verification for ECMAScript/JavaScript
 
-Example
--------
+## Example
 
 Given a simple JavaScript `max` function, we can add pre- and post-conditions
 using special pseudo-calls to `requires` and `ensures` with boolean expressions.
@@ -45,14 +45,14 @@ Supported Features:
 * checking of function purity
 * higher-order functions
 * simple and higher-order proofs
+* simple immutable classes with invariants (no methods or inheritance)
 
 It is based on the [z3](https://github.com/Z3Prover/z3) SMT solver but avoids
 trigger heuristics and thereby timeouts and other unpredictable results by
 requiring manual instantiation with function calls which will be used for a
 deterministic trigger instantiation.
 
-Usage as Command Line Tool
---------------------------
+## Usage as Command Line Tool
 
 ```
 $ npm install -g esverify
@@ -74,8 +74,7 @@ Options:
   -v, --version           Prints version information
 ```
 
-Usage as Library
-----------------
+## Usage as Library
 
 Installation via npm:
 
@@ -113,8 +112,7 @@ type msg = {
 }
 ```
 
-Interactive Tools
------------------
+## Interactive Tools
 
 More tool support will be coming soon.
 
@@ -125,8 +123,7 @@ inspection of verification results including potential counter-examples.
 Additionally, there is a [Vim Plugin](https://github.com/levjj/esverify-vim)
 which displays verification results inline.
 
-Acknowledgements
-----------------
+## Acknowledgements
 
 Inspired by [Dafny](https://github.com/Microsoft/dafny) and
 [LiquidHaskell](https://github.com/ucsd-progsys/liquidhaskell).
