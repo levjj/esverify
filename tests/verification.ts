@@ -527,26 +527,91 @@ describe('higher-order proofs', () => {
   verified('fibMono: (fib(n) <= fib(m))');
 });
 
-describe.skip('mapLen example', () => {
+describe('mapLen example', () => {
 
   code(() => {
-    function map(arr, f) {
-      if (arr.length == 0) return [];
-      return [f(arr[0])].concat(map(arr.slice(1), f));
+
+    class List {
+      head: any;
+      tail: List;
+      constructor(head, tail) { this.head = head; this.tail = tail; }
+      invariant() { return this.tail === null || this.tail instanceof List; }
     }
 
-    function mapLen(arr, f) {
-      requires(arr.constructor == Array);
-      ensures(map(f, arr).length == arr.length);
+    function map(lst, f) {
+      requires(lst === null || lst instanceof List);
+      requires(spec(f, x => true, x => pure()));
+      ensures(pure());
+      ensures(map(lst, f) === null || map(lst, f) instanceof List);
 
-      map(arr, f);
-      if (arr.length > 0) {
-        mapLen(arr.slice(1), f);
-        map(arr.slice(1), f);
+      if (lst == null) return null;
+      return new List(f(lst.head), map(lst.tail, f));
+    }
+
+    function len(lst) {
+      requires(lst === null || lst instanceof List);
+      ensures(pure());
+      ensures(len(lst) >= 0);
+
+      return lst == null ? 0 : len(lst.tail) + 1;
+    }
+
+    function mapLen(lst, f) {
+      requires(spec(f, x => true, x => pure()));
+      requires(lst === null || lst instanceof List);
+      ensures(pure());
+      ensures(len(lst) == len(map(lst, f)));
+
+      const l = len(lst);
+      const r = len(map(lst, f));
+      if (lst == null) {
+        assert(l == 0);
+        assert(r == 0);
+      } else {
+        const l1 = len(lst.tail);
+        assert(l == l1 + 1);
+
+        f(lst.head);
+        const r1 = len(map(lst.tail, f));
+        assert(r == r1 + 1);
+
+        mapLen(lst.tail, f);
+        assert(l1 == r1);
+        assert(l == r);
       }
     }
   });
 
-  verified('mapLen: mapLen: requires: (arr.constructor == Array)');
-  verified('mapLen: (map(f, arr).length == arr.length)');
+  verified('map: property head exists on object');
+  verified('map: precondition f(lst.head)');
+  verified('map: property tail exists on object');
+  verified('map: precondition map(lst.tail, f)');
+  verified('map: class invariant List');
+  verified('map: pure()');
+  verified('map: (map(lst, f) === null) || (map(lst, f) instanceof List)');
+  verified('len: property tail exists on object');
+  verified('len: precondition len(lst.tail)');
+  verified('len: pure()');
+  verified('len: (len(lst) >= 0)');
+  verified('mapLen: precondition len(lst)');
+  verified('mapLen: precondition map(lst, f)');
+  verified('mapLen: precondition len(map(lst, f))');
+  verified('mapLen: assert: (l == 0)');
+  verified('mapLen: assert: (r == 0)');
+  verified('mapLen: property tail exists on object');
+  verified('mapLen: precondition len(lst.tail)');
+  verified('mapLen: assert: (l == (l1 + 1))');
+  verified('mapLen: property head exists on object');
+  verified('mapLen: precondition f(lst.head)');
+  verified('mapLen: property tail exists on object');
+  verified('mapLen: precondition map(lst.tail, f)');
+  verified('mapLen: precondition len(map(lst.tail, f))');
+  verified('mapLen: assert: (r == (r1 + 1))');
+  verified('mapLen: property tail exists on object');
+  verified('mapLen: precondition mapLen(lst.tail, f)');
+  verified('mapLen: assert: (l1 == r1)');
+  verified('mapLen: assert: (l == r)');
+  verified('mapLen: pure()');
+  verified('mapLen: (len(lst) == len(map(lst, f)))');
+
 });
