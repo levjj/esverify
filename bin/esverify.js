@@ -33,7 +33,10 @@ var opts = minimist(process.argv.slice(2), {
   alias: {r: "remote", f: "logformat", q: "quiet", v: "verbose", h: "help" },
   unknown: function(opt) { if (opt[0] == '-' && opt != '-') usage(true); }
 });
-if (opts.version) { console.log("0.1.4"); process.exit(0); }
+if (opts.version) {
+  console.log(require('../package.json').version);
+  process.exit(0);
+}
 if (opts._.length != 1 || opts.help) usage(!opts.help);
 opts.qi = !opts["noqi"];
 opts.filename = opts._[0];
