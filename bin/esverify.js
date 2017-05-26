@@ -16,7 +16,7 @@ function usage(err) {
   console.log('                          (default path is "z3")');
   console.log('  -r, --remote            Invokes z3 remotely via HTTP request');
   console.log('  --z3url URL             URL to remote z3 web server');
-  console.log('  --no-qi                 Disables quantifier instantiations');
+  console.log('  --noqi                  Disables quantifier instantiations');
   console.log('  -f, --logformat FORMAT  Format can be either "simple" or "colored"');
   console.log('                          (default format is "colored")');
   console.log('  -q, --quiet             Suppresses output');
@@ -27,7 +27,7 @@ function usage(err) {
 }
 
 var opts = minimist(process.argv.slice(2), {
-  boolean: ["no-qi", "remote", "quiet", "verbose", "help", "version"],
+  boolean: ["noqi", "remote", "quiet", "verbose", "help", "version"],
   string: ["logformat", "z3path", "z3url"],
   default: { quiet: false },
   alias: {r: "remote", f: "logformat", q: "quiet", v: "verbose", h: "help" },
@@ -35,7 +35,7 @@ var opts = minimist(process.argv.slice(2), {
 });
 if (opts.version) { console.log("0.1.4"); process.exit(0); }
 if (opts._.length != 1 || opts.help) usage(!opts.help);
-opts.qi = !opts["no-qi"];
+opts.qi = !opts["noqi"];
 opts.filename = opts._[0];
 
 function run(err, js) {
