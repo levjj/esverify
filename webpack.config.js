@@ -7,7 +7,6 @@ module.exports = {
   entry: [
     __dirname + '/index'
   ],
-  devtool: 'source-map',
   output: {
     path: __dirname,
     filename: libraryName + '.js',
