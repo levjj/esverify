@@ -1,10 +1,7 @@
 language: node_js
 node_js:
   - '7.5'
-addons:
-  apt:
-    packages:
-    - z3
+dist: trusty
 branches:
   only:
     - master
@@ -12,6 +9,9 @@ cache:
   directories:
     - node_modules
 before_script:
+  - wget https://github.com/Z3Prover/z3/releases/download/z3-4.5.0/z3-4.5.0-x64-ubuntu-14.04.zip -O /tmp/z3-4.5.0-x64-ubuntu-14.04.zip
+  - unzip -d . /tmp/z3-4.5.0-x64-ubuntu-14.04.zip
+  - export PATH=$PATH:$PWD/z3-4.5.0-x64-ubuntu-14.04/bin/
   - npm prune && npm cache clean
   - npm install
 script:
