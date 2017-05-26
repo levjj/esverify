@@ -15,6 +15,7 @@ before_script:
   - npm prune && npm cache clean
   - npm install
 script:
+  - npm run lint
   - npm test
   - npm run build
 after_success:

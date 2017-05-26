@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { verificationConditions } from '../index';
-import { log } from "../src/message";
-import { setOptions } from "../src/options";
+import { log } from '../src/message';
+import { setOptions } from '../src/options';
 import VerificationCondition from '../src/verification';
 
 declare const requires: (x: boolean) => void;
@@ -14,31 +14,32 @@ declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any) => boolean) =
 
 let vcs: Array<VerificationCondition>;
 
-function code(fn: () => any) {
+function code (fn: () => any) {
   before(() => {
     const code = fn.toString();
     const t = verificationConditions(code.substring(14, code.length - 2));
     if (!(t instanceof Array)) {
       log(t);
-      if (t.status == "error" && t.type == "unexpected") console.log(t.error);
+      if (t.status === 'error' && t.type === 'unexpected') console.log(t.error);
       throw new Error('failed to find verification conditions');
     }
     vcs = t;
   });
 }
 
-function helper(expected: "verified" | "unverified" | "incorrect", description: string, debug: boolean = false) {
+function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string, debug: boolean = false) {
   const body = async () => {
+    /* tslint:disable:no-unused-expression */
     const vc = vcs.find(v => v.description === description);
     expect(vc).to.be.ok;
     if (debug) setOptions({ quiet: false, verbose: true });
     const res = await vc.verify();
-    if (res.status == "error" && res.type == "unexpected") console.log(res.error);
-    if (expected == "verified" || expected == "unverified") {
-      const st = res.status == "error" && res.type == "incorrect" ? res.type : res.status;
+    if (res.status === 'error' && res.type === 'unexpected') console.log(res.error);
+    if (expected === 'verified' || expected === 'unverified') {
+      const st = res.status === 'error' && res.type === 'incorrect' ? res.type : res.status;
       expect(st).to.be.eql(expected);
     } else {
-      expect(res.status == "error" && res.type == expected).to.be.true;
+      expect(res.status === 'error' && res.type === expected).to.be.true;
     }
   };
   if (debug) {
@@ -48,21 +49,21 @@ function helper(expected: "verified" | "unverified" | "incorrect", description: 
   }
 }
 
-function skip(description: string) { it.skip(description); }
-function verified(description: string) { helper('verified', description); }
-function unverified(description: string) { helper('unverified', description); }
-function incorrect(description: string) { helper('incorrect', description); }
+function skip (description: string) { it.skip(description); }
+function verified (description: string) { helper('verified', description); }
+function unverified (description: string) { helper('unverified', description); }
+function incorrect (description: string) { helper('incorrect', description); }
 
-function verifiedDebug(description: string) { helper('verified', description, true); }
-function unverifiedDebug(description: string) { helper('unverified', description, true); }
-function incorrectDebug(description: string) { helper('incorrect',description, true); }
+function verifiedDebug (description: string) { helper('verified', description, true); }
+function unverifiedDebug (description: string) { helper('unverified', description, true); }
+function incorrectDebug (description: string) { helper('incorrect',description, true); }
 
 describe('max()', () => {
 
   code(() => {
-    function max(a, b) {
-      requires(typeof(a) == 'number');
-      requires(typeof(b) == 'number');
+    function max (a, b) {
+      requires(typeof(a) === 'number');
+      requires(typeof(b) === 'number');
       ensures(max(a, b) >= a);
 
       if (a >= b) {
@@ -87,8 +88,8 @@ describe('max()', () => {
 describe('max() with missing pre', () => {
 
   code(() => {
-    function max(a, b) {
-      requires(typeof(a) == 'number');
+    function max (a, b) {
+      requires(typeof(a) === 'number');
       ensures(max(a, b) >= a);
 
       if (a >= b) {
@@ -103,8 +104,8 @@ describe('max() with missing pre', () => {
 
   it('returns counter-example', async () => {
     const m = await vcs[0].verify();
-    if (m.status != "unverified") throw new Error();
-    expect(m.model).to.have.property("b");
+    if (m.status !== 'unverified') throw new Error();
+    expect(m.model).to.have.property('b');
     expect(m.model.b).to.eql(false);
   });
 });
@@ -113,17 +114,17 @@ describe('counter', () => {
 
   code(() => {
     let counter = 0;
-    invariant(typeof counter == 'number');
+    invariant(typeof counter === 'number');
     invariant(counter >= 0);
 
-    function increment() {
+    function increment () {
       ensures(counter > old(counter));
 
       counter++;
     }
 
-    function decrement() {
-      ensures(old(counter) > 0 ? counter < old(counter) : counter == old(counter));
+    function decrement () {
+      ensures(old(counter) > 0 ? counter < old(counter) : counter === old(counter));
 
       if (counter > 0) counter--;
     }
@@ -188,15 +189,16 @@ describe('loop with missing invariant', () => {
 describe('sum', () => {
 
   code(() => {
-    function sumTo(n) {
-      requires(typeof n == 'number');
+    function sumTo (n) {
+      requires(typeof n === 'number');
       requires(n >= 0);
-      ensures(sumTo(n) == (n + 1) * n / 2);
+      ensures(sumTo(n) === (n + 1) * n / 2);
 
-      let i = 0, s = 0;
+      let i = 0;
+      let s = 0;
       while (i < n) {
         invariant(i <= n);
-        invariant(s == (i + 1) * i / 2);
+        invariant(s === (i + 1) * i / 2);
         i++;
         s = s + i;
       }
@@ -211,12 +213,11 @@ describe('sum', () => {
   verified('sumTo: (sumTo(n) == (((n + 1) * n) / 2))');
 });
 
-
 describe('global call', () => {
 
   code(() => {
-    function inc(n) {
-      requires(typeof(n) == 'number');
+    function inc (n) {
+      requires(typeof(n) === 'number');
       ensures(inc(n) > n);
 
       return n + 1;
@@ -235,18 +236,18 @@ describe('global call', () => {
 describe('inline global call', () => {
 
   code(() => {
-    function inc(n) {
+    function inc (n) {
       return n + 1;
     }
-    function inc2(n) {
+    function inc2 (n) {
       return inc(inc(n));
     }
 
     let i = 3;
     let j = inc(i);
-    assert(j == 4);
+    assert(j === 4);
     let k = inc2(i);
-    assert(k == 5);
+    assert(k === 5);
   });
 
   verified('assert: (j == 4)');
@@ -256,13 +257,13 @@ describe('inline global call', () => {
 describe('post conditions global call', () => {
 
   code(() => {
-    function inc(n) {
-      requires(typeof(n) == 'number');
+    function inc (n) {
+      requires(typeof(n) === 'number');
       ensures(inc(n) > n);
 
       return n + 1;
     }
-    function inc2(n) {
+    function inc2 (n) {
       return inc(inc(n));
     }
 
@@ -273,7 +274,7 @@ describe('post conditions global call', () => {
     assert(k >= 5);
   });
 
-  verified('inc: (inc(n) > n)')
+  verified('inc: (inc(n) > n)');
   incorrect('inc2: precondition inc(n)');
   incorrect('inc2: precondition inc(inc(n))');
   verified('precondition inc(i)');
@@ -287,7 +288,7 @@ describe('mutable variables', () => {
   code(() => {
     let x = 2;
     const y = 3;
-    function f(z) {
+    function f (z) {
       requires(x < y);
     }
     f(0);
@@ -302,16 +303,16 @@ describe('mutable variables', () => {
 describe('closures', () => {
 
   code(() => {
-    function cons(x) {
-      function f() { return x; }
+    function cons (x) {
+      function f () { return x; }
       return f;
     }
     const g = cons(1);
     const g1 = g();
-    assert(g1 == 1);
+    assert(g1 === 1);
     const h = cons(2);
     const h1 = h();
-    assert(h1 == 2);
+    assert(h1 === 2);
   });
 
   verified('assert: (g1 == 1)');
@@ -321,8 +322,8 @@ describe('closures', () => {
 describe('fibonacci', () => {
 
   code(() => {
-    function fib(n) {
-      requires(typeof(n) == 'number');
+    function fib (n) {
+      requires(typeof(n) === 'number');
       requires(n >= 0);
       ensures(fib(n) >= n);
       ensures(fib(n) >= 1);
@@ -340,8 +341,8 @@ describe('fibonacci', () => {
 describe('buggy fibonacci', () => {
 
   code(() => {
-    function fib(n) {
-      requires(typeof(n) == 'number');
+    function fib (n) {
+      requires(typeof(n) === 'number');
       requires(n >= 0);
       ensures(fib(n) >= n);
 
@@ -355,8 +356,8 @@ describe('buggy fibonacci', () => {
   incorrect('fib: (fib(n) >= n)');
   it('returns counter-example', async () => {
     const m = await vcs[2].verify();
-    if (m.status != "error" || m.type != "incorrect") throw new Error();
-    expect(m.model).to.have.property("n");
+    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
+    expect(m.model).to.have.property('n');
     expect(m.model.n).to.eql(2);
   });
 });
@@ -366,13 +367,13 @@ describe('pure functions', () => {
   code(() => {
     let x = 0;
 
-    function f() { ensures(pure()); x++; }
-    function g() { ensures(pure()); return x + 1; }
-    function h1() { }
-    function h2a() { h1(); }
-    function h2b() { ensures(pure()); h1(); }
-    function h3a() { ensures(pure()); h2a(); }
-    function h3b() { ensures(pure()); h2b(); }
+    function f () { ensures(pure()); x++; }
+    function g () { ensures(pure()); return x + 1; }
+    function h1 () { /*empty*/ }
+    function h2a () { h1(); }
+    function h2b () { ensures(pure()); h1(); }
+    function h3a () { ensures(pure()); h2a(); }
+    function h3b () { ensures(pure()); h2b(); }
   });
 
   unverified('f: pure()'); // not pure
@@ -385,15 +386,15 @@ describe('pure functions', () => {
 describe('fibonacci increasing (external proof)', () => {
 
   code(() => {
-    function fib(n) {
+    function fib (n) {
       ensures(pure());
 
       if (n <= 1) return 1;
       return fib(n - 1) + fib(n - 2);
     }
 
-    function fibInc(n) {
-      requires(typeof(n) == 'number');
+    function fibInc (n) {
+      requires(typeof(n) === 'number');
       requires(n >= 0);
       ensures(fib(n) >= n);
       ensures(pure());
@@ -415,16 +416,16 @@ describe('fibonacci increasing (external proof)', () => {
 describe('simple higher-order functions', () => {
 
   code(() => {
-    function inc(n) {
-      requires(typeof(n) == 'number');
+    function inc (n) {
+      requires(typeof(n) === 'number');
       ensures(inc(n) > n);
 
       return n + 1;
     }
 
-    function twice(f, n) {
-      requires(spec(f, x => typeof(x) == 'number', x => f(x) > x));
-      requires(typeof(n) == 'number');
+    function twice (f, n) {
+      requires(spec(f, x => typeof(x) === 'number', x => f(x) > x));
+      requires(typeof(n) === 'number');
       ensures(twice(f, n) > n + 1);
 
       return f(f(n));
@@ -446,10 +447,10 @@ describe('simple higher-order functions', () => {
 describe('higher-order proofs', () => {
 
   code(() => {
-    function fib(n) {
+    function fib (n) {
       requires(n >= 0);
       ensures(pure());
-      ensures(typeof (fib(n)) == "number");
+      ensures(typeof (fib(n)) === 'number');
 
       if (n <= 1) {
         return 1;
@@ -458,7 +459,7 @@ describe('higher-order proofs', () => {
       }
     }
 
-    function fibInc(n) {
+    function fibInc (n) {
       requires(n >= 0);
       ensures(fib(n) <= fib(n + 1));
       ensures(pure());
@@ -477,8 +478,8 @@ describe('higher-order proofs', () => {
       }
     }
 
-    function fMono(f, fInc, n, m) {
-      requires(spec(f, x => x >= 0, x => pure() && typeof (f(x)) == "number"));
+    function fMono (f, fInc, n, m) {
+      requires(spec(f, x => x >= 0, x => pure() && typeof (f(x)) === 'number'));
       requires(spec(fInc, x => x >= 0, x => pure() && f(x) <= f(x + 1)));
       requires(n >= 0);
       requires(m >= 0);
@@ -486,7 +487,7 @@ describe('higher-order proofs', () => {
       ensures(pure());
       ensures(f(n) <= f(m));
 
-      if (n + 1 == m) {
+      if (n + 1 === m) {
         fInc(n);
       } else {
         fInc(n);
@@ -494,7 +495,7 @@ describe('higher-order proofs', () => {
       }
     }
 
-    function fibMono(n, m) {
+    function fibMono (n, m) {
       requires(n >= 0);
       requires(m >= 0);
       requires(n < m);
@@ -535,11 +536,11 @@ describe('mapLen example', () => {
     class List {
       head: any;
       tail: List;
-      constructor(head, tail) { this.head = head; this.tail = tail; }
-      invariant() { return this.tail === null || this.tail instanceof List; }
+      constructor (head, tail) { this.head = head; this.tail = tail; }
+      invariant () { return this.tail === null || this.tail instanceof List; }
     }
 
-    function map(lst, f) {
+    function map (lst, f) {
       requires(lst === null || lst instanceof List);
       requires(spec(f, x => true, x => pure()));
       ensures(pure());
@@ -549,7 +550,7 @@ describe('mapLen example', () => {
       return new List(f(lst.head), map(lst.tail, f));
     }
 
-    function len(lst) {
+    function len (lst) {
       requires(lst === null || lst instanceof List);
       ensures(pure());
       ensures(len(lst) >= 0);
@@ -557,28 +558,28 @@ describe('mapLen example', () => {
       return lst == null ? 0 : len(lst.tail) + 1;
     }
 
-    function mapLen(lst, f) {
+    function mapLen (lst, f) {
       requires(spec(f, x => true, x => pure()));
       requires(lst === null || lst instanceof List);
       ensures(pure());
-      ensures(len(lst) == len(map(lst, f)));
+      ensures(len(lst) === len(map(lst, f)));
 
       const l = len(lst);
       const r = len(map(lst, f));
       if (lst == null) {
-        assert(l == 0);
-        assert(r == 0);
+        assert(l === 0);
+        assert(r === 0);
       } else {
         const l1 = len(lst.tail);
-        assert(l == l1 + 1);
+        assert(l === l1 + 1);
 
         f(lst.head);
         const r1 = len(map(lst.tail, f));
-        assert(r == r1 + 1);
+        assert(r === r1 + 1);
 
         mapLen(lst.tail, f);
-        assert(l1 == r1);
-        assert(l == r);
+        assert(l1 === r1);
+        assert(l === r);
       }
     }
   });

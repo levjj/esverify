@@ -1,54 +1,55 @@
-import { flatMap } from "./util";
+import { flatMap } from './util';
 
 export namespace Syntax {
+  /* tslint:disable:ter-indent */
 
   export type ClassName = string;
 
   export type Location = string;
 
   export type Heap = number;
-  export interface HeapStore { type: "HeapStore",
-                               target: HeapExpression,
-                               loc: Location,
-                               expr: Expression }
-  export interface HeapEffect { type: "HeapEffect",
-                                callee: Expression,
-                                heap: HeapExpression,
-                                args: Array<Expression> }
+  export interface HeapStore { type: 'HeapStore';
+                               target: HeapExpression;
+                               loc: Location;
+                               expr: Expression; }
+  export interface HeapEffect { type: 'HeapEffect';
+                                callee: Expression;
+                                heap: HeapExpression;
+                                args: Array<Expression>; }
   export type HeapExpression = Heap
                              | HeapStore
                              | HeapEffect;
 
   export type Variable = string;
-  export interface HeapReference { type: "HeapReference",
-                                   loc: Location,
-                                   heap: HeapExpression }
-  export interface Literal { type: "Literal",
-                             value: undefined | null | boolean | number | string }
-  export interface ArrayExpression { type: "ArrayExpression",
-                                     elements: Array<Expression> }
-  export type UnaryOperator = "-" | "+" | "!" | "~" | "typeof" | "void";
-  export interface UnaryExpression { type: "UnaryExpression",
-                                     operator: UnaryOperator,
-                                     argument: Expression }
-  export type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
-                      | "<<" | ">>" | ">>>" | "+" | "-" | "*" | "/" | "%"
-                      | "|" | "^" | "&";
-  export interface BinaryExpression { type: "BinaryExpression",
-                                      operator: BinaryOperator,
-                                      left: Expression,
-                                      right: Expression }
-  export interface ConditionalExpression { type: "ConditionalExpression",
-                                           test: Proposition,
-                                           consequent: Expression,
-                                           alternate: Expression }
-  export interface CallExpression { type: "CallExpression",
-                                    callee: Expression,
-                                    heap: HeapExpression,
-                                    args: Array<Expression> }
-  export interface MemberExpression { type: "MemberExpression",
-                                      object: Expression,
-                                      property: string }
+  export interface HeapReference { type: 'HeapReference';
+                                   loc: Location;
+                                   heap: HeapExpression; }
+  export interface Literal { type: 'Literal';
+                             value: undefined | null | boolean | number | string; }
+  export interface ArrayExpression { type: 'ArrayExpression';
+                                     elements: Array<Expression>; }
+  export type UnaryOperator = '-' | '+' | '!' | '~' | 'typeof' | 'void';
+  export interface UnaryExpression { type: 'UnaryExpression';
+                                     operator: UnaryOperator;
+                                     argument: Expression; }
+  export type BinaryOperator = '==' | '!=' | '===' | '!==' | '<' | '<=' | '>' | '>='
+                      | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
+                      | '|' | '^' | '&';
+  export interface BinaryExpression { type: 'BinaryExpression';
+                                      operator: BinaryOperator;
+                                      left: Expression;
+                                      right: Expression; }
+  export interface ConditionalExpression { type: 'ConditionalExpression';
+                                           test: Proposition;
+                                           consequent: Expression;
+                                           alternate: Expression; }
+  export interface CallExpression { type: 'CallExpression';
+                                    callee: Expression;
+                                    heap: HeapExpression;
+                                    args: Array<Expression>; }
+  export interface MemberExpression { type: 'MemberExpression';
+                                      object: Expression;
+                                      property: string; }
   export type Expression = Variable
                          | HeapReference
                          | Literal
@@ -59,54 +60,54 @@ export namespace Syntax {
                          | CallExpression
                          | MemberExpression;
 
-  export interface Truthy { type: "Truthy",
-                            expr: Expression }
-  export interface And { type: "And",
-                         clauses: Array<Proposition> }
-  export interface Or { type: "Or",
-                        clauses: Array<Proposition> }
-  export interface Eq { type: "Eq",
-                        left: Expression,
-                        right: Expression }
-  export interface HeapEq { type: "HeapEq",
-                            left: HeapExpression,
-                            right: HeapExpression }
-  export interface Not { type: "Not",
-                         arg: Proposition }
-  export interface True { type: "True" }
-  export interface False { type: "False" }
-  export interface Precondition { type: "Precondition",
-                                  callee: Expression,
-                                  heap: HeapExpression,
-                                  args: Array<Expression> }
-  export interface Postcondition { type: "Postcondition",
-                                   callee: Expression,
-                                   heap: HeapExpression,
-                                   args: Array<Expression> }
-  export interface ForAllCalls { type: "ForAllCalls",
-                                 callee: Expression,
-                                 heap: Heap,
-                                 args: Array<string>,
-                                 existsHeaps: Set<Heap>,
-                                 existsLocs: Locs,
-                                 existsVars: Vars,
-                                 prop: Proposition,
-                                 instantiations: Array<CallTrigger> }
-  export interface CallTrigger { type: "CallTrigger",
-                                 callee: Expression,
-                                 heap: HeapExpression,
-                                 args: Array<Expression> }
-  export interface ForAllAccess { type: "ForAllAccess",
-                                  prop: Proposition,
-                                  instantiations: Array<AccessTrigger> }
-  export interface InstanceOf { type: "InstanceOf",
-                                left: Expression,
-                                right: ClassName }
-  export interface HasProperty { type: "HasProperty",
-                                 object: Expression,
-                                 property: string }
-  export interface AccessTrigger { type: "AccessTrigger",
-                                   object: Expression }
+  export interface Truthy { type: 'Truthy';
+                            expr: Expression; }
+  export interface And { type: 'And';
+                         clauses: Array<Proposition>; }
+  export interface Or { type: 'Or';
+                        clauses: Array<Proposition>; }
+  export interface Eq { type: 'Eq';
+                        left: Expression;
+                        right: Expression; }
+  export interface HeapEq { type: 'HeapEq';
+                            left: HeapExpression;
+                            right: HeapExpression; }
+  export interface Not { type: 'Not';
+                         arg: Proposition; }
+  export interface True { type: 'True'; }
+  export interface False { type: 'False'; }
+  export interface Precondition { type: 'Precondition';
+                                  callee: Expression;
+                                  heap: HeapExpression;
+                                  args: Array<Expression>; }
+  export interface Postcondition { type: 'Postcondition';
+                                   callee: Expression;
+                                   heap: HeapExpression;
+                                   args: Array<Expression>; }
+  export interface ForAllCalls { type: 'ForAllCalls';
+                                 callee: Expression;
+                                 heap: Heap;
+                                 args: Array<string>;
+                                 existsHeaps: Set<Heap>;
+                                 existsLocs: Locs;
+                                 existsVars: Vars;
+                                 prop: Proposition;
+                                 instantiations: Array<CallTrigger>; }
+  export interface CallTrigger { type: 'CallTrigger';
+                                 callee: Expression;
+                                 heap: HeapExpression;
+                                 args: Array<Expression>; }
+  export interface ForAllAccess { type: 'ForAllAccess';
+                                  prop: Proposition;
+                                  instantiations: Array<AccessTrigger>; }
+  export interface InstanceOf { type: 'InstanceOf';
+                                left: Expression;
+                                right: ClassName; }
+  export interface HasProperty { type: 'HasProperty';
+                                 object: Expression;
+                                 property: string; }
+  export interface AccessTrigger { type: 'AccessTrigger';
+                                   object: Expression; }
   export type Proposition = Truthy
                           | And
                           | Or
@@ -133,589 +134,540 @@ export type Locs = Set<Syntax.Location>;
 export type Vars = Set<Syntax.Variable>;
 export type Classes = Set<Syntax.ClassName>;
 
-export const und: A = { type: "Literal", value: undefined };
-export const tru: P = { type: "True" };
-export const fls: P = { type: "False" };
+export const und: A = { type: 'Literal', value: undefined };
+export const tru: P = { type: 'True' };
+export const fls: P = { type: 'False' };
 
-export function truthy(expr: A): P {
-  return { type: "Truthy", expr };
+export function truthy (expr: A): P {
+  return { type: 'Truthy', expr };
 }
 
-export function falsy(expr: A): P {
+export function falsy (expr: A): P {
   return not(truthy(expr));
 }
 
-export function implies(cond: P, cons: P): P {
+export function implies (cond: P, cons: P): P {
   return or(not(cond), cons);
 }
 
-export function and(...props: Array<P>): P {
+export function and (...props: Array<P>): P {
   const clauses: Array<P> = flatMap(props,
-    c => c.type == "And" ? c.clauses : [c]) 
-    .filter(c => c.type != "True");
-  if (clauses.find(c => c.type == "False")) return fls;
-  if (clauses.length == 0) return tru;
-  if (clauses.length == 1) return clauses[0];
-  return { type: "And", clauses };
+    c => c.type === 'And' ? c.clauses : [c])
+    .filter(c => c.type !== 'True');
+  if (clauses.find(c => c.type === 'False')) return fls;
+  if (clauses.length === 0) return tru;
+  if (clauses.length === 1) return clauses[0];
+  return { type: 'And', clauses };
 }
 
-export function or(...props: Array<P>): P {
+export function or (...props: Array<P>): P {
   const clauses: Array<P> = flatMap(props,
-    c => c.type == "Or" ? c.clauses : [c]) 
-    .filter(c => c.type != "False");
-  if (clauses.find(c => c.type == "True")) return tru;
-  if (clauses.length == 0) return fls;
-  if (clauses.length == 1) return clauses[0];
-  return { type: "Or", clauses };
+    c => c.type === 'Or' ? c.clauses : [c])
+    .filter(c => c.type !== 'False');
+  if (clauses.find(c => c.type === 'True')) return tru;
+  if (clauses.length === 0) return fls;
+  if (clauses.length === 1) return clauses[0];
+  return { type: 'Or', clauses };
 }
 
-export function eq(left: A, right: A): P {
+export function eq (left: A, right: A): P {
   if (eqExpr(left, right)) return tru;
-  return { type: "Eq", left, right };
+  return { type: 'Eq', left, right };
 }
 
-export function not(arg: P): P {
-  if (arg.type == "True") return fls;
-  if (arg.type == "False") return tru;
-  if (arg.type == "Not") return arg.arg;
-  return { type: "Not", arg };
+export function not (arg: P): P {
+  if (arg.type === 'True') return fls;
+  if (arg.type === 'False') return tru;
+  if (arg.type === 'Not') return arg.arg;
+  return { type: 'Not', arg };
 }
 
-export function heapStore(target: Heap, loc: string, expr: A): P {
-  return { type: "HeapEq", left: target + 1, right: { type: "HeapStore", target, loc, expr }};
+export function heapStore (target: Heap, loc: string, expr: A): P {
+  return { type: 'HeapEq', left: target + 1, right: { type: 'HeapStore', target, loc, expr }};
 }
 
-export function heapEq(left: Syntax.HeapExpression, right: Syntax.HeapExpression): P {
+export function heapEq (left: Syntax.HeapExpression, right: Syntax.HeapExpression): P {
   if (eqHeap(left, right)) return tru;
-  return { type: "HeapEq", left, right };
+  return { type: 'HeapEq', left, right };
 }
 
-export function transformSpec(callee: A, args: Array<string>, req: P, ens: P, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
-  const numHeaps = Math.max(0, toHeap - heap - 1);
-  const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
-  const preP: P = { type: "Precondition", callee, heap, args };
-  const postP: P = { type: "Postcondition", callee, heap, args };
-  let s;
-  if (heap != toHeap) {
-    const sub = new Substituter();
-    sub.replaceHeap(toHeap, { type: "HeapEffect", callee, heap, args });
-    s = sub.visitProp(ens);
-  } else {
-    s = and(ens, heapEq(heap, { type: "HeapEffect", callee, heap, args }));
+function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
+  if (typeof(exprA) === 'number') {
+    return typeof(exprB) === 'number' && exprA === exprB;
   }
-  const prop = and(implies(req, preP), implies(and(req, postP), s));
-  const forAll: P =  { type: "ForAllCalls", callee, heap, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [] };
-  const fnCheck: A = {
-    type: "BinaryExpression",
-    left: {
-      type: "UnaryExpression",
-      operator: "typeof",
-      argument: callee
-    },
-    operator: "==",
-    right: { type: "Literal", value: "function" }
-  };
-  return and(truthy(fnCheck), forAll);
-}
-
-export function transformClassInvariant(className: string, fields: Array<string>, inv: P): P {
-  const instP: P = { type: "InstanceOf", left: "this", right: className };
-  let prop: P = truthy({
-    type: "BinaryExpression",
-    left: {
-      type: "UnaryExpression",
-      operator: "typeof",
-      argument: "this"
-    },
-    operator: "==",
-    right: { type: "Literal", value: "object" }
-  });
-  prop = and(prop, not(eq("this", { type: "Literal", value: null })));
-  for (const property of fields) {
-    prop = and(prop, { type: "HasProperty", object: "this", property });
-  }
-  prop = and(prop, inv);
-  prop = implies(instP, prop);
-  return { type: "ForAllAccess", prop, instantiations: [] };
-}
-
-function eqHeap(exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
-  if (typeof(exprA) == "number") {
-    return typeof(exprB) == "number" && exprA == exprB;
-  }
-  if (typeof(exprB) == "number") return false;
+  if (typeof(exprB) === 'number') return false;
   switch (exprA.type) {
-    case "HeapEffect":
-      return exprA.type == exprB.type &&
+    case 'HeapEffect':
+      return exprA.type === exprB.type &&
              eqExpr(exprA.callee, exprB.callee) &&
              eqHeap(exprA.heap, exprB.heap) &&
-             exprA.args.length == exprB.args.length &&
+             exprA.args.length === exprB.args.length &&
              exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
-    case "HeapStore":
-      return exprA.type == exprB.type &&
+    case 'HeapStore':
+      return exprA.type === exprB.type &&
              eqHeap(exprA.target, exprB.target) &&
-             exprA.loc == exprB.loc &&
+             exprA.loc === exprB.loc &&
              eqExpr(exprA.expr, exprB.expr);
   }
 }
 
-function eqExpr(exprA: A, exprB: A): boolean {
-  if (typeof(exprA) == "string") {
-    return typeof(exprB) == "string" && exprA == exprB;
+function eqExpr (exprA: A, exprB: A): boolean {
+  if (typeof(exprA) === 'string') {
+    return typeof(exprB) === 'string' && exprA === exprB;
   }
-  if (typeof(exprB) == "string") return false;
+  if (typeof(exprB) === 'string') return false;
   switch (exprA.type) {
-    case "HeapReference":
-      return exprA.type == exprB.type &&
+    case 'HeapReference':
+      return exprA.type === exprB.type &&
              eqHeap(exprA.heap, exprB.heap) &&
-             exprA.loc == exprB.loc;
-    case "Literal":
-      return exprA.type == exprB.type &&
+             exprA.loc === exprB.loc;
+    case 'Literal':
+      return exprA.type === exprB.type &&
              exprA.value === exprB.value;
     case 'ArrayExpression':
-      return exprA.type == exprB.type &&
-             exprA.elements.length == exprB.elements.length &&
+      return exprA.type === exprB.type &&
+             exprA.elements.length === exprB.elements.length &&
              exprA.elements.every((e,idx) => eqExpr(e, exprB.elements[idx]));
-    case "UnaryExpression":
-      return exprA.type == exprB.type &&
-             exprA.operator == exprB.operator &&
+    case 'UnaryExpression':
+      return exprA.type === exprB.type &&
+             exprA.operator === exprB.operator &&
              eqExpr(exprA.argument, exprB.argument);
-    case "BinaryExpression":
-      return exprA.type == exprB.type &&
-             exprA.operator == exprB.operator &&
+    case 'BinaryExpression':
+      return exprA.type === exprB.type &&
+             exprA.operator === exprB.operator &&
              eqExpr(exprA.left, exprB.left) &&
              eqExpr(exprA.right, exprB.right);
-    case "ConditionalExpression":
-      return exprA.type == exprB.type &&
+    case 'ConditionalExpression':
+      return exprA.type === exprB.type &&
              eqProp(exprA.test, exprB.test) &&
              eqExpr(exprA.consequent, exprB.consequent) &&
              eqExpr(exprA.alternate, exprB.alternate);
-    case "CallExpression":
-      return exprA.type == exprB.type &&
+    case 'CallExpression':
+      return exprA.type === exprB.type &&
              eqHeap(exprA.heap, exprB.heap) &&
              eqExpr(exprA.callee, exprB.callee) &&
-             exprA.args.length == exprB.args.length &&
+             exprA.args.length === exprB.args.length &&
              exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
-    case "MemberExpression":
-      return exprA.type == exprB.type &&
+    case 'MemberExpression':
+      return exprA.type === exprB.type &&
              eqExpr(exprA.object, exprB.object) &&
-             exprA.property == exprB.property;
+             exprA.property === exprB.property;
   }
 }
 
-export function eqProp(propA: P, propB: P): boolean {
+export function eqProp (propA: P, propB: P): boolean {
   switch (propA.type) {
-    case "Truthy":
-      return propA.type == propB.type &&
+    case 'Truthy':
+      return propA.type === propB.type &&
              eqExpr(propA.expr, propB.expr);
-    case "And":
-    case "Or":
-      return propA.type == propB.type &&
-             propA.clauses.length == propB.clauses.length &&
+    case 'And':
+    case 'Or':
+      return propA.type === propB.type &&
+             propA.clauses.length === propB.clauses.length &&
              propA.clauses.every((c,idx) => eqProp(c, propB.clauses[idx]));
-    case "Eq":
-      return propA.type == propB.type &&
+    case 'Eq':
+      return propA.type === propB.type &&
              eqExpr(propA.left, propB.left) &&
              eqExpr(propA.right, propB.right);
-    case "HeapEq":
-      return propA.type == propB.type &&
+    case 'HeapEq':
+      return propA.type === propB.type &&
              eqHeap(propA.left, propB.left) &&
              eqHeap(propA.right, propB.right);
-    case "Not":
-      return propA.type == propB.type &&
+    case 'Not':
+      return propA.type === propB.type &&
              eqProp(propA.arg, propB.arg);
-    case "True":
-    case "False":
-      return propA.type == propB.type;
-    case "CallTrigger":
-    case "Precondition":
-    case "Postcondition":
-      return propA.type == propB.type &&
+    case 'True':
+    case 'False':
+      return propA.type === propB.type;
+    case 'CallTrigger':
+    case 'Precondition':
+    case 'Postcondition':
+      return propA.type === propB.type &&
              eqHeap(propA.heap, propB.heap) &&
              eqExpr(propA.callee, propB.callee) &&
-             propA.args.length == propB.args.length &&
+             propA.args.length === propB.args.length &&
              propA.args.every((e,idx) => eqExpr(e, propB.args[idx]));
-    case "ForAllCalls":
-      return propA.type == propB.type &&
+    case 'ForAllCalls':
+      return propA.type === propB.type &&
              eqExpr(propA.callee, propB.callee) &&
-             propA.args.length == propB.args.length &&
-             propA.args.every((e,idx) => e == propB.args[idx]) &&
-             propA.existsHeaps.size == propB.existsHeaps.size &&
+             propA.args.length === propB.args.length &&
+             propA.args.every((e,idx) => e === propB.args[idx]) &&
+             propA.existsHeaps.size === propB.existsHeaps.size &&
              [...propA.existsHeaps].every(h => propB.existsHeaps.has(h)) &&
-             propA.existsLocs.size == propB.existsLocs.size &&
+             propA.existsLocs.size === propB.existsLocs.size &&
              [...propA.existsLocs].every(l => propB.existsLocs.has(l)) &&
-             propA.existsVars.size == propB.existsVars.size &&
+             propA.existsVars.size === propB.existsVars.size &&
              [...propA.existsVars].every(v => propB.existsVars.has(v)) &&
              eqProp(propA.prop, propB.prop);
-    case "ForAllAccess":
-      return propA.type == propB.type &&
+    case 'ForAllAccess':
+      return propA.type === propB.type &&
              eqProp(propA.prop, propB.prop);
-    case "InstanceOf":
-      return propA.type == propB.type &&
+    case 'InstanceOf':
+      return propA.type === propB.type &&
              eqExpr(propA.left, propB.left) &&
-             propA.right == propB.right;
-    case "HasProperty":
-      return propA.type == propB.type &&
+             propA.right === propB.right;
+    case 'HasProperty':
+      return propA.type === propB.type &&
              eqExpr(propA.object, propB.object) &&
-             propA.property == propB.property;
-    case "AccessTrigger":
-      return propA.type == propB.type &&
+             propA.property === propB.property;
+    case 'AccessTrigger':
+      return propA.type === propB.type &&
              eqExpr(propA.object, propB.object);
   }
 }
 
 export abstract class Visitor<L,H,R,S> {
 
-  abstract visitLocation(loc: Syntax.Location): L;
+  abstract visitLocation (loc: Syntax.Location): L;
 
-  abstract visitHeap(heap: Heap): H;
-  abstract visitHeapStore(prop: Syntax.HeapStore): H;
-  abstract visitHeapEffect(prop: Syntax.HeapEffect): H;
+  abstract visitHeap (heap: Heap): H;
+  abstract visitHeapStore (prop: Syntax.HeapStore): H;
+  abstract visitHeapEffect (prop: Syntax.HeapEffect): H;
 
-  abstract visitVariable(expr: Syntax.Variable): R;
-  abstract visitHeapReference(expr: Syntax.HeapReference): R;
-  abstract visitLiteral(expr: Syntax.Literal): R;
-  abstract visitArrayExpression(expr: Syntax.ArrayExpression): R;
-  abstract visitUnaryExpression(expr: Syntax.UnaryExpression): R;
-  abstract visitBinaryExpression(expr: Syntax.BinaryExpression): R;
-  abstract visitConditionalExpression(expr: Syntax.ConditionalExpression): R;
-  abstract visitCallExpression(expr: Syntax.CallExpression): R;
-  abstract visitMemberExpression(expr: Syntax.MemberExpression): R;
+  abstract visitVariable (expr: Syntax.Variable): R;
+  abstract visitHeapReference (expr: Syntax.HeapReference): R;
+  abstract visitLiteral (expr: Syntax.Literal): R;
+  abstract visitArrayExpression (expr: Syntax.ArrayExpression): R;
+  abstract visitUnaryExpression (expr: Syntax.UnaryExpression): R;
+  abstract visitBinaryExpression (expr: Syntax.BinaryExpression): R;
+  abstract visitConditionalExpression (expr: Syntax.ConditionalExpression): R;
+  abstract visitCallExpression (expr: Syntax.CallExpression): R;
+  abstract visitMemberExpression (expr: Syntax.MemberExpression): R;
 
-  abstract visitTruthy(prop: Syntax.Truthy): S;
-  abstract visitAnd(prop: Syntax.And): S;
-  abstract visitOr(prop: Syntax.Or): S;
-  abstract visitEq(prop: Syntax.Eq): S;
-  abstract visitHeapEq(prop: Syntax.HeapEq): S;
-  abstract visitNot(prop: Syntax.Not): S;
-  abstract visitTrue(prop: Syntax.True): S;
-  abstract visitFalse(prop: Syntax.False): S;
-  abstract visitPrecondition(prop: Syntax.Precondition): S;
-  abstract visitPostcondition(prop: Syntax.Postcondition): S;
-  abstract visitForAllCalls(prop: Syntax.ForAllCalls): S;
-  abstract visitCallTrigger(prop: Syntax.CallTrigger): S;
-  abstract visitForAllAccess(prop: Syntax.ForAllAccess): S;
-  abstract visitInstanceOf(prop: Syntax.InstanceOf): S;
-  abstract visitHasProperty(prop: Syntax.HasProperty): S;
-  abstract visitAccessTrigger(prop: Syntax.AccessTrigger): S;
+  abstract visitTruthy (prop: Syntax.Truthy): S;
+  abstract visitAnd (prop: Syntax.And): S;
+  abstract visitOr (prop: Syntax.Or): S;
+  abstract visitEq (prop: Syntax.Eq): S;
+  abstract visitHeapEq (prop: Syntax.HeapEq): S;
+  abstract visitNot (prop: Syntax.Not): S;
+  abstract visitTrue (prop: Syntax.True): S;
+  abstract visitFalse (prop: Syntax.False): S;
+  abstract visitPrecondition (prop: Syntax.Precondition): S;
+  abstract visitPostcondition (prop: Syntax.Postcondition): S;
+  abstract visitForAllCalls (prop: Syntax.ForAllCalls): S;
+  abstract visitCallTrigger (prop: Syntax.CallTrigger): S;
+  abstract visitForAllAccess (prop: Syntax.ForAllAccess): S;
+  abstract visitInstanceOf (prop: Syntax.InstanceOf): S;
+  abstract visitHasProperty (prop: Syntax.HasProperty): S;
+  abstract visitAccessTrigger (prop: Syntax.AccessTrigger): S;
 
-  visitHeapExpr(heap: Syntax.HeapExpression): H {
-    if (typeof(heap) == "number") return this.visitHeap(heap);
+  visitHeapExpr (heap: Syntax.HeapExpression): H {
+    if (typeof(heap) === 'number') return this.visitHeap(heap);
     switch (heap.type) {
-      case "HeapStore": return this.visitHeapStore(heap);
-      case "HeapEffect": return this.visitHeapEffect(heap);
+      case 'HeapStore': return this.visitHeapStore(heap);
+      case 'HeapEffect': return this.visitHeapEffect(heap);
     }
   }
 
-  visitExpr(expr: A): R {
-    if (typeof(expr) == "string") return this.visitVariable(expr);
+  visitExpr (expr: A): R {
+    if (typeof(expr) === 'string') return this.visitVariable(expr);
     switch (expr.type) {
-      case "HeapReference": return this.visitHeapReference(expr);
-      case "Literal": return this.visitLiteral(expr);
+      case 'HeapReference': return this.visitHeapReference(expr);
+      case 'Literal': return this.visitLiteral(expr);
       case 'ArrayExpression': return this.visitArrayExpression(expr);
-      case "UnaryExpression": return this.visitUnaryExpression(expr);
-      case "BinaryExpression": return this.visitBinaryExpression(expr);
-      case "ConditionalExpression": return this.visitConditionalExpression(expr);
-      case "CallExpression": return this.visitCallExpression(expr);
-      case "MemberExpression": return this.visitMemberExpression(expr);
+      case 'UnaryExpression': return this.visitUnaryExpression(expr);
+      case 'BinaryExpression': return this.visitBinaryExpression(expr);
+      case 'ConditionalExpression': return this.visitConditionalExpression(expr);
+      case 'CallExpression': return this.visitCallExpression(expr);
+      case 'MemberExpression': return this.visitMemberExpression(expr);
     }
   }
 
-  visitProp(prop: P): S {
+  visitProp (prop: P): S {
     switch (prop.type) {
-      case "Truthy": return this.visitTruthy(prop);
-      case "And": return this.visitAnd(prop);
-      case "Or": return this.visitOr(prop);
-      case "Eq": return this.visitEq(prop);
-      case "HeapEq": return this.visitHeapEq(prop);
-      case "Not": return this.visitNot(prop);
-      case "True": return this.visitTrue(prop);
-      case "False": return this.visitFalse(prop);
-      case "Precondition": return this.visitPrecondition(prop);
-      case "Postcondition": return this.visitPostcondition(prop);
-      case "ForAllCalls": return this.visitForAllCalls(prop);
-      case "CallTrigger": return this.visitCallTrigger(prop);
-      case "ForAllAccess": return this.visitForAllAccess(prop);
-      case "InstanceOf": return this.visitInstanceOf(prop);
-      case "HasProperty": return this.visitHasProperty(prop);
-      case "AccessTrigger": return this.visitAccessTrigger(prop);
+      case 'Truthy': return this.visitTruthy(prop);
+      case 'And': return this.visitAnd(prop);
+      case 'Or': return this.visitOr(prop);
+      case 'Eq': return this.visitEq(prop);
+      case 'HeapEq': return this.visitHeapEq(prop);
+      case 'Not': return this.visitNot(prop);
+      case 'True': return this.visitTrue(prop);
+      case 'False': return this.visitFalse(prop);
+      case 'Precondition': return this.visitPrecondition(prop);
+      case 'Postcondition': return this.visitPostcondition(prop);
+      case 'ForAllCalls': return this.visitForAllCalls(prop);
+      case 'CallTrigger': return this.visitCallTrigger(prop);
+      case 'ForAllAccess': return this.visitForAllAccess(prop);
+      case 'InstanceOf': return this.visitInstanceOf(prop);
+      case 'HasProperty': return this.visitHasProperty(prop);
+      case 'AccessTrigger': return this.visitAccessTrigger(prop);
     }
   }
 }
 
 export abstract class Reducer<R> extends Visitor<R,R,R,R> {
 
-  abstract empty(): R;
+  abstract empty (): R;
 
-  abstract reduce(x: R, y: R): R;
+  abstract reduce (x: R, y: R): R;
 
-  r(...r: R[]) {
+  r (...r: R[]) {
     return r.reduce((res,r) => this.reduce(res, r), this.empty());
   }
 
-  visitLocation(loc: Syntax.Location) { return this.empty(); }
+  visitLocation (loc: Syntax.Location) { return this.empty(); }
 
-  visitHeap(heap: Heap): R { return this.empty(); }
+  visitHeap (heap: Heap): R { return this.empty(); }
 
-  visitHeapStore(prop: Syntax.HeapStore): R {
+  visitHeapStore (prop: Syntax.HeapStore): R {
     return this.r(this.visitHeapExpr(prop.target),
                   this.visitLocation(prop.loc),
                   this.visitExpr(prop.expr));
   }
 
-  visitHeapEffect(prop: Syntax.HeapEffect): R {
+  visitHeapEffect (prop: Syntax.HeapEffect): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
-  visitVariable(expr: Syntax.Variable) { return this.empty(); }
+  visitVariable (expr: Syntax.Variable) { return this.empty(); }
 
-  visitHeapReference(expr: Syntax.HeapReference) {
+  visitHeapReference (expr: Syntax.HeapReference) {
     return this.r(this.visitHeapExpr(expr.heap), this.visitLocation(expr.loc));
   }
 
-  visitLiteral(expr: Syntax.Literal) { return this.empty(); }
+  visitLiteral (expr: Syntax.Literal) { return this.empty(); }
 
-  visitArrayExpression(expr: Syntax.ArrayExpression) {
+  visitArrayExpression (expr: Syntax.ArrayExpression) {
     return this.r(...expr.elements.map(e => this.visitExpr(e)));
   }
 
-  visitUnaryExpression(expr: Syntax.UnaryExpression) {
+  visitUnaryExpression (expr: Syntax.UnaryExpression) {
     return this.visitExpr(expr.argument);
   }
 
-  visitBinaryExpression(expr: Syntax.BinaryExpression) {
+  visitBinaryExpression (expr: Syntax.BinaryExpression) {
     return this.r(this.visitExpr(expr.left), this.visitExpr(expr.right));
   }
 
-  visitConditionalExpression(expr: Syntax.ConditionalExpression): R {
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): R {
     return this.r(this.visitProp(expr.test), this.visitExpr(expr.consequent), this.visitExpr(expr.alternate));
   }
 
-  visitCallExpression(expr: Syntax.CallExpression): R {
+  visitCallExpression (expr: Syntax.CallExpression): R {
     return this.r(this.visitHeapExpr(expr.heap),
                   this.visitExpr(expr.callee),
                   ...expr.args.map(a => this.visitExpr(a)));
   }
 
-  visitMemberExpression(expr: Syntax.MemberExpression): R {
+  visitMemberExpression (expr: Syntax.MemberExpression): R {
     return this.visitExpr(expr.object);
   }
 
-  visitTruthy(prop: Syntax.Truthy): R {
+  visitTruthy (prop: Syntax.Truthy): R {
     return this.visitExpr(prop.expr);
   }
 
-  visitAnd(prop: Syntax.And): R {
+  visitAnd (prop: Syntax.And): R {
     return this.r(...prop.clauses.map(c => this.visitProp(c)));
   }
 
-  visitOr(prop: Syntax.Or): R {
+  visitOr (prop: Syntax.Or): R {
     return this.r(...prop.clauses.map(c => this.visitProp(c)));
   }
 
-  visitEq(prop: Syntax.Eq): R {
+  visitEq (prop: Syntax.Eq): R {
     return this.r(this.visitExpr(prop.left), this.visitExpr(prop.right));
   }
 
-  visitNot(prop: Syntax.Not): R {
+  visitNot (prop: Syntax.Not): R {
     return this.visitProp(prop.arg);
   }
 
-  visitTrue(prop: Syntax.True): R { return this.empty(); }
+  visitTrue (prop: Syntax.True): R { return this.empty(); }
 
-  visitFalse(prop: Syntax.False): R { return this.empty(); }
+  visitFalse (prop: Syntax.False): R { return this.empty(); }
 
-  visitPrecondition(prop: Syntax.Precondition): R {
+  visitPrecondition (prop: Syntax.Precondition): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
-  visitPostcondition(prop: Syntax.Postcondition): R {
+  visitPostcondition (prop: Syntax.Postcondition): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
-  visitForAllCalls(prop: Syntax.ForAllCalls): R {
+  visitForAllCalls (prop: Syntax.ForAllCalls): R {
     return this.r(this.visitExpr(prop.callee),
                   this.visitProp(prop.prop));
   }
 
-  visitCallTrigger(prop: Syntax.CallTrigger): R {
+  visitCallTrigger (prop: Syntax.CallTrigger): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
-  visitHeapEq(prop: Syntax.HeapEq): R {
+  visitHeapEq (prop: Syntax.HeapEq): R {
     return this.r(this.visitHeapExpr(prop.left),
                   this.visitHeapExpr(prop.right));
   }
 
-  visitInstanceOf(prop: Syntax.InstanceOf): R {
+  visitInstanceOf (prop: Syntax.InstanceOf): R {
     return this.visitExpr(prop.left);
   }
 
-  visitHasProperty(prop: Syntax.HasProperty): R {
+  visitHasProperty (prop: Syntax.HasProperty): R {
     return this.visitExpr(prop.object);
   }
 
-  visitForAllAccess(prop: Syntax.ForAllAccess): R {
+  visitForAllAccess (prop: Syntax.ForAllAccess): R {
     return this.visitProp(prop.prop);
   }
 
-  visitAccessTrigger(prop: Syntax.AccessTrigger): R {
+  visitAccessTrigger (prop: Syntax.AccessTrigger): R {
     return this.visitExpr(prop.object);
   }
 }
 
 export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression, A, P> {
 
-  visitLocation(loc: Syntax.Location): Syntax.Location {
+  visitLocation (loc: Syntax.Location): Syntax.Location {
     return loc;
   }
 
-  visitHeap(heap: Heap): Syntax.HeapExpression {
+  visitHeap (heap: Heap): Syntax.HeapExpression {
     return heap;
   }
 
-  visitHeapStore(expr: Syntax.HeapStore): Syntax.HeapExpression {
+  visitHeapStore (expr: Syntax.HeapStore): Syntax.HeapExpression {
     return {
-      type: "HeapStore",
+      type: 'HeapStore',
       target: this.visitHeapExpr(expr.target),
       loc: this.visitLocation(expr.loc),
       expr: this.visitExpr(expr.expr)
     };
   }
-  
-  visitHeapEffect(expr: Syntax.HeapEffect): Syntax.HeapExpression {
+
+  visitHeapEffect (expr: Syntax.HeapEffect): Syntax.HeapExpression {
     return {
-     type: "HeapEffect",
+     type: 'HeapEffect',
      callee: this.visitExpr(expr.callee),
      heap: this.visitHeapExpr(expr.heap),
      args: expr.args.map(a => this.visitExpr(a))
     };
   }
-  
-  visitVariable(expr: Syntax.Variable): A {
+
+  visitVariable (expr: Syntax.Variable): A {
     return expr;
   }
 
-  visitHeapReference(expr: Syntax.HeapReference): A {
+  visitHeapReference (expr: Syntax.HeapReference): A {
     return {
-      type: "HeapReference",
+      type: 'HeapReference',
       heap: this.visitHeapExpr(expr.heap),
       loc: this.visitLocation(expr.loc)
-    }
+    };
   }
 
-  visitLiteral(expr: Syntax.Literal): A {
+  visitLiteral (expr: Syntax.Literal): A {
     return expr;
   }
-  
-  visitArrayExpression(expr: Syntax.ArrayExpression): A {
-    return { type: "ArrayExpression", elements: expr.elements.map(e => this.visitExpr(e)) };
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): A {
+    return { type: 'ArrayExpression', elements: expr.elements.map(e => this.visitExpr(e)) };
   }
-  
-  visitUnaryExpression(expr: Syntax.UnaryExpression): A {
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): A {
     return {
-      type: "UnaryExpression",
+      type: 'UnaryExpression',
       operator: expr.operator,
       argument: this.visitExpr(expr.argument)
     };
   }
-  
-  visitBinaryExpression(expr: Syntax.BinaryExpression): A {
+
+  visitBinaryExpression (expr: Syntax.BinaryExpression): A {
     return {
-     type: "BinaryExpression",
+     type: 'BinaryExpression',
      operator: expr.operator,
      left: this.visitExpr(expr.left),
      right: this.visitExpr(expr.right)
     };
   }
-  
-  visitConditionalExpression(expr: Syntax.ConditionalExpression): A {
+
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): A {
     return {
-     type: "ConditionalExpression",
+     type: 'ConditionalExpression',
      test: this.visitProp(expr.test),
      consequent: this.visitExpr(expr.consequent),
      alternate: this.visitExpr(expr.alternate)
     };
   }
-  
-  visitCallExpression(expr: Syntax.CallExpression): A {
+
+  visitCallExpression (expr: Syntax.CallExpression): A {
     return {
-     type: "CallExpression",
+     type: 'CallExpression',
      callee: this.visitExpr(expr.callee),
      heap: this.visitHeapExpr(expr.heap),
      args: expr.args.map(a => this.visitExpr(a))
     };
   }
 
-  visitMemberExpression(expr: Syntax.MemberExpression): A {
+  visitMemberExpression (expr: Syntax.MemberExpression): A {
     return {
-      type: "MemberExpression",
+      type: 'MemberExpression',
       object: this.visitExpr(expr.object),
       property: expr.property
     };
   }
 
-  visitTruthy(prop: Syntax.Truthy): P {
-    return { type: "Truthy", expr: this.visitExpr(prop.expr) };
+  visitTruthy (prop: Syntax.Truthy): P {
+    return { type: 'Truthy', expr: this.visitExpr(prop.expr) };
   }
-  
-  visitAnd(prop: Syntax.And): P {
+
+  visitAnd (prop: Syntax.And): P {
     return and(...prop.clauses.map(c => this.visitProp(c)));
   }
-  
-  visitOr(prop: Syntax.Or): P {
+
+  visitOr (prop: Syntax.Or): P {
     return or(...prop.clauses.map(c => this.visitProp(c)));
   }
-  
-  visitEq(prop: Syntax.Eq): P {
+
+  visitEq (prop: Syntax.Eq): P {
     return eq(this.visitExpr(prop.left), this.visitExpr(prop.right));
   }
-  
-  visitHeapEq(prop: Syntax.HeapEq): P {
+
+  visitHeapEq (prop: Syntax.HeapEq): P {
     return heapEq(this.visitHeapExpr(prop.left), this.visitHeapExpr(prop.right));
   }
-  
-  visitNot(prop: Syntax.Not): P {
+
+  visitNot (prop: Syntax.Not): P {
     return not(this.visitProp(prop.arg));
   }
-  
-  visitTrue(prop: Syntax.True): P {
+
+  visitTrue (prop: Syntax.True): P {
     return prop;
   }
-  
-  visitFalse(prop: Syntax.False): P {
+
+  visitFalse (prop: Syntax.False): P {
     return prop;
   }
-  
-  visitPrecondition(prop: Syntax.Precondition): P {
+
+  visitPrecondition (prop: Syntax.Precondition): P {
     return {
-      type: "Precondition",
+      type: 'Precondition',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
-  
-  visitPostcondition(prop: Syntax.Postcondition): P {
+
+  visitPostcondition (prop: Syntax.Postcondition): P {
     return {
-      type: "Postcondition",
+      type: 'Postcondition',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
-  
-  visitForAllCalls(prop: Syntax.ForAllCalls): P {
+
+  visitForAllCalls (prop: Syntax.ForAllCalls): P {
     return {
-      type: "ForAllCalls",
+      type: 'ForAllCalls',
       callee: this.visitExpr(prop.callee),
       heap: prop.heap,
       args: prop.args,
@@ -726,49 +678,49 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       instantiations: [...prop.instantiations] // shallow copy, do not process
     };
   }
-  
-  visitCallTrigger(prop: Syntax.CallTrigger): P {
+
+  visitCallTrigger (prop: Syntax.CallTrigger): P {
     return {
-      type: "CallTrigger",
+      type: 'CallTrigger',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
 
-  visitForAllAccess(prop: Syntax.ForAllAccess): P {
+  visitForAllAccess (prop: Syntax.ForAllAccess): P {
     return {
-      type: "ForAllAccess",
+      type: 'ForAllAccess',
       prop: this.visitProp(prop.prop),
       instantiations: [...prop.instantiations] // shallow copy, do not process
     };
   }
 
-  visitInstanceOf(prop: Syntax.InstanceOf): P {
+  visitInstanceOf (prop: Syntax.InstanceOf): P {
     return {
-      type: "InstanceOf",
+      type: 'InstanceOf',
       left: this.visitExpr(prop.left),
       right: prop.right
     };
   }
 
-  visitHasProperty(prop: Syntax.HasProperty): P {
+  visitHasProperty (prop: Syntax.HasProperty): P {
     return {
-      type: "HasProperty",
+      type: 'HasProperty',
       object: this.visitExpr(prop.object),
       property: prop.property
     };
   }
 
-  visitAccessTrigger(prop: Syntax.AccessTrigger): P {
+  visitAccessTrigger (prop: Syntax.AccessTrigger): P {
     return {
-      type: "AccessTrigger",
+      type: 'AccessTrigger',
       object: this.visitExpr(prop.object)
     };
   }
 }
 
-export function copy(prop: P): P {
+export function copy (prop: P): P {
   return (new Transformer()).visitProp(prop);
 }
 
@@ -777,34 +729,34 @@ export class Substituter extends Transformer {
   thetaLoc: { [lname: string]: Syntax.Location } = {};
   thetaVar: { [vname: string]: Syntax.Expression } = {};
 
-  visitHeap(heap: Heap): Syntax.HeapExpression {
+  visitHeap (heap: Heap): Syntax.HeapExpression {
     return heap in this.thetaHeap ? this.thetaHeap[heap] : heap;
   }
 
-  visitLocation(l: Syntax.Location): Syntax.Location {
+  visitLocation (l: Syntax.Location): Syntax.Location {
     return l in this.thetaLoc ? this.thetaLoc[l] : l;
   }
-  
-  visitVariable(v: Syntax.Variable): Syntax.Expression {
+
+  visitVariable (v: Syntax.Variable): Syntax.Expression {
     return v in this.thetaVar ? this.thetaVar[v] : v;
   }
 
-  replaceHeap(orig: number, expr: Syntax.HeapExpression): Substituter {
+  replaceHeap (orig: number, expr: Syntax.HeapExpression): Substituter {
     this.thetaHeap[orig] = expr;
     return this;
   }
-  
-  replaceLoc(orig: Syntax.Location, expr: Syntax.Location): Substituter {
+
+  replaceLoc (orig: Syntax.Location, expr: Syntax.Location): Substituter {
     this.thetaLoc[orig] = expr;
     return this;
   }
-  
-  replaceVar(orig: Syntax.Variable, expr: Syntax.Expression): Substituter {
+
+  replaceVar (orig: Syntax.Variable, expr: Syntax.Expression): Substituter {
     this.thetaVar[orig] = expr;
     return this;
   }
-  
-  visitForAllCalls(prop: Syntax.ForAllCalls): P {
+
+  visitForAllCalls (prop: Syntax.ForAllCalls): P {
     const origThetaHeap = Object.assign({}, this.thetaHeap);
     const origThetaLoc = Object.assign({}, this.thetaLoc);
     const origThetaVar = Object.assign({}, this.thetaVar);
@@ -822,10 +774,10 @@ export class Substituter extends Transformer {
     }
   }
 
-  visitForAllAccess(prop: Syntax.ForAllAccess): P {
+  visitForAllAccess (prop: Syntax.ForAllAccess): P {
     const origThetaVar = Object.assign({}, this.thetaVar);
     try {
-      delete this.thetaVar["this"];
+      delete this.thetaVar['this'];
       return super.visitForAllAccess(prop);
     } finally {
       this.thetaVar = origThetaVar;
@@ -833,13 +785,62 @@ export class Substituter extends Transformer {
   }
 }
 
-export function removePrefix(prefix: P, prop: P): P {
-  if (prefix.type != "And" || prop.type != "And") return prop;
-  let prefix_length = 0;
-  while (prefix.clauses.length > prefix_length &&
-         prop.clauses.length > prefix_length &&
-         eqProp(prefix.clauses[prefix_length], prop.clauses[prefix_length])) {
-    prefix_length++;
+export function removePrefix (prefix: P, prop: P): P {
+  if (prefix.type !== 'And' || prop.type !== 'And') return prop;
+  let prefixLength = 0;
+  while (prefix.clauses.length > prefixLength &&
+         prop.clauses.length > prefixLength &&
+         eqProp(prefix.clauses[prefixLength], prop.clauses[prefixLength])) {
+    prefixLength++;
   }
-  return and(...prop.clauses.slice(prefix_length));
+  return and(...prop.clauses.slice(prefixLength));
+}
+
+export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+  const numHeaps = Math.max(0, toHeap - heap - 1);
+  const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
+  const preP: P = { type: 'Precondition', callee, heap, args };
+  const postP: P = { type: 'Postcondition', callee, heap, args };
+  let s;
+  if (heap !== toHeap) {
+    const sub = new Substituter();
+    sub.replaceHeap(toHeap, { type: 'HeapEffect', callee, heap, args });
+    s = sub.visitProp(ens);
+  } else {
+    s = and(ens, heapEq(heap, { type: 'HeapEffect', callee, heap, args }));
+  }
+  const prop = and(implies(req, preP), implies(and(req, postP), s));
+  const forAll: P = { type: 'ForAllCalls', callee, heap, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [] };
+  const fnCheck: A = {
+    type: 'BinaryExpression',
+    left: {
+      type: 'UnaryExpression',
+      operator: 'typeof',
+      argument: callee
+    },
+    operator: '==',
+    right: { type: 'Literal', value: 'function' }
+  };
+  return and(truthy(fnCheck), forAll);
+}
+
+export function transformClassInvariant (className: string, fields: Array<string>, inv: P): P {
+  const instP: P = { type: 'InstanceOf', left: 'this', right: className };
+  let prop: P = truthy({
+    type: 'BinaryExpression',
+    left: {
+      type: 'UnaryExpression',
+      operator: 'typeof',
+      argument: 'this'
+    },
+    operator: '==',
+    right: { type: 'Literal', value: 'object' }
+  });
+  prop = and(prop, not(eq('this', { type: 'Literal', value: null })));
+  for (const property of fields) {
+    prop = and(prop, { type: 'HasProperty', object: 'this', property });
+  }
+  prop = and(prop, inv);
+  prop = implies(instP, prop);
+  return { type: 'ForAllAccess', prop, instantiations: [] };
 }

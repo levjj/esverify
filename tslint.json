@@ -1,0 +1,7 @@
+{
+  "extends": "tslint-config-standard",
+  "rules": {
+    "indent": [true, "spaces"],
+    "semicolon": [true, "always"]
+  }
+}
