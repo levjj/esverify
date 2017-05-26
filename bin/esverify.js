@@ -2,7 +2,7 @@
 
 var fs = require('fs');
 var minimist = require('minimist');
-var esverify = require("../esverify.js");
+var esverify = require('../esverify.js');
 
 function error(msg) {
   console.error(msg);
@@ -27,10 +27,10 @@ function usage(err) {
 }
 
 var opts = minimist(process.argv.slice(2), {
-  boolean: ["noqi", "remote", "quiet", "verbose", "help", "version"],
-  string: ["logformat", "z3path", "z3url"],
+  boolean: ['noqi', 'remote', 'quiet', 'verbose', 'help', 'version'],
+  string: ['logformat', 'z3path', 'z3url'],
   default: { quiet: false },
-  alias: {r: "remote", f: "logformat", q: "quiet", v: "verbose", h: "help" },
+  alias: {r: 'remote', f: 'logformat', q: 'quiet', v: 'verbose', h: 'help' },
   unknown: function(opt) { if (opt[0] == '-' && opt != '-') usage(true); }
 });
 if (opts.version) {
@@ -38,13 +38,13 @@ if (opts.version) {
   process.exit(0);
 }
 if (opts._.length != 1 || opts.help) usage(!opts.help);
-opts.qi = !opts["noqi"];
+opts.qi = !opts['noqi'];
 opts.filename = opts._[0];
 
 function run(err, js) {
   if (err) error('Error: ' + err.message);
   esverify.verify(js.toString(), opts)
-    .then(msgs => msgs.forEach(msg => msg.status != "verified" && error("failed")));
+    .then(msgs => msgs.some(msg => msg.status != 'verified') && error('failed'));
 }
 
 if (opts.filename !== '-') {
