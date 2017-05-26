@@ -1,0 +1,18 @@
+language: node_js
+node_js:
+  - '7.5'
+addons:
+  apt:
+    packages:
+    - z3
+branches:
+  only:
+    - master
+cache:
+  directories:
+    - node_modules
+before_script:
+  - npm prune && npm cache clean
+  - npm install
+script:
+  - npm test
