@@ -141,7 +141,7 @@ export namespace Syntax {
                                          requires: Array<Expression>,
                                          ensures: Array<Expression>,
                                          body: BlockStatement,
-                                         freeVars: Array<Declaration>,
+                                         freeVars: Array<string>,
                                          loc: SourceLocation }
   export interface ClassDeclaration { type: "ClassDeclaration",
                                       id: Identifier,
@@ -203,7 +203,6 @@ function withoutPseudoCalls(type: string, stmts: Array<JSyntax.Statement>): Arra
 
 function loc(n: JSyntax.Node): Syntax.SourceLocation {
   if (!n.loc) {
-    debugger;
     throw new MessageException(unexpected(new Error("No location information available on nodes")));
   }
   return { file: options.filename, start: n.loc.start, end: n.loc.end };
@@ -823,7 +822,6 @@ function unsupportedLoc(loc: Syntax.SourceLocation, description: string = "") {
 }
 
 function undefinedId(loc: Syntax.SourceLocation) {
-  debugger;
   return new MessageException({ status: "error", type:"undefined-identifier", loc, description: ""});
 }
 
@@ -868,8 +866,8 @@ class Scope {
       decl = this.ids[sym.name];
     } else if (this.parent) {
       decl = this.parent.lookupUse(sym, clz);
-      if (this.func && !this.func.freeVars.includes(decl) && isWrittenTo(decl)) {
-        this.func.freeVars.push(decl); // a free variable
+      if (this.func && !this.func.freeVars.includes(sym.name) && isWrittenTo(decl)) {
+        this.func.freeVars.push(sym.name); // a free variable
       }
     }
     if (!decl || decl.type == "Unresolved") {
@@ -1104,7 +1102,7 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitOldIdentifier(expr: Syntax.OldIdentifier): string {
-    return `old(${expr.id.name})`;
+    return `old_${expr.id.name}`;
   }
   
   visitLiteral(expr: Syntax.Literal): string {
@@ -1528,17 +1526,4 @@ export function checkPreconditions(f: Syntax.FunctionDeclaration): Syntax.Functi
     freeVars: f.freeVars,
     loc: f.loc
   };
-}
-
-export function convertToAssignment(decl: Syntax.VariableDeclaration): Syntax.ExpressionStatement {
-  return {
-    type: "ExpressionStatement",
-    expression: {
-      type: "AssignmentExpression",
-      left: decl.id,
-      right: decl.init,
-      loc: decl.loc
-    },
-    loc: decl.loc
-  }
 }

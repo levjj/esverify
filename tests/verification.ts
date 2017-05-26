@@ -35,7 +35,8 @@ function helper(expected: "verified" | "unverified" | "incorrect", description: 
     const res = await vc.verify();
     if (res.status == "error" && res.type == "unexpected") console.log(res.error);
     if (expected == "verified" || expected == "unverified") {
-      expect(res.status).to.be.eql(expected);
+      const st = res.status == "error" && res.type == "incorrect" ? res.type : res.status;
+      expect(st).to.be.eql(expected);
     } else {
       expect(res.status == "error" && res.type == expected).to.be.true;
     }
@@ -130,10 +131,10 @@ describe('counter', () => {
 
   verified('initially: (typeof(counter) == "number")');
   verified('initially: (counter >= 0)');
-  verified('increment: (counter > old(counter))');
+  verified('increment: (counter > old_counter)');
   verified('increment: (typeof(counter) == "number")');
   verified('increment: (counter >= 0)');
-  verified('decrement: (old(counter) > 0) ? (counter < old(counter)) : (counter == old(counter))');
+  verified('decrement: (old_counter > 0) ? (counter < old_counter) : (counter == old_counter)');
   verified('decrement: (typeof(counter) == "number")');
   verified('decrement: (counter >= 0)');
 });

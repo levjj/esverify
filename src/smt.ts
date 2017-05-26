@@ -247,7 +247,7 @@ function propositionToAssert(prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-export function vcToSMT(classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
+export function vcToSMT(classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: Vars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
@@ -454,7 +454,7 @@ ${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
 ${propositionToAssert(prop)}
 
 (check-sat)
-(get-value (${[...vars].map(v => `v_${v}`).join(' ')}))`;
+(get-value (${[...freeVars].map(v => `v_${v}`).join(' ')}))`;
 }
 
 function modelError(smt: SMTOutput): MessageException {
@@ -484,6 +484,7 @@ function smtToValue(smt: SMTOutput): any {
     case "jsnum": const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
     case "jsstr": return v.substr(1, v.length - 2);
     case "jsarr": return smtToArray(v);
+    case "jsobj": return {};
     default: throw modelError(tag);
   }
 }
@@ -505,9 +506,7 @@ export function smtToModel(smt: SMTOutput): Model {
     const name = both[0].trim(),
           value = both.slice(1, both.length).join(" ").trim();
     const val = smtToValue(value);
-    if (typeof(val) != "function") {
-      model[name.substr(2)] = val;
-    }
+    model[name.substr(2)] = val;
   });
   return model;
 }

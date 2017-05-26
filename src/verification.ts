@@ -16,13 +16,14 @@ export default class VerificationCondition {
   locs: Locs;
   vars: Vars;
   prop: P;
-  testBody: Array<Syntax.Statement>;
   loc: Syntax.SourceLocation;
+  freeVars: Vars;
+  testBody: Array<Syntax.Statement>;
   description: string;
   inprocess: boolean;
   result: Message | null;
 
-  constructor(classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, body: Array<Syntax.Statement> = []) {
+  constructor(classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, freeVars: Vars, body: Array<Syntax.Statement>) {
     this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap+1).keys()]);
     this.locs = new Set([...locs]);
@@ -30,13 +31,14 @@ export default class VerificationCondition {
     this.prop = prop;
     this.loc = loc;
     this.description = description;
+    this.freeVars = freeVars;
     this.testBody = body;
     this.inprocess = false;
     this.result = null;
   }
 
   private prepareSMT(): SMTInput {
-    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.prop);
+    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, this.prop);
     if (options.verbose) {
       console.log('SMT Input:');
       console.log('------------');
@@ -48,9 +50,9 @@ export default class VerificationCondition {
 
   private testCode(model: Model): string {
     const declarations = Object.keys(model).map(v =>
-            `let ${v} = ${JSON.stringify(model[v])};\n`),
+            `let ${v} = ${typeof(model[v]) == "function" ? "(function(){})" : JSON.stringify(model[v])};\n`),
           oldValues = Object.keys(model).map(v =>
-            `let ${v}_0 = ${v};\n`);
+            `let old_${v} = ${v};\n`);
     return `
 function assert(p) { if (!p) throw new Error("assertion failed"); }
 function pure() { return true; /* not tested dynamically */ }
