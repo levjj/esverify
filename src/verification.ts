@@ -2,7 +2,7 @@ declare const console: { log: (s: string) => void };
 declare const require: (s: string) => any;
 declare const fetch: (s: string, opts: any) => Promise<any>;
 
-import { P, Vars, Locs, Heap, Heaps } from "./logic";
+import { P, Vars, Locs, Heap, Heaps, Classes } from "./logic";
 import { Model, SMTInput, SMTOutput, vcToSMT, smtToModel } from "./smt";
 import { Syntax, stringifyStmt } from "./javascript";
 import { Message, MessageException, unexpected } from "./message";
@@ -11,6 +11,7 @@ import { options } from "./options";
 export type SMTOutput = string;
 
 export default class VerificationCondition {
+  classes: Classes;
   heaps: Heaps;
   locs: Locs;
   vars: Vars;
@@ -21,7 +22,8 @@ export default class VerificationCondition {
   inprocess: boolean;
   result: Message | null;
 
-  constructor(heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, body: Array<Syntax.Statement> = []) {
+  constructor(classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, body: Array<Syntax.Statement> = []) {
+    this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap+1).keys()]);
     this.locs = new Set([...locs]);
     this.vars = new Set([...vars]);
@@ -34,7 +36,7 @@ export default class VerificationCondition {
   }
 
   private prepareSMT(): SMTInput {
-    const smt = vcToSMT(this.heaps, this.locs, this.vars, this.prop);
+    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.prop);
     if (options.verbose) {
       console.log('SMT Input:');
       console.log('------------');
@@ -87,6 +89,8 @@ ${this.testBody.map(s => stringifyStmt(s)).join("\n")}`;
       }
     } else if (out && out.startsWith("unsat")) {
       return { status: "verified", description: this.description, loc: this.loc };
+    } else if (out && out.startsWith("unknown")) {
+      return { status: "unknown", description: this.description, loc: this.loc };
     } else {
       return unexpected(new Error("unexpected: " + out), this.loc);
     }
@@ -131,7 +135,7 @@ ${this.testBody.map(s => stringifyStmt(s)).join("\n")}`;
 
   runTest() {
     if (!this.result) throw new Error("no model available");
-    if (this.result.status == "verified") throw new Error("no model available");
+    if (this.result.status == "verified" || this.result.status == "unknown") throw new Error("no model available");
     if (this.result.status == "error" && this.result.type != "incorrect") throw new Error("no model available");
     eval(this.testCode(this.result.model));
   }

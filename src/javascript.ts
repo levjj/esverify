@@ -11,10 +11,14 @@ export namespace Syntax {
                           | { type: "SpecArg", decl: Syntax.SpecExpression, argIdx: number }
                           | { type: "Param",
                               func: Syntax.FunctionDeclaration;
-                              decl: Syntax.Identifier };
+                              decl: Syntax.Identifier }
+                          | { type: "This", decl: Syntax.ClassDeclaration }
+                          | { type: "Class", decl: Syntax.ClassDeclaration };
 
   interface Position { line: number, column: number }
   export interface SourceLocation { file: string, start: Position, end: Position }
+
+  export type ClassName = string;
 
   export interface Identifier { type: "Identifier", name: string,
                                 decl: Declaration, refs: Array<Identifier>, isWrittenTo: boolean,
@@ -69,6 +73,22 @@ export namespace Syntax {
                                     pre: Expression,
                                     post: Expression,
                                     loc: SourceLocation }
+  export interface NewExpression { type: "NewExpression",
+                                   callee: Identifier,
+                                   args: Array<Expression>,
+                                   loc: SourceLocation }
+  export interface InstanceOfExpression { type: "InstanceOfExpression",
+                                          left: Expression,
+                                          right: Identifier,
+                                          loc: SourceLocation }
+  export interface InExpression { type: "InExpression",
+                                  property: string,
+                                  object: Expression,
+                                  loc: SourceLocation }
+  export interface MemberExpression { type: "MemberExpression",
+                                      object: Expression,
+                                      property: string,
+                                      loc: SourceLocation }
   export type Expression = Identifier
                          | OldIdentifier
                          | Literal
@@ -81,7 +101,11 @@ export namespace Syntax {
                          | SequenceExpression
                          | CallExpression
                          | SpecExpression
-                         | PureExpression;
+                         | PureExpression
+                         | NewExpression
+                         | InstanceOfExpression
+                         | InExpression
+                         | MemberExpression;
   export interface VariableDeclaration { type: "VariableDeclaration",
                                          id: Identifier,
                                          init: Expression,
@@ -119,6 +143,11 @@ export namespace Syntax {
                                          body: BlockStatement,
                                          freeVars: Array<Declaration>,
                                          loc: SourceLocation }
+  export interface ClassDeclaration { type: "ClassDeclaration",
+                                      id: Identifier,
+                                      fields: Array<string>,
+                                      invariant: Expression,
+                                      loc: SourceLocation }
  
   export type Statement = VariableDeclaration
                         | BlockStatement
@@ -128,7 +157,8 @@ export namespace Syntax {
                         | ReturnStatement
                         | WhileStatement
                         | DebuggerStatement
-                        | FunctionDeclaration;
+                        | FunctionDeclaration
+                        | ClassDeclaration;
 
   export type Program = { body: Array<Statement>,
                           invariants: Array<Expression> };
@@ -232,13 +262,16 @@ function binaryOp(binop: JSyntax.BinaryExpression): Syntax.BinaryOperator {
   }
 }
 
-function distinct(params: Array<Syntax.Identifier>): boolean {
+function checkDistinct(params: Array<JSyntax.Pattern>): void {
   for (let i = 0; i < params.length - 1; i++) {
+    const pi = params[i];
+    if (pi.type != "Identifier") throw unsupported(pi);
     for (let j = i + 1; j < params.length; j++) {
-      if (params[i].name == params[j].name) return false;      
+      const pj = params[j];
+      if (pj.type != "Identifier") throw unsupported(pj);
+      if (pi.name == pj.name) throw unsupported(pi, "params must be distinct");
     }
   }
-  return true;
 }
 
 function assignUpdate(left: Syntax.Identifier, op: Syntax.BinaryOperator, right: JSyntax.Expression, stmt: JSyntax.Expression): Syntax.AssignmentExpression {
@@ -258,7 +291,22 @@ function assignUpdate(left: Syntax.Identifier, op: Syntax.BinaryOperator, right:
 
 function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
   switch (expr.type) {
+    case "Identifier":
+      if (expr.name == "undefined") {
+        return { type: "Literal", value: undefined, loc: loc(expr) };
+      }
+      return { type: "Identifier", name: expr.name, refs: [],
+               isWrittenTo: false, decl: { type: "Unresolved" }, loc: loc(expr) };
+    case "Literal":
+      if (expr.value instanceof RegExp) throw unsupported(expr);
+      return {
+        type: "Literal",
+        value: expr.value,
+        loc: loc(expr)
+      };
     case "ThisExpression":
+      return { type: "Identifier", name: "this", refs: [],
+               isWrittenTo: false, decl: { type: "Unresolved" }, loc: loc(expr) };
     case "ObjectExpression":
       throw unsupported(expr);
     case "ArrayExpression":
@@ -280,7 +328,29 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
         argument: expressionAsJavaScript(expr.argument),
         loc: loc(expr)
       };
-    case "BinaryExpression":
+    case "BinaryExpression": {
+      if (expr.operator == "instanceof") {
+        if (expr.right.type != "Identifier") {
+          throw unsupported(expr, "instance check only works for class names");
+        }
+        return {
+          type: "InstanceOfExpression",
+          left: expressionAsJavaScript(expr.left),
+          right: patternAsIdentifier(expr.right),
+          loc: loc(expr)
+        };
+      }
+      if (expr.operator == "in") {
+        if (expr.left.type != "Literal" || typeof(expr.left.value) != "string") {
+          throw unsupported(expr, "'in' check only works for string keys");
+        }
+        return {
+          type: "InExpression",
+          property: expr.left.value,
+          object: expressionAsJavaScript(expr.right),
+          loc: loc(expr)
+        };
+      }
       return {
         type: "BinaryExpression",
         operator: binaryOp(expr),
@@ -288,6 +358,7 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
         right: expressionAsJavaScript(expr.right),
         loc: loc(expr)
       };
+    }
     case "AssignmentExpression":
       if (expr.left.type != "Identifier") throw unsupported(expr.left);
       const to: Syntax.Identifier = { type: "Identifier", name: expr.left.name,
@@ -414,17 +485,23 @@ function expressionAsJavaScript(expr: JSyntax.Expression): Syntax.Expression {
         args: expr.arguments.map(expressionAsJavaScript),
         loc: loc(expr)
       };
-    case "Identifier":
-      if (expr.name == "undefined") {
-        return { type: "Literal", value: undefined, loc: loc(expr) };
-      }
-      return { type: "Identifier", name: expr.name, refs: [],
-               isWrittenTo: false, decl: { type: "Unresolved" }, loc: loc(expr) };
-    case "Literal":
-      if (expr.value instanceof RegExp) throw unsupported(expr);
+    case "NewExpression":
+      if (expr.callee.type != "Identifier") throw unsupported(expr.callee);
+      if (expr.arguments.length > 9) throw unsupported(expr, "more than 9 arguments not supported yet");
       return {
-        type: "Literal",
-        value: expr.value,
+        type: "NewExpression",
+        callee: patternAsIdentifier(expr.callee),
+        args: expr.arguments.map(expressionAsJavaScript),
+        loc: loc(expr)
+      };
+    case "MemberExpression":
+      if (expr.computed) throw unsupported(expr, "computed index not supported");
+      if (expr.property.type != "Identifier") throw unsupported(expr.property, "index needs to be identifier");
+      if (expr.object.type == "Super") throw unsupported(expr.object)
+      return {
+        type: "MemberExpression",
+        object: expressionAsJavaScript(expr.object),
+        property: expr.property.name,
         loc: loc(expr)
       };
     default:
@@ -511,8 +588,9 @@ function statementAsJavaScript(stmt: JSyntax.Statement): Array<Syntax.Statement>
     case "FunctionDeclaration": {
       if (stmt.body.type != "BlockStatement") throw unsupported(stmt.body);
       assert(!stmt.generator);
+      assert(!stmt.async);
+      checkDistinct(stmt.params);
       const params: Array<Syntax.Identifier> = stmt.params.map(patternAsIdentifier);
-      assert(distinct(params));
       const id: Syntax.Identifier = { type: "Identifier", name: stmt.id.name,
         refs: [], isWrittenTo: false, decl: { type: "Unresolved" }, loc: loc(stmt.id) };
       const fd: Syntax.FunctionDeclaration = {
@@ -532,6 +610,114 @@ function statementAsJavaScript(stmt: JSyntax.Statement): Array<Syntax.Statement>
       };
       fd.id.decl = { type: "Func", decl: fd };
       return [fd];
+    }
+    case "ClassDeclaration": {
+      if (stmt.superClass) throw unsupported(stmt, "inheritance not supported");
+      if (stmt.body.body.length > 2) {
+        throw unsupported(stmt, "at most one constructor and invariant supported");
+      }
+      let [m1, m2] = stmt.body.body;
+      if (!m2) m2 = {
+        type: "MethodDefinition",
+        key: { "type": "Identifier", "name": "invariant" },
+        computed: false,
+        value: {
+          type: "FunctionExpression",
+          id: null,
+          params: [],
+          body: {
+            type: "BlockStatement",
+            body: [{
+              type: "ReturnStatement",
+              argument: { type: "Literal", value: true, raw: "true", loc: stmt.loc }
+            }],
+            loc: stmt.loc
+          },
+          generator: false,
+          loc: stmt.loc
+        },
+        kind: "method",
+        static: false,
+        loc: stmt.loc
+      };
+      if (!m1 || m1.kind != "constructor" && m2.kind != "constructor") {
+        throw unsupported(stmt, "class needs one constructor");
+      }
+      if (m1.kind == "constructor" && m2.kind == "constructor") {
+        throw unsupported(stmt, "class can have at most one constructor");
+      }
+      if (m1.kind == "get" || m1.kind == "set") {
+        throw unsupported(m1, "getters and setters not supported");
+      }
+      if (m1.static) throw unsupported(m1, "static not supported");
+      if (m2.static) throw unsupported(m2, "static not supported");
+      if (m2.kind == "get" || m2.kind == "set") {
+        throw unsupported(m2, "getters and setters not supported");
+      }
+      if (m1.key.type != "Identifier") {
+        throw unsupported(m1.key, "key needs to be identifier");
+      }
+      if (m2.key.type != "Identifier") {
+        throw unsupported(m2.key, "key needs to be identifier");
+      }
+
+      const constr: JSyntax.Function = m1.kind == "constructor" ? m1.value : m2.value;
+      if (constr == m1.value && m1.key.name != "constructor") {
+        throw unsupported(m1, "constructor needs to be named 'constructor'");
+      }
+      if (constr == m2.value && m2.key.name != "constructor") {
+        throw unsupported(m2, "constructor needs to be named 'constructor'");
+      }
+
+      if (constr.generator || constr.async) throw unsupported(constr);
+
+      if (constr.params.length > 9) throw unsupported(constr, "more than 9 arguments not supported yet");
+      if (constr.params.length != constr.body.body.length) {
+        throw unsupported(constr, "constructor should assign each param to a field")
+      }
+      checkDistinct(constr.params);
+      const params: Array<Syntax.Identifier> = constr.params.map(patternAsIdentifier);
+      for (let i = 0; i < params.length; i++) {
+        const asg = constr.body.body[i];
+        if (asg.type != "ExpressionStatement" ||
+            asg.expression.type != "AssignmentExpression" ||
+            asg.expression.left.type != "MemberExpression" ||
+            asg.expression.left.computed ||
+            asg.expression.left.object.type != "ThisExpression" ||
+            asg.expression.left.property.type != "Identifier" ||
+            asg.expression.left.property.name != params[i].name ||
+            asg.expression.operator != "=" ||
+            asg.expression.right.type != "Identifier" ||
+            asg.expression.right.name != params[i].name) {
+          throw unsupported(asg, "constructor should assign each param to a field");
+        }
+      }
+      if (constr == m1.value && m2.key.name != "invariant") {
+        throw unsupported(m2, "no methods other than invariant supported");
+      }
+      if (constr == m2.value && m1.key.name != "invariant") {
+        throw unsupported(m1, "no methods other than invariant supported");
+      }
+
+      const inv: JSyntax.Function = m1.kind == "constructor" ? m2.value : m1.value;
+      if (inv.params.length > 0) {
+        throw unsupported(inv, "invariant cannot have parameters");
+      }
+      if (inv.generator || inv.async) throw unsupported(constr);
+      if (inv.body.body.length != 1) {
+        throw unsupported(inv.body, "invariant needs to be single expression statement");
+      }
+      const invStmt = inv.body.body[0];
+      if (invStmt.type != "ReturnStatement" || !invStmt.argument) {
+        throw unsupported(inv.body, "invariant needs to be a single return statement with an expression");
+      }
+      return [{
+        type: "ClassDeclaration",
+        id: patternAsIdentifier(stmt.id),
+        fields: params.map(p => p.name),
+        invariant: expressionAsJavaScript(invStmt.argument),
+        loc: loc(stmt)
+      }];
     }
     default:
       throw unsupported(stmt);
@@ -575,6 +761,10 @@ export abstract class Visitor<E,S> {
   abstract visitCallExpression(expr: Syntax.CallExpression): E;
   abstract visitPureExpression(expr: Syntax.PureExpression): E;
   abstract visitSpecExpression(expr: Syntax.SpecExpression): E;
+  abstract visitNewExpression(expr: Syntax.NewExpression): E;
+  abstract visitInstanceOfExpression(expr: Syntax.InstanceOfExpression): E;
+  abstract visitInExpression(expr: Syntax.InExpression): E;
+  abstract visitMemberExpression(expr: Syntax.MemberExpression): E;
 
   visitExpression(expr: Syntax.Expression): E {
     switch (expr.type) {
@@ -591,6 +781,10 @@ export abstract class Visitor<E,S> {
       case "CallExpression": return this.visitCallExpression(expr);
       case "SpecExpression": return this.visitSpecExpression(expr);
       case "PureExpression": return this.visitPureExpression(expr);
+      case "NewExpression": return this.visitNewExpression(expr);
+      case "InstanceOfExpression": return this.visitInstanceOfExpression(expr);
+      case "InExpression": return this.visitInExpression(expr);
+      case "MemberExpression": return this.visitMemberExpression(expr);
     }
   }
 
@@ -603,6 +797,7 @@ export abstract class Visitor<E,S> {
   abstract visitWhileStatement(stmt: Syntax.WhileStatement): S;
   abstract visitDebuggerStatement(stmt: Syntax.DebuggerStatement): S;
   abstract visitFunctionDeclaration(stmt: Syntax.FunctionDeclaration): S;
+  abstract visitClassDeclaration(stmt: Syntax.ClassDeclaration): S;
   
   visitStatement(stmt: Syntax.Statement): S {
     switch (stmt.type) {
@@ -615,6 +810,7 @@ export abstract class Visitor<E,S> {
       case "WhileStatement": return this.visitWhileStatement(stmt);
       case "DebuggerStatement": return this.visitDebuggerStatement(stmt);
       case "FunctionDeclaration": return this.visitFunctionDeclaration(stmt);
+      case "ClassDeclaration": return this.visitClassDeclaration(stmt);
     }
   }
 
@@ -627,6 +823,7 @@ function unsupportedLoc(loc: Syntax.SourceLocation, description: string = "") {
 }
 
 function undefinedId(loc: Syntax.SourceLocation) {
+  debugger;
   return new MessageException({ status: "error", type:"undefined-identifier", loc, description: ""});
 }
 
@@ -665,20 +862,26 @@ class Scope {
     this.ids[sym.name] = decl;
   }
 
-  lookupUse(sym: Syntax.Identifier): Syntax.Declaration {
-    if (sym.name in this.ids) return this.ids[sym.name];
-    if (this.parent) {
-      let decl: Syntax.Declaration = this.parent.lookupUse(sym);
+  lookupUse(sym: Syntax.Identifier, clz: boolean): Syntax.Declaration {
+    let decl: Syntax.Declaration | null = null;
+    if (sym.name in this.ids) {
+      decl = this.ids[sym.name];
+    } else if (this.parent) {
+      decl = this.parent.lookupUse(sym, clz);
       if (this.func && !this.func.freeVars.includes(decl) && isWrittenTo(decl)) {
         this.func.freeVars.push(decl); // a free variable
       }
-      return decl;
     }
-    throw undefinedId(sym.loc);
+    if (!decl || decl.type == "Unresolved") {
+      throw undefinedId(sym.loc);
+    }
+    if (clz && (decl.type != "Class")) throw unsupportedLoc(sym.loc, "expected class");
+    if (!clz && (decl.type == "Class")) throw unsupportedLoc(sym.loc, "did not expect class");
+    return decl;
   }
 
-  useSymbol(sym: Syntax.Identifier, write: boolean = false) {
-    const decl = this.lookupUse(sym);
+  useSymbol(sym: Syntax.Identifier, write: boolean = false, clz: boolean = false) {
+    const decl = this.lookupUse(sym, clz);
     sym.decl = decl;
     switch (decl.type) {
       case "Var":
@@ -698,6 +901,11 @@ class Scope {
         break;
       case "Param":
         decl.decl.refs.push(sym);
+        if (write) {
+          throw assignToConst(sym.loc);
+        }
+        break;
+      case "Class":
         if (write) {
           throw assignToConst(sym.loc);
         }
@@ -796,6 +1004,24 @@ class NameResolver extends Visitor<void,void> {
 
   visitPureExpression(expr: Syntax.PureExpression) { }
 
+  visitNewExpression(expr: Syntax.NewExpression) {
+    this.scope.useSymbol(expr.callee, false, true);
+    expr.args.forEach(e => this.visitExpression(e));
+  }
+
+  visitInstanceOfExpression(expr: Syntax.InstanceOfExpression) {
+    this.visitExpression(expr.left);
+    this.scope.useSymbol(expr.right, false, true);
+  }
+
+  visitInExpression(expr: Syntax.InExpression) {
+    this.visitExpression(expr.object);
+  }
+
+  visitMemberExpression(expr: Syntax.MemberExpression) {
+    this.visitExpression(expr.object);
+  }
+
   visitVariableDeclaration(stmt: Syntax.VariableDeclaration) {
     this.scope.defSymbol(stmt.id, { type: "Var", decl: stmt });
     this.visitExpression(stmt.init);
@@ -840,15 +1066,22 @@ class NameResolver extends Visitor<void,void> {
   visitDebuggerStatement(stmt: Syntax.DebuggerStatement) { }
 
   visitFunctionDeclaration(stmt: Syntax.FunctionDeclaration) {
+    this.scope.defSymbol(stmt.id, { type: "Func", decl: stmt });
     this.scoped(() => {
-      this.scope.defSymbol(stmt.id, { type: "Func", decl: stmt });
       stmt.params.forEach(p => this.scope.defSymbol(p, { type: "Param", func: stmt, decl: p }));
       stmt.requires.forEach(r => this.visitExpression(r));
       stmt.body.body.forEach(s => this.visitStatement(s));
       this.allowOld = true;
       stmt.ensures.forEach(r => this.visitExpression(r));
     }, false, stmt);
-    this.scope.defSymbol(stmt.id, { type: "Func", decl: stmt });
+  }
+
+  visitClassDeclaration(stmt: Syntax.ClassDeclaration) {
+    this.scope.defSymbol(stmt.id, { type: "Class", decl: stmt });
+    this.scoped(() => {
+      this.scope.defSymbol(this.stringAsIdentifier("this"), { type: "This", decl: stmt });
+      this.visitExpression(stmt.invariant);
+    }, false);
   }
 
   visitProgram(prog: Syntax.Program) {
@@ -924,6 +1157,22 @@ class Stringifier extends Visitor<string,string> {
     return `pure()`;
   }
 
+  visitNewExpression(expr: Syntax.NewExpression): string {
+    return `new ${expr.callee.name}(${expr.args.map(a => this.visitExpression(a)).join(', ')})`;
+  }
+  
+  visitInstanceOfExpression(expr: Syntax.InstanceOfExpression): string {
+    return `(${this.visitExpression(expr.left)} instanceof ${expr.right.name})`;
+  }
+
+  visitInExpression(expr: Syntax.InExpression): string {
+    return `("${expr.property}" in ${this.visitExpression(expr.object)})`;
+  }
+
+  visitMemberExpression(expr: Syntax.MemberExpression): string {
+    return `${this.visitExpression(expr.object)}.${expr.property}`;
+  }
+
   indent(f: () => void) {
     this.depth++;
     try {
@@ -985,6 +1234,27 @@ class Stringifier extends Visitor<string,string> {
     return this.i(`function ${stmt.id.name} (${stmt.params.map(p => p.name).join(", ")}) ${this.visitStatements(stmt.body.body)}\n`);
   }
 
+  visitClassDeclaration(stmt: Syntax.ClassDeclaration): string {
+    let res = this.i(`class ${stmt.id.name} {\n`);
+    this.depth++;
+    res += this.i(`constructor(${stmt.fields.join(', ')}) {\n`);
+    this.depth++;
+    for (const f of stmt.fields) {
+      res += this.i(`this.${f} = ${f};\n`);
+    }
+    res += this.i(`assert(this.invariant());\n`);
+    this.depth--;
+    res += this.i(`}\n`);
+    res += this.i(`invariant(${stmt.fields.join(', ')}) {\n`);
+    this.depth++;
+    res += this.i(`return ${this.visitExpression(stmt.invariant)};\n`);
+    this.depth--;
+    res += this.i(`}\n`);
+    this.depth--;
+    res += this.i(`}\n`);
+    return res;
+  }
+
   visitProgram(prog: Syntax.Program) {
     return prog.body.map(s => this.visitStatement(s)).join("");
   }
@@ -998,17 +1268,21 @@ export function stringifyStmt(stmt: Syntax.Statement): string {
   return (new Stringifier()).visitStatement(stmt);
 }
 
-class FunctionResultSubstituter extends Visitor<Syntax.Expression, void> {
+class Substituter extends Visitor<Syntax.Expression, void> {
 
-  f: Syntax.FunctionDeclaration;
+  f: Syntax.FunctionDeclaration | null = null;
+  t: string | null = null;
 
-  constructor(f: Syntax.FunctionDeclaration) {
-    super();
+  replaceFunctionResult(f: Syntax.FunctionDeclaration) {
     this.f = f;
   }
 
+  replaceThis(t: string) {
+    this.t = t;
+  }
+
   callMatchesParams(expr: Syntax.CallExpression): boolean {
-    if (expr.args.length != this.f.params.length) return false;
+    if (!this.f || expr.args.length != this.f.params.length) return false;
     for (let i = 0; i < expr.args.length; i++) {
       const arg: Syntax.Expression = expr.args[i];
       if (arg.type != "Identifier" ||
@@ -1022,6 +1296,14 @@ class FunctionResultSubstituter extends Visitor<Syntax.Expression, void> {
   }
 
   visitIdentifier(expr: Syntax.Identifier): Syntax.Expression {
+    if (this.t && expr.name == "this") return {
+      type: "Identifier",
+      name: this.t,
+      decl: expr.decl,
+      isWrittenTo: false,
+      refs: [],
+      loc: expr.loc
+    };
     return expr;
   }
   
@@ -1102,7 +1384,7 @@ class FunctionResultSubstituter extends Visitor<Syntax.Expression, void> {
   }
   
   visitCallExpression(expr: Syntax.CallExpression): Syntax.Expression {
-    if (expr.callee.type == "Identifier" &&
+    if (this.f && expr.callee.type == "Identifier" &&
         expr.callee.decl.type == "Func" &&
         expr.callee.decl.decl == this.f &&
         this.callMatchesParams(expr)) {
@@ -1134,6 +1416,42 @@ class FunctionResultSubstituter extends Visitor<Syntax.Expression, void> {
     };
   }
 
+  visitNewExpression(expr: Syntax.NewExpression): Syntax.Expression {
+    return {
+      type: "NewExpression",
+      callee: expr.callee,
+      args: expr.args.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+  
+  visitInstanceOfExpression(expr: Syntax.InstanceOfExpression): Syntax.Expression {
+    return {
+      type: "InstanceOfExpression",
+      left: this.visitExpression(expr.left),
+      right: expr.right,
+      loc: expr.loc
+    };
+  }
+
+  visitInExpression(expr: Syntax.InExpression): Syntax.Expression {
+    return {
+      type: "InExpression",
+      property: expr.property,
+      object: this.visitExpression(expr.object),
+      loc: expr.loc
+    };
+  }
+
+  visitMemberExpression(expr: Syntax.MemberExpression): Syntax.Expression {
+    return {
+      type: "MemberExpression",
+      object: this.visitExpression(expr.object),
+      property: expr.property,
+      loc: expr.loc
+    };
+  }
+
   visitVariableDeclaration(stmt: Syntax.VariableDeclaration) {}
   visitBlockStatement(stmt: Syntax.BlockStatement) {}
   visitExpressionStatement(stmt: Syntax.ExpressionStatement) {}
@@ -1143,11 +1461,19 @@ class FunctionResultSubstituter extends Visitor<Syntax.Expression, void> {
   visitWhileStatement(stmt: Syntax.WhileStatement) {}
   visitDebuggerStatement(stmt: Syntax.DebuggerStatement) {}
   visitFunctionDeclaration(stmt: Syntax.FunctionDeclaration) {}
+  visitClassDeclaration(stmt: Syntax.ClassDeclaration) {}
   visitProgram(prog: Syntax.Program) {}
 }
 
 export function replaceFunctionResult(f: Syntax.FunctionDeclaration, expr: Syntax.Expression): Syntax.Expression {
-  const sub = new FunctionResultSubstituter(f);
+  const sub = new Substituter();
+  sub.replaceFunctionResult(f);
+  return sub.visitExpression(expr);
+}
+
+export function replaceThis(t: string, expr: Syntax.Expression): Syntax.Expression {
+  const sub = new Substituter();
+  sub.replaceThis(t);
   return sub.visitExpression(expr);
 }
 

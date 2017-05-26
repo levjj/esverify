@@ -4,8 +4,17 @@ class TriggerEraser extends Transformer {
   visitCallTrigger(prop: Syntax.CallTrigger): P {
     return tru;
   }
+
+  visitAccessTrigger(prop: Syntax.AccessTrigger): P {
+    return tru;
+  }
   
-  visitForAll(prop: Syntax.ForAll): P {
+  visitForAllCalls(prop: Syntax.ForAllCalls): P {
+    // do not erase under quantifier -> leave unchanged
+    return copy(prop);
+  }
+
+  visitForAllAccess(prop: Syntax.ForAllAccess): P {
     // do not erase under quantifier -> leave unchanged
     return copy(prop);
   }
@@ -51,7 +60,7 @@ class QuantifierTransformer extends Transformer {
     return n;
   }
 
-  liftExistantials(prop: Syntax.ForAll, newHeap: Syntax.HeapExpression = this.freshHeap(prop.heap)): Substituter {
+  liftExistantials(prop: Syntax.ForAllCalls, newHeap: Syntax.HeapExpression = this.freshHeap(prop.heap)): Substituter {
     const sub = new Substituter();
     sub.replaceHeap(prop.heap, newHeap);
     prop.existsHeaps.forEach(h => sub.replaceHeap(h, this.freshHeap(h)));
@@ -71,20 +80,30 @@ class QuantifierTransformer extends Transformer {
 }
 
 class QuantifierLifter extends QuantifierTransformer {
-  visitForAll(prop: Syntax.ForAll): P {
+  visitForAllCalls(prop: Syntax.ForAllCalls): P {
     if (this.position) return copy(prop);
-    const sub = this.liftExistantials(prop);
     if (prop.existsHeaps.size + prop.existsLocs.size + prop.existsVars.size > 0) {
       throw new Error("Existentials in negative positions not supported");
     }
+    const sub = this.liftExistantials(prop);
     prop.args.forEach(a => sub.replaceVar(a, this.freshVar(a)));
     const callee = sub.visitExpr(prop.callee);
     const trigger = this.visitProp({ type: "CallTrigger", callee, heap: prop.heap, args: prop.args });
     return sub.visitProp(implies(trigger, prop.prop));
   }
+
+  visitForAllAccess(prop: Syntax.ForAllAccess): P {
+    if (this.position) return copy(prop);
+    const sub = new Substituter();
+    sub.replaceVar("this", this.freshVar("this"));
+    const trigger = this.visitProp({ type: "AccessTrigger", object: "this" });
+    return sub.visitProp(implies(trigger, prop.prop));
+  }
 }
 
-class TriggerCollector extends Reducer<Array<Syntax.CallTrigger>> {
+type Triggers = [Array<Syntax.CallTrigger>, Array<Syntax.AccessTrigger>]
+
+class TriggerCollector extends Reducer<Triggers> {
   position: boolean;
 
   constructor(position: boolean) {
@@ -92,13 +111,13 @@ class TriggerCollector extends Reducer<Array<Syntax.CallTrigger>> {
     this.position = position;
   }
 
-  empty(): Array<Syntax.CallTrigger> { return []; }
+  empty(): Triggers { return [[], []]; }
 
-  reduce(a: Array<Syntax.CallTrigger>, b: Array<Syntax.CallTrigger>) {
-    return a.concat(b);
+  reduce(a: Triggers, b: Triggers): Triggers {
+    return [a[0].concat(b[0]), a[1].concat(b[1])];
   }
 
-  visitNot(prop: Syntax.Not): Array<Syntax.CallTrigger> {
+  visitNot(prop: Syntax.Not): Triggers {
     this.position = !this.position;
     try {
       return super.visitNot(prop);
@@ -107,18 +126,27 @@ class TriggerCollector extends Reducer<Array<Syntax.CallTrigger>> {
     }
   }
 
-  visitCallTrigger(prop: Syntax.CallTrigger): Array<Syntax.CallTrigger> {
+  visitCallTrigger(prop: Syntax.CallTrigger): Triggers {
     const res = super.visitCallTrigger(prop);
-    return this.position ? this.r([prop], res) : res;
+    return this.position ? this.r([[prop],[]], res) : res;
   }
   
-  visitForAll(prop: Syntax.ForAll): Array<Syntax.CallTrigger>  {
+  visitForAllCalls(prop: Syntax.ForAllCalls): Triggers {
     return this.visitExpr(prop.callee); // do not collect under quantifier
+  }
+
+  visitAccessTrigger(prop: Syntax.AccessTrigger): Triggers {
+    const res = super.visitAccessTrigger(prop);
+    return this.position ? this.r([[],[prop]], res) : res;
+  }
+  
+  visitForAllAccess(prop: Syntax.ForAllAccess): Triggers {
+    return this.empty(); // do not collect under quantifier
   }
 }
 
 class QuantifierInstantiator extends QuantifierTransformer {
-  triggers: Array<Syntax.CallTrigger>; // relies on 
+  triggers: Triggers;
   instantiations: number;
 
   constructor(heaps: Heaps, locs: Locs, vars: Vars) {
@@ -126,7 +154,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
     this.instantiations = 0;
   }
 
-  instantiate(prop: Syntax.ForAll, trigger: Syntax.CallTrigger) {
+  instantiateCall(prop: Syntax.ForAllCalls, trigger: Syntax.CallTrigger) {
     const match = eq(prop.callee, trigger.callee);
     const sub = this.liftExistantials(prop, trigger.heap);
     // substitute arguments
@@ -136,15 +164,35 @@ class QuantifierInstantiator extends QuantifierTransformer {
     return implies(match, sub.visitProp(prop.prop));
   }
 
-  visitForAll(prop: Syntax.ForAll): P {
+  instantiateAccess(prop: Syntax.ForAllAccess, trigger: Syntax.AccessTrigger) {
+    const sub = new Substituter();
+    sub.replaceVar("this", trigger.object);
+    return sub.visitProp(prop.prop);
+  }
+
+  visitForAllCalls(prop: Syntax.ForAllCalls): P {
     if (!this.position) return copy(prop);
     const clauses: Array<P> = [prop];
-    for (const t of this.triggers) {
+    for (const t of this.triggers[0]) {
       if (prop.args.length != t.args.length || prop.instantiations.some(trigger => eqProp(t, trigger))) {
         continue;
       }
-      debugger;
-      const instantiated: P = this.instantiate(prop, t);
+      const instantiated: P = this.instantiateCall(prop, t);
+      clauses.push(instantiated);
+      prop.instantiations.push(t);
+      this.instantiations++;
+    }
+    return and(...clauses);
+  }
+
+  visitForAllAccess(prop: Syntax.ForAllAccess): P {
+    if (!this.position) return copy(prop);
+    const clauses: Array<P> = [prop];
+    for (const t of this.triggers[1]) {
+      if (prop.instantiations.some(trigger => eqProp(t, trigger))) {
+        continue;
+      }
+      const instantiated: P = this.instantiateAccess(prop, t);
       clauses.push(instantiated);
       prop.instantiations.push(t);
       this.instantiations++;
@@ -163,7 +211,15 @@ class QuantifierEraser extends Transformer {
     return tru;
   }
   
-  visitForAll(prop: Syntax.ForAll): P {
+  visitForAllCalls(prop: Syntax.ForAllCalls): P {
+    return tru;
+  }
+
+  visitAccessTrigger(prop: Syntax.AccessTrigger): P {
+    return tru;
+  }
+
+  visitForAllAccess(prop: Syntax.ForAllAccess): P {
     return tru;
   }
 }

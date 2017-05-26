@@ -1,5 +1,5 @@
 import { flatMap } from "./util";
-import { Syntax, A, P, Vars, Locs, Heap, Heaps, Visitor, implies } from "./logic";
+import { Syntax, A, P, Classes, Vars, Locs, Heap, Heaps, Visitor, implies } from "./logic";
 import { instantiateQuantifiers } from "./qi";
 import { MessageException } from "./message";
 import { options } from "./options";
@@ -50,6 +50,10 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return "h_" + heap;
   }
 
+  visitClassName(cls: Syntax.ClassName): SMTInput {
+    return "c_" + cls;
+  }
+
   visitHeapStore(expr: Syntax.HeapStore): SMTInput {
     return `(store ${this.visitHeapExpr(expr.target)} ${this.visitLocation(expr.loc)} ${this.visitExpr(expr.expr)})`;
   }
@@ -85,7 +89,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
       const h = head || {type: "Literal", value: "undefined"};
       return `(cons ${this.visitExpr(h)} ${arrayToSMT(tail)})`;
     };
-    return `(jsarray ${arrayToSMT(expr.elements)})`;
+    return `(jsarr ${arrayToSMT(expr.elements)})`;
   }
   
   visitUnaryExpression(expr: Syntax.UnaryExpression): SMTInput {
@@ -111,6 +115,10 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   visitCallExpression(expr: Syntax.CallExpression): SMTInput {
     const {callee, heap, args} = expr;
     return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
+  }
+
+  visitMemberExpression(expr: Syntax.MemberExpression): SMTInput {
+    return `(field ${this.visitExpr(expr.object)} "${expr.property}")`;
   }
 
   visitTruthy(prop: Syntax.Truthy): SMTInput {
@@ -188,7 +196,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
   }
   
-  visitForAll(prop: Syntax.ForAll): SMTInput {
+  visitForAllCalls(prop: Syntax.ForAllCalls): SMTInput {
     const {callee, heap, args} = prop;
     const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
     const callP: P = { type: "CallTrigger", callee, heap, args: args };
@@ -206,6 +214,25 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     const {callee, heap, args} = prop;
     return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join("")})`;
   }
+
+  visitForAllAccess(prop: Syntax.ForAllAccess): SMTInput {
+    const accessP: P = { type: "AccessTrigger", object: "this" };
+    let p = this.visitProp(implies(accessP, prop.prop));
+    const trigger: SMTInput = this.visitProp(accessP);
+    return `(forall ((${this.visitVariable("this")} JSVal)) (!\n  ${p}\n  :pattern (${trigger})))`;
+  }
+
+  visitInstanceOf(prop: Syntax.InstanceOf): SMTInput {
+    return `(instanceof ${this.visitExpr(prop.left)} ${this.visitClassName(prop.right)})`;
+  }
+
+  visitHasProperty(prop: Syntax.HasProperty): SMTInput {
+    return `(has ${this.visitExpr(prop.object)} "${prop.property}")`;
+  }
+
+  visitAccessTrigger(prop: Syntax.AccessTrigger): SMTInput {
+    return `(access ${this.visitExpr(prop.object)})`;
+  }
 }
 
 function propositionToSMT(prop: P): SMTInput {
@@ -220,7 +247,7 @@ function propositionToAssert(prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-export function vcToSMT(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
+export function vcToSMT(classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
@@ -233,12 +260,10 @@ export function vcToSMT(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
     (jsstr (strv String))
     jsnull
     jsundefined
-    (jsarray (items JSValList))
-    (jsobj (props JSPropList))
-    (jsfun (idx Int)))
-  (JSValList empty (cons (car JSVal) (cdr JSValList)))
-  (JSProp (prop (key (List Int)) (val JSVal)))
-  (JSPropList empty (cons (car JSProp) (cdr JSPropList)))))
+    (jsarr (items JSValList))
+    (jsobj (oidx Int))
+    (jsfun (fidx Int)))
+  (JSValList empty (cons (car JSVal) (cdr JSValList)))))
 
 ; Types in JavaScript
 (declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj JSFunction)))
@@ -249,7 +274,7 @@ export function vcToSMT(heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
   (ite (is-jsstr x) JSString
   (ite (is-jsnull x) JSObj
   (ite (is-jsundefined x) JSUndefined
-  (ite (is-jsarray x) JSArray
+  (ite (is-jsarr x) JSArray
   (ite (is-jsfun x) JSFunction
   JSObj))))))))
 
@@ -408,8 +433,17 @@ ${[...Array(10).keys()].map(i => `
 (declare-fun eff${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
 (declare-fun call${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`).join('')}
 
+; Objects
+(declare-sort ClassName)
+(declare-fun has (JSVal String) Bool)
+(declare-fun field (JSVal String) JSVal)
+(declare-fun instanceof (JSVal ClassName) Bool)
+(declare-fun access (JSVal) Bool)
+
 ; Declarations
 
+${[...classes].map(c => `(declare-const c_${c} ClassName)\n`).join('')}
+${classes.size == 0 ? '' : `(assert (distinct ${[...classes].map(c => 'c_'+c).join(' ')}))`}
 ${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}
 ${[...locs].map(l => `(declare-const l_${l} Loc)\n`).join('')}
 ${locs.size == 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_'+l).join(' ')}))`}
