@@ -17,10 +17,8 @@ const unOpToSMT: {[unop: string]: SMTInput} = {
 };
 
 const binOpToSMT: {[binop: string]: SMTInput} = {
-  '==': '_js-eq', // non-standard
-  '!=': '_js-neq', // non-standard
-  '===': '_js-eq', // non-standard
-  '!==': '_js-neq', // non-standard
+  '===': '_js-eq',
+  '!==': '_js-neq',
   '<': '_js_lt',
   '<=': '_js_leq',
   '>': '_js_gt',

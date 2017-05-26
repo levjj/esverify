@@ -130,13 +130,13 @@ describe('counter', () => {
     }
   });
 
-  verified('initially: (typeof(counter) == "number")');
+  verified('initially: (typeof(counter) === "number")');
   verified('initially: (counter >= 0)');
   verified('increment: (counter > old_counter)');
-  verified('increment: (typeof(counter) == "number")');
+  verified('increment: (typeof(counter) === "number")');
   verified('increment: (counter >= 0)');
-  verified('decrement: (old_counter > 0) ? (counter < old_counter) : (counter == old_counter)');
-  verified('decrement: (typeof(counter) == "number")');
+  verified('decrement: (old_counter > 0) ? (counter < old_counter) : (counter === old_counter)');
+  verified('decrement: (typeof(counter) === "number")');
   verified('decrement: (counter >= 0)');
 });
 
@@ -207,10 +207,10 @@ describe('sum', () => {
   });
 
   verified('sumTo: invariant on entry: (i <= n)');
-  verified('sumTo: invariant on entry: (s == (((i + 1) * i) / 2))');
+  verified('sumTo: invariant on entry: (s === (((i + 1) * i) / 2))');
   verified('sumTo: invariant maintained: (i <= n)');
-  verified('sumTo: invariant maintained: (s == (((i + 1) * i) / 2))');
-  verified('sumTo: (sumTo(n) == (((n + 1) * n) / 2))');
+  verified('sumTo: invariant maintained: (s === (((i + 1) * i) / 2))');
+  verified('sumTo: (sumTo(n) === (((n + 1) * n) / 2))');
 });
 
 describe('global call', () => {
@@ -250,8 +250,8 @@ describe('inline global call', () => {
     assert(k === 5);
   });
 
-  verified('assert: (j == 4)');
-  unverified('assert: (k == 5)'); // only inline one level
+  verified('assert: (j === 4)');
+  unverified('assert: (k === 5)'); // only inline one level
 });
 
 describe('post conditions global call', () => {
@@ -315,8 +315,8 @@ describe('closures', () => {
     assert(h1 === 2);
   });
 
-  verified('assert: (g1 == 1)');
-  verified('assert: (h1 == 2)');
+  verified('assert: (g1 === 1)');
+  verified('assert: (h1 === 2)');
 });
 
 describe('fibonacci', () => {
@@ -510,7 +510,7 @@ describe('higher-order proofs', () => {
   verified('fib: precondition fib((n - 1))');
   verified('fib: precondition fib((n - 2))');
   verified('fib: pure()');
-  verified('fib: (typeof(fib(n)) == "number")');
+  verified('fib: (typeof(fib(n)) === "number")');
   verified('fibInc: precondition fib(n)');
   verified('fibInc: precondition fib((n + 1))');
   verified('fibInc: precondition fib((n - 1))');
@@ -546,7 +546,7 @@ describe('mapLen example', () => {
       ensures(pure());
       ensures(map(lst, f) === null || map(lst, f) instanceof List);
 
-      if (lst == null) return null;
+      if (lst === null) return null;
       return new List(f(lst.head), map(lst.tail, f));
     }
 
@@ -555,7 +555,7 @@ describe('mapLen example', () => {
       ensures(pure());
       ensures(len(lst) >= 0);
 
-      return lst == null ? 0 : len(lst.tail) + 1;
+      return lst === null ? 0 : len(lst.tail) + 1;
     }
 
     function mapLen (lst, f) {
@@ -566,7 +566,7 @@ describe('mapLen example', () => {
 
       const l = len(lst);
       const r = len(map(lst, f));
-      if (lst == null) {
+      if (lst === null) {
         assert(l === 0);
         assert(r === 0);
       } else {
@@ -598,22 +598,22 @@ describe('mapLen example', () => {
   verified('mapLen: precondition len(lst)');
   verified('mapLen: precondition map(lst, f)');
   verified('mapLen: precondition len(map(lst, f))');
-  verified('mapLen: assert: (l == 0)');
-  verified('mapLen: assert: (r == 0)');
+  verified('mapLen: assert: (l === 0)');
+  verified('mapLen: assert: (r === 0)');
   verified('mapLen: property tail exists on object');
   verified('mapLen: precondition len(lst.tail)');
-  verified('mapLen: assert: (l == (l1 + 1))');
+  verified('mapLen: assert: (l === (l1 + 1))');
   verified('mapLen: property head exists on object');
   verified('mapLen: precondition f(lst.head)');
   verified('mapLen: property tail exists on object');
   verified('mapLen: precondition map(lst.tail, f)');
   verified('mapLen: precondition len(map(lst.tail, f))');
-  verified('mapLen: assert: (r == (r1 + 1))');
+  verified('mapLen: assert: (r === (r1 + 1))');
   verified('mapLen: property tail exists on object');
   verified('mapLen: precondition mapLen(lst.tail, f)');
-  verified('mapLen: assert: (l1 == r1)');
-  verified('mapLen: assert: (l == r)');
+  verified('mapLen: assert: (l1 === r1)');
+  verified('mapLen: assert: (l === r)');
   verified('mapLen: pure()');
-  verified('mapLen: (len(lst) == len(map(lst, f)))');
+  verified('mapLen: (len(lst) === len(map(lst, f)))');
 
 });

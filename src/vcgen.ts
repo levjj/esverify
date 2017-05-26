@@ -115,18 +115,7 @@ class AssertionTranslator extends Visitor<A, void> {
     const r = truthy(translateExpression(this.heap + 1, this.heap + 1, this.inPost, expr.pre));
     const sPost = expr.callee.type === 'Identifier' ? expr.callee.name : this.inPost;
     const s = truthy(translateExpression(this.heap + 1, this.heap + 2, sPost, expr.post));
-    const forAll: P = transformSpec(callee, expr.args, r, s, this.heap + 1);
-    const fnCheck: A = {
-      type: 'BinaryExpression',
-      left: {
-        type: 'UnaryExpression',
-        operator: 'typeof',
-        argument: callee
-      },
-      operator: '==',
-      right: { type: 'Literal', value: 'function' }
-    };
-    const test = and(truthy(fnCheck), forAll);
+    const test: P = transformSpec(callee, expr.args, r, s, this.heap + 1);
     const consequent: A = { type: 'Literal', value: true };
     const alternate: A = { type: 'Literal', value: false };
     return { type: 'ConditionalExpression', test, consequent, alternate };
@@ -371,7 +360,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
         operator: 'typeof',
         argument: object
       },
-      operator: '==',
+      operator: '===',
       right: { type: 'Literal', value: 'object' }
     }));
     this.have(not(eq(object, { type: 'Literal', value: null })));

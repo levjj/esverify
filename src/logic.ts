@@ -32,9 +32,9 @@ export namespace Syntax {
   export interface UnaryExpression { type: 'UnaryExpression';
                                      operator: UnaryOperator;
                                      argument: Expression; }
-  export type BinaryOperator = '==' | '!=' | '===' | '!==' | '<' | '<=' | '>' | '>='
-                      | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
-                      | '|' | '^' | '&';
+  export type BinaryOperator = '===' | '!==' | '<' | '<=' | '>' | '>='
+                             | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
+                             | '|' | '^' | '&';
   export interface BinaryExpression { type: 'BinaryExpression';
                                       operator: BinaryOperator;
                                       left: Expression;
@@ -818,7 +818,7 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
       operator: 'typeof',
       argument: callee
     },
-    operator: '==',
+    operator: '===',
     right: { type: 'Literal', value: 'function' }
   };
   return and(truthy(fnCheck), forAll);
@@ -833,7 +833,7 @@ export function transformClassInvariant (className: string, fields: Array<string
       operator: 'typeof',
       argument: 'this'
     },
-    operator: '==',
+    operator: '===',
     right: { type: 'Literal', value: 'object' }
   });
   prop = and(prop, not(eq('this', { type: 'Literal', value: null })));

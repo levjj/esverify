@@ -34,7 +34,7 @@ export namespace Syntax {
                                      operator: UnaryOperator;
                                      argument: Expression;
                                      loc: SourceLocation; }
-  export type BinaryOperator = '==' | '!=' | '===' | '!==' | '<' | '<=' | '>' | '>='
+  export type BinaryOperator = '===' | '!==' | '<' | '<=' | '>' | '>='
                              | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
                              | '|' | '^' | '&';
   export interface BinaryExpression { type: 'BinaryExpression';
@@ -235,8 +235,6 @@ function unaryOp (unop: JSyntax.UnaryExpression): Syntax.UnaryOperator {
 
 function binaryOp (binop: JSyntax.BinaryExpression): Syntax.BinaryOperator {
   switch (binop.operator) {
-    case '==':
-    case '!=':
     case '===':
     case '!==':
     case '<':
