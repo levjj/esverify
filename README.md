@@ -11,8 +11,8 @@ using special pseudo-calls to `requires` and `ensures` with boolean expressions.
 
 ```js
 function max(a, b) {
-  requires(typeof(a) == "number");
-  requires(typeof(b) == "number");
+  requires(typeof(a) === "number");
+  requires(typeof(b) === "number");
   ensures(max(a,b) >= a);
 
   if (a >= b) {
