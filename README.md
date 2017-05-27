@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/levjj/esverify.svg?branch=master)](https://travis-ci.org/levjj/esverify)
 
-Program Verification for ECMAScript/JavaScript
+Program Verification for ECMAScript/JavaScript ([esverify.org](http://esverify.org/)).
 
 ## Example
 
@@ -116,9 +116,8 @@ type msg = {
 
 More tool support will be coming soon.
 
-As a first step, there is a
-[verification workspace](https://github.com/levjj/esverify-editor) which allows
-inspection of verification results including potential counter-examples.
+A simple [web-based editor](https://github.com/levjj/esverify-editor)
+is available online at [esverify.org/try](http://esverify.org/try).
 
 Additionally, there is a [Vim Plugin](https://github.com/levjj/esverify-vim)
 which displays verification results inline.
