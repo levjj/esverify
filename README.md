@@ -28,7 +28,7 @@ body with an SMT solver.
 
 More examples can be found in the `tests` directory.
 
-Supported Features:
+## Supported Features:
 
 * expressions with boolean values, integer arithmetic and strings
 * function pre- and postconditions as well as inline assertions and invariants
@@ -51,6 +51,13 @@ It is based on the [z3](https://github.com/Z3Prover/z3) SMT solver but avoids
 trigger heuristics and thereby timeouts and other unpredictable results by
 requiring manual instantiation with function calls which will be used for a
 deterministic trigger instantiation.
+
+## To Do
+
+* termination checking
+* improved support for classes, generic objects and arrays
+* modules
+* TypeScript as input language
 
 ## Usage as Command Line Tool
 
