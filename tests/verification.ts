@@ -617,3 +617,20 @@ describe('mapLen example', () => {
   verified('mapLen: (len(lst) === len(map(lst, f)))');
 
 });
+
+describe('nested function bug', () => {
+
+  code(() => {
+    function f (x) {
+      function g (y) {
+        return x;
+      }
+      return g;
+    }
+    f(1)(2);
+    assert(f(1)(2) === f(1));
+  });
+
+  incorrect('assert: (f(1)(2) === f(1))');
+
+});

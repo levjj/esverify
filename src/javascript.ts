@@ -1273,10 +1273,12 @@ export function stringifyStmt (stmt: Syntax.Statement): string {
 class Substituter extends Visitor<Syntax.Expression, void> {
 
   f: Syntax.FunctionDeclaration | null = null;
+  r: string | null;
   t: string | null = null;
 
-  replaceFunctionResult (f: Syntax.FunctionDeclaration) {
+  replaceFunctionResult (f: Syntax.FunctionDeclaration, r: string) {
     this.f = f;
+    this.r = r;
   }
 
   replaceThis (t: string) {
@@ -1388,13 +1390,13 @@ class Substituter extends Visitor<Syntax.Expression, void> {
   }
 
   visitCallExpression (expr: Syntax.CallExpression): Syntax.Expression {
-    if (this.f && expr.callee.type === 'Identifier' &&
+    if (this.f && this.r && expr.callee.type === 'Identifier' &&
         expr.callee.decl.type === 'Func' &&
         expr.callee.decl.decl === this.f &&
         this.callMatchesParams(expr)) {
       return {
         type: 'Identifier',
-        name: '_res_',
+        name: this.r,
         decl: { type: 'Unresolved' },
         refs: [],
         isWrittenTo: false,
@@ -1469,9 +1471,9 @@ class Substituter extends Visitor<Syntax.Expression, void> {
   visitProgram (prog: Syntax.Program) {/*empty*/}
 }
 
-export function replaceFunctionResult (f: Syntax.FunctionDeclaration, expr: Syntax.Expression): Syntax.Expression {
+export function replaceFunctionResult (f: Syntax.FunctionDeclaration, r: string, expr: Syntax.Expression): Syntax.Expression {
   const sub = new Substituter();
-  sub.replaceFunctionResult(f);
+  sub.replaceFunctionResult(f, r);
   return sub.visitExpression(expr);
 }
 

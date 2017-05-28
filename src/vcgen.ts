@@ -185,6 +185,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   vars: Vars;
   prop: P;
   vcs: Array<VerificationCondition>;
+  resVar: string | null;
   freeVars: Vars;
   testBody: ReadonlyArray<Syntax.Statement>;
 
@@ -197,6 +198,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.vars = vars;
     this.prop = prop;
     this.vcs = [];
+    this.resVar = null;
     this.freeVars = new Set();
     this.testBody = [];
   }
@@ -443,7 +445,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     }
 
     // add special result variable
-    this.vars.add('_res_');
+    this.resVar = this.freshVar();
 
     // assume preconditions
     for (const r of f.requires) {
@@ -462,7 +464,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       type: 'VariableDeclaration',
       id: {
         type: 'Identifier',
-        name: '_res_',
+        name: this.resVar,
         decl: { type: 'Unresolved' },
         loc: f.loc,
         refs: [],
@@ -475,10 +477,10 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     // ensure post conditions
     const callee: A = f.id.name;
-    this.prop = and(this.prop, eq('_res_', { type: 'CallExpression', callee, heap: startHeap, args }));
+    this.prop = and(this.prop, eq(this.resVar, { type: 'CallExpression', callee, heap: startHeap, args }));
 
     for (const ens of f.ensures) {
-      const ens2 = replaceFunctionResult(f, ens);
+      const ens2 = replaceFunctionResult(f, this.resVar, ens);
       const ti = translateExpression(startHeap, this.heap, f.id.name, ens);
       this.verify(truthy(ti), ens.loc, stringifyExpr(ens),
                   [{ type: 'AssertStatement', loc: ens.loc, expression: ens2}]);
@@ -559,7 +561,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       expression: stmt.argument,
       loc: stmt.argument.loc });
     const t = this.visitExpression(stmt.argument);
-    this.prop = and(this.prop, eq('_res_', t));
+    if (!this.resVar) throw new Error('return outside function');
+    this.prop = and(this.prop, eq(this.resVar, t));
     this.testBody = origBody.concat(stmt);
     return tru;
   }
