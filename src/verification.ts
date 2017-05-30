@@ -10,6 +10,8 @@ import { options } from './options';
 
 export type SMTOutput = string;
 
+let checkedLocalZ3Version: boolean = false;
+
 export default class VerificationCondition {
   classes: Classes;
   heaps: Heaps;
@@ -125,7 +127,26 @@ ${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
     if (!options.quiet && options.verbose) {
       console.log(`${this.description}: solving locally with ${options.z3path}`);
     }
-    return new Promise<SMTOutput>((resolve, reject) => {
+    let p = Promise.resolve('');
+    if (!checkedLocalZ3Version) {
+      p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
+        const exec = require('child_process').exec;
+        exec(options.z3path + ' -version', (err: Error, out: string) => {
+          if (err) {
+            reject(new Error('cannot invoke z3: ' + String(err)));
+          } else {
+            const vstr = out.toString().match(/(\d+)\.(\d+)\.\d+/);
+            if (!vstr || +vstr[1] < 4 || +vstr[2] < 5) {
+              reject(new Error('esverify requires z3 verison 4.5 or above'));
+            } else {
+              checkedLocalZ3Version = true;
+              resolve('');
+            }
+          }
+        });
+      }));
+    }
+    p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
       const spawn = require('child_process').spawn;
       const p = spawn(options.z3path, ['-smt2', '-in'], {stdio: ['pipe', 'pipe', 'ignore']});
       let result: string = '';
@@ -134,7 +155,8 @@ ${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
       p.on('error', reject);
       p.stdin.write(smt);
       p.stdin.end();
-    });
+    }));
+    return p;
   }
 
   private solveRemote (smt: SMTInput): Promise<SMTOutput> {
