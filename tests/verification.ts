@@ -634,3 +634,17 @@ describe('nested function bug', () => {
   incorrect('assert: (f(1)(2) === f(1))');
 
 });
+
+describe('function expressions', () => {
+
+  code(() => {
+    const x = (function (z: number) { return z; })(3);
+    assert(x === 3);
+    const y = ((z: number) => z)(4);
+    assert(y === 4);
+  });
+
+  verified('assert: (x === 3)');
+  verified('assert: (y === 4)');
+
+});

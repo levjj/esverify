@@ -151,6 +151,10 @@ class AssertionTranslator extends Visitor<A, void> {
     return { type: 'MemberExpression', object, property: expr.property };
   }
 
+  visitFunctionExpression (expr: Syntax.FunctionExpression): A {
+    throw new PureContextError();
+  }
+
   visitVariableDeclaration (stmt: Syntax.VariableDeclaration) {/*empty*/}
   visitBlockStatement (stmt: Syntax.BlockStatement) {/*empty*/}
   visitExpressionStatement (stmt: Syntax.ExpressionStatement) {/*empty*/}
@@ -405,14 +409,20 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     return { type: 'MemberExpression', object, property: expr.property };
   }
 
+  visitFunctionExpression (expr: Syntax.FunctionExpression): A {
+    debugger;
+    const callee = expr.id ? expr.id.name : this.freshVar();
+    this.visitFunction(expr, callee);
+    return callee;
+  }
+
   tryStatement (pre: P, stmt: Syntax.Statement): [Heap, P, BreakCondition] {
     return this.tryPre(pre, () => {
       return this.visitStatement(stmt);
     });
   }
 
-  transformDef (f: Syntax.FunctionDeclaration, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
-    const callee: A = f.id.name;
+  transformDef (f: Syntax.Function, callee: string, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
     const args: Array<string> = f.params.map(p => p.name);
     let req = tru;
     for (const r of f.requires) {
@@ -420,18 +430,18 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     }
     let ens = q;
     for (const s of f.ensures) {
-      ens = and(ens, truthy(translateExpression(heap, toHeap, f.id.name, s)));
+      ens = and(ens, truthy(translateExpression(heap, toHeap, callee, s)));
     }
     return transformSpec(callee, args, req, ens, heap, toHeap, existsLocs, existsVars, q);
   }
 
-  visitFunctionBody (f: Syntax.FunctionDeclaration) {
+  visitFunctionBody (f: Syntax.Function, callee: string) {
 
     const startHeap = this.heap;
     const startBody = this.testBody;
 
     // add function name to scope
-    this.vars.add(f.id.name);
+    this.vars.add(callee);
 
     // add arguments to scope
     const args: Array<A> = [];
@@ -454,7 +464,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     }
 
     // assume non-rec spec
-    this.prop = and(this.prop, this.transformDef(f, startHeap + 1));
+    this.prop = and(this.prop, this.transformDef(f, callee, startHeap + 1));
     const pre = this.prop;
 
     // internal verification conditions
@@ -470,23 +480,27 @@ class VCGenerator extends Visitor<A, BreakCondition> {
         refs: [],
         isWrittenTo: false
       },
-      init: { type: 'CallExpression', callee: f.id, args: f.params, loc: f.loc },
+      init: {
+        type: 'CallExpression',
+        callee: f.type === 'FunctionExpression' ? f : f.id,
+        args: f.params,
+        loc: f.loc
+      },
       kind: 'const',
       loc: f.loc
     }]);
 
     // ensure post conditions
-    const callee: A = f.id.name;
     this.prop = and(this.prop, eq(this.resVar, { type: 'CallExpression', callee, heap: startHeap, args }));
 
     for (const ens of f.ensures) {
       const ens2 = replaceFunctionResult(f, this.resVar, ens);
-      const ti = translateExpression(startHeap, this.heap, f.id.name, ens);
+      const ti = translateExpression(startHeap, this.heap, callee, ens);
       this.verify(truthy(ti), ens.loc, stringifyExpr(ens),
                   [{ type: 'AssertStatement', loc: ens.loc, expression: ens2}]);
     }
     this.vcs.forEach(vc => {
-      vc.description = f.id.name + ': ' + vc.description;
+      vc.description = (f.id ? f.id.name : 'func') + ': ' + vc.description;
     });
 
     // remove preconditions from prop for purpose of inlining
@@ -623,23 +637,27 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     return fls;
   }
 
-  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
-    this.testBody = this.testBody.concat([checkPreconditions(stmt)]);
+  visitFunction (fun: Syntax.Function, callee: string): void {
+    this.vars.add(callee);
     const inliner = new VCGenerator(this.classes, this.heap + 1, this.heap + 1,
                                     new Set([...this.locs]),
                                     new Set([...this.vars]), this.prop);
     inliner.testBody = this.testBody;
-    inliner.visitFunctionBody(stmt);
-    this.vars.add(stmt.id.name);
+    inliner.visitFunctionBody(fun, callee);
     this.vcs = this.vcs.concat(inliner.vcs);
     const existsLocs = new Set([...inliner.locs].filter(l => !this.locs.has(l)));
     const existsVars = new Set([...inliner.vars].filter(v => {
-      return !this.vars.has(v) && !stmt.params.some(n => n.name === v);
+      return !this.vars.has(v) && !fun.params.some(n => n.name === v);
     }));
     const inlinedP: P = eraseTriggersProp(inliner.prop);
-    const inlinedSpec: P = this.transformDef(stmt, this.heap + 1, inliner.heap,
+    const inlinedSpec: P = this.transformDef(fun, callee, this.heap + 1, inliner.heap,
                                              existsLocs, existsVars, inlinedP);
     this.prop = and(this.prop, inlinedSpec);
+  }
+
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
+    this.testBody = this.testBody.concat([checkPreconditions(stmt)]);
+    this.visitFunction(stmt, stmt.id.name);
     return fls;
   }
 
