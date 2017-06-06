@@ -652,3 +652,22 @@ describe('function expressions', () => {
   verified('assert: (y === 4)');
 
 });
+
+describe('functions returning functions', () => {
+
+  code(() => {
+    function twice (f: any) {
+      requires(spec(f, (x) => typeof(x) === 'number',
+                       (x,y) => typeof(y) === 'number' && y > x));
+      ensures(res => spec(res, (x) => typeof(x) === 'number',
+                               (x,y) => typeof(y) === 'number' && y > x + 1));
+      return function (x) {
+        requires(typeof(x) === 'number');
+        ensures(y => typeof(y) === 'number' && y > x + 1);
+        return f(f(x));
+      };
+    }
+  });
+
+  verified('twice: spec(res, (x) => ((typeof(x) === "number")), (x, y) => ((typeof(y) === "number") && (y > (x + 1))))');
+});

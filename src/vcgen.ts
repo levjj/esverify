@@ -329,7 +329,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const heap = this.heap;
 
     // apply call trigger
-    this.have({ type: 'CallTrigger', callee, heap, args });
+    this.have({ type: 'CallTrigger', callee, heap, args, fuel: 1 });
 
     // verify precondition
     const pre: P = { type: 'Precondition', callee, heap, args };
@@ -405,7 +405,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   visitMemberExpression (expr: Syntax.MemberExpression): A {
     const object = this.visitExpression(expr.object);
     const property = expr.property;
-    this.have({ type: 'AccessTrigger', object: object });
+    this.have({ type: 'AccessTrigger', object: object, fuel: 1 });
     this.verify(
       { type: 'HasProperty', object, property }, expr.loc, `property ${property} exists on object`,
       [{

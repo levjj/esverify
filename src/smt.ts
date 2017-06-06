@@ -197,7 +197,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   visitForAllCalls (prop: Syntax.ForAllCalls): SMTInput {
     const {callee, heap, args} = prop;
     const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
-    const callP: P = { type: 'CallTrigger', callee, heap, args: args };
+    const callP: P = { type: 'CallTrigger', callee, heap, args: args, fuel: prop.fuel };
     let p = this.visitProp(implies(callP, prop.prop));
     if (prop.existsLocs.size + prop.existsHeaps.size + prop.existsVars.size > 0) {
       p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
@@ -214,7 +214,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitForAllAccess (prop: Syntax.ForAllAccess): SMTInput {
-    const accessP: P = { type: 'AccessTrigger', object: 'this' };
+    const accessP: P = { type: 'AccessTrigger', object: 'this', fuel: prop.fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
     return `(forall ((${this.visitVariable('this')} JSVal)) (!\n  ${p}\n  :pattern (${trigger})))`;

@@ -91,7 +91,7 @@ class QuantifierLifter extends QuantifierTransformer {
     const sub = this.liftExistantials(prop);
     prop.args.forEach(a => sub.replaceVar(a, this.freshVar(a)));
     const callee = sub.visitExpr(prop.callee);
-    const trigger = this.visitProp({ type: 'CallTrigger', callee, heap: prop.heap, args: prop.args });
+    const trigger = this.visitProp({ type: 'CallTrigger', callee, heap: prop.heap, args: prop.args, fuel: prop.fuel });
     return sub.visitProp(implies(trigger, prop.prop));
   }
 
@@ -99,8 +99,55 @@ class QuantifierLifter extends QuantifierTransformer {
     if (this.position) return copy(prop);
     const sub = new Substituter();
     sub.replaceVar('this', this.freshVar('this'));
-    const trigger = this.visitProp({ type: 'AccessTrigger', object: 'this' });
+    const trigger = this.visitProp({ type: 'AccessTrigger', object: 'this', fuel: prop.fuel });
     return sub.visitProp(implies(trigger, prop.prop));
+  }
+}
+
+class MaximumDepthFinder extends Reducer<number> {
+  empty (): number { return 0; }
+
+  reduce (a: number, b: number): number {
+    return Math.max(a, b);
+  }
+
+  visitForAllCalls (prop: Syntax.ForAllCalls): number {
+    return 1 + super.visitForAllCalls(prop);
+  }
+
+  visitForAllAccess (prop: Syntax.ForAllAccess): number {
+    return 1 + super.visitForAllAccess(prop);
+  }
+}
+
+class TriggerFueler extends Traverser {
+
+  fuel: number;
+
+  visitCallTrigger (prop: Syntax.CallTrigger): void {
+    super.visitCallTrigger(prop);
+    prop.fuel = this.fuel;
+  }
+
+  visitForAllCalls (prop: Syntax.ForAllCalls): void {
+    super.visitForAllCalls(prop);
+    prop.fuel = this.fuel;
+  }
+
+  visitAccessTrigger (prop: Syntax.AccessTrigger): void {
+    super.visitAccessTrigger(prop);
+    prop.fuel = this.fuel;
+  }
+
+  visitForAllAccess (prop: Syntax.ForAllAccess): void {
+    super.visitForAllAccess(prop);
+    prop.fuel = this.fuel;
+  }
+
+  process (prop: P): P {
+    this.fuel = (new MaximumDepthFinder()).visitProp(prop);
+    this.visitProp(prop);
+    return prop;
   }
 }
 
@@ -131,7 +178,7 @@ class TriggerCollector extends Reducer<Triggers> {
 
   visitCallTrigger (prop: Syntax.CallTrigger): Triggers {
     const res = super.visitCallTrigger(prop);
-    return this.position ? this.r([[prop],[]], res) : res;
+    return this.position && prop.fuel > 0 ? this.r([[prop],[]], res) : res;
   }
 
   visitForAllCalls (prop: Syntax.ForAllCalls): Triggers {
@@ -140,7 +187,7 @@ class TriggerCollector extends Reducer<Triggers> {
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): Triggers {
     const res = super.visitAccessTrigger(prop);
-    return this.position ? this.r([[],[prop]], res) : res;
+    return this.position && prop.fuel > 0 ? this.r([[],[prop]], res) : res;
   }
 
   visitForAllAccess (prop: Syntax.ForAllAccess): Triggers {
@@ -157,6 +204,13 @@ class QuantifierInstantiator extends QuantifierTransformer {
     this.instantiations = 0;
   }
 
+  consumeFuel (prop: P, prevFuel: number): P {
+    const fueler = new TriggerFueler();
+    fueler.fuel = prevFuel - 1;
+    fueler.visitProp(prop);
+    return prop;
+  }
+
   instantiateCall (prop: Syntax.ForAllCalls, trigger: Syntax.CallTrigger) {
     const match = eq(prop.callee, trigger.callee);
     const sub = this.liftExistantials(prop, trigger.heap);
@@ -164,13 +218,15 @@ class QuantifierInstantiator extends QuantifierTransformer {
     prop.args.forEach((a, idx) => {
       sub.replaceVar(a, trigger.args[idx]);
     });
-    return implies(match, sub.visitProp(prop.prop));
+    const replaced = sub.visitProp(prop.prop);
+    return implies(match, this.consumeFuel(replaced, trigger.fuel));
   }
 
   instantiateAccess (prop: Syntax.ForAllAccess, trigger: Syntax.AccessTrigger) {
     const sub = new Substituter();
     sub.replaceVar('this', trigger.object);
-    return sub.visitProp(prop.prop);
+    const replaced = sub.visitProp(prop.prop);
+    return this.consumeFuel(replaced, trigger.fuel);
   }
 
   visitForAllCalls (prop: Syntax.ForAllCalls): P {
@@ -234,13 +290,15 @@ class QuantifierEraser extends Transformer {
 }
 
 export function instantiateQuantifiers (heaps: Heaps, locs: Locs, vars: Vars, p: P): P {
-  let prop = (new QuantifierLifter(heaps, locs, vars)).visitProp(p);
+  const initialFuel = new TriggerFueler();
+  const lifter = new QuantifierLifter(heaps, locs, vars);
   const instantiator = new QuantifierInstantiator(heaps, locs, vars);
+  let prop = initialFuel.process(lifter.visitProp(p));
   let num = -1;
   while (instantiator.instantiations > num) {
     num = instantiator.instantiations;
     prop = instantiator.process(prop);
-    prop = (new QuantifierLifter(heaps, locs, vars)).visitProp(prop);
+    prop = lifter.visitProp(prop);
   }
   prop = (new QuantifierEraser()).visitProp(prop);
   return prop;

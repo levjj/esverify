@@ -92,14 +92,17 @@ export namespace Syntax {
                                  existsLocs: Locs;
                                  existsVars: Vars;
                                  prop: Proposition;
-                                 instantiations: Array<CallTrigger>; }
+                                 instantiations: Array<CallTrigger>;
+                                 fuel: number; }
   export interface CallTrigger { type: 'CallTrigger';
                                  callee: Expression;
                                  heap: HeapExpression;
-                                 args: Array<Expression>; }
+                                 args: Array<Expression>;
+                                 fuel: number; }
   export interface ForAllAccess { type: 'ForAllAccess';
                                   prop: Proposition;
-                                  instantiations: Array<AccessTrigger>; }
+                                  instantiations: Array<AccessTrigger>;
+                                  fuel: number; }
   export interface InstanceOf { type: 'InstanceOf';
                                 left: Expression;
                                 right: ClassName; }
@@ -107,7 +110,8 @@ export namespace Syntax {
                                  object: Expression;
                                  property: string; }
   export interface AccessTrigger { type: 'AccessTrigger';
-                                   object: Expression; }
+                                   object: Expression;
+                                   fuel: number; }
   export type Proposition = Truthy
                           | And
                           | Or
@@ -524,6 +528,11 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   }
 }
 
+export class Traverser extends Reducer<void> {
+  empty (): void { /* empty */ }
+  reduce (x: void, y: void): void { /* empty */ }
+}
+
 export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression, A, P> {
 
   visitLocation (loc: Syntax.Location): Syntax.Location {
@@ -675,7 +684,8 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       existsLocs: new Set([...prop.existsLocs]),
       existsVars: new Set([...prop.existsVars]),
       prop: this.visitProp(prop.prop),
-      instantiations: [...prop.instantiations] // shallow copy, do not process
+      instantiations: [...prop.instantiations], // shallow copy, do not process
+      fuel: prop.fuel
     };
   }
 
@@ -684,7 +694,8 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       type: 'CallTrigger',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
-      args: prop.args.map(a => this.visitExpr(a))
+      args: prop.args.map(a => this.visitExpr(a)),
+      fuel: prop.fuel
     };
   }
 
@@ -692,7 +703,8 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     return {
       type: 'ForAllAccess',
       prop: this.visitProp(prop.prop),
-      instantiations: [...prop.instantiations] // shallow copy, do not process
+      instantiations: [...prop.instantiations], // shallow copy, do not process
+      fuel: prop.fuel
     };
   }
 
@@ -715,7 +727,8 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
   visitAccessTrigger (prop: Syntax.AccessTrigger): P {
     return {
       type: 'AccessTrigger',
-      object: this.visitExpr(prop.object)
+      object: this.visitExpr(prop.object),
+      fuel: prop.fuel
     };
   }
 }
@@ -810,7 +823,7 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
     s = and(ens, heapEq(heap, { type: 'HeapEffect', callee, heap, args }));
   }
   const prop = and(implies(req, preP), implies(and(req, postP), s));
-  const forAll: P = { type: 'ForAllCalls', callee, heap, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [] };
+  const forAll: P = { type: 'ForAllCalls', callee, heap, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [], fuel: 0 };
   const fnCheck: A = {
     type: 'BinaryExpression',
     left: {
@@ -842,5 +855,5 @@ export function transformClassInvariant (className: string, fields: Array<string
   }
   prop = and(prop, inv);
   prop = implies(instP, prop);
-  return { type: 'ForAllAccess', prop, instantiations: [] };
+  return { type: 'ForAllAccess', prop, instantiations: [], fuel: 0 };
 }
