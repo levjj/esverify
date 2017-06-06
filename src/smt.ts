@@ -233,7 +233,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 }
 
-function propositionToSMT (prop: P): SMTInput {
+export function propositionToSMT (prop: P): SMTInput {
   const v = new SMTGenerator();
   return v.visitProp(prop);
 }

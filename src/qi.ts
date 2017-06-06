@@ -1,4 +1,7 @@
-import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Reducer, tru, and, eq, implies, eqProp, copy } from './logic';
+import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Traverser, Reducer, tru, and, eq, implies, eqProp, copy } from './logic';
+import { options } from './options';
+import { propositionToSMT } from './smt';
+declare const console: { log: (s: string) => void };
 
 class TriggerEraser extends Transformer {
   visitCallTrigger (prop: Syntax.CallTrigger): P {
@@ -181,6 +184,9 @@ class QuantifierInstantiator extends QuantifierTransformer {
       clauses.push(instantiated);
       prop.instantiations.push(t);
       this.instantiations++;
+      if (options.verbose && !options.quiet) {
+        console.log('trigger: ' + propositionToSMT(t));
+      }
     }
     return and(...clauses);
   }
@@ -196,6 +202,9 @@ class QuantifierInstantiator extends QuantifierTransformer {
       clauses.push(instantiated);
       prop.instantiations.push(t);
       this.instantiations++;
+      if (options.verbose && !options.quiet) {
+        console.log('trigger: ' + propositionToSMT(t));
+      }
     }
     return and(...clauses);
   }
