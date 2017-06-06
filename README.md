@@ -13,7 +13,7 @@ using special pseudo-calls to `requires` and `ensures` with boolean expressions.
 function max(a, b) {
   requires(typeof(a) === "number");
   requires(typeof(b) === "number");
-  ensures(max(a,b) >= a);
+  ensures(res => res >= a);
 
   if (a >= b) {
     return a;

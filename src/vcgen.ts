@@ -1,6 +1,6 @@
 import VerificationCondition from './verification';
-import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, replaceFunctionResult, isMutable, replaceThis } from './javascript';
-import { A, P, Classes, Vars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy, implies, and, or, eq, not, heapEq, heapStore, removePrefix, transformClassInvariant } from './logic';
+import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, isMutable, replaceVar } from './javascript';
+import { A, P, Classes, Vars, Locs, Heap, Substituter, transformSpec, und, tru, fls, truthy, falsy, implies, and, or, eq, not, heapEq, heapStore, removePrefix, transformClassInvariant } from './logic';
 import { eraseTriggersProp } from './qi';
 
 class PureContextError extends Error {
@@ -15,18 +15,24 @@ class HeapReferenceContextError extends Error {
   constructor () { super('heap references not supported in this context'); }
 }
 
+function replaceResultWithCall (callee: A, heap: Heap, args: Array<string>, result: Syntax.Identifier | null, post: P): P {
+  if (!result) return post;
+    // replace result argument with orig. function invocation
+  const sub = new Substituter();
+  sub.replaceVar(result.name, { type: 'CallExpression', callee, heap, args });
+  return sub.visitProp(post);
+}
+
 class AssertionTranslator extends Visitor<A, void> {
   oldHeap: Heap;
   heap: Heap;
-  inPost: string | null;
   allowsQuantifiers: boolean;
   allowsHeapReferences: boolean;
 
-  constructor (oldHeap: Heap, heap: Heap, inPost: string | null) {
+  constructor (oldHeap: Heap, heap: Heap) {
     super();
     this.oldHeap = oldHeap;
     this.heap = heap;
-    this.inPost = inPost;
     this.allowsQuantifiers = true;
     this.allowsHeapReferences = true;
   }
@@ -104,17 +110,17 @@ class AssertionTranslator extends Visitor<A, void> {
     return {
       type: 'CallExpression',
       callee: this.visitExpression(expr.callee),
-      heap: this.inPost && expr.callee.type === 'Identifier' && this.inPost === expr.callee.name ? this.oldHeap : this.heap,
+      heap: this.heap,
       args: expr.args.map(a => this.visitExpression(a))
     };
   }
 
   visitSpecExpression (expr: Syntax.SpecExpression): A {
     if (!this.allowsQuantifiers) throw new QuantifierFreeContextError();
-    const callee: string = expr.callee.name;
-    const r = truthy(translateExpression(this.heap + 1, this.heap + 1, this.inPost, expr.pre));
-    const sPost = expr.callee.type === 'Identifier' ? expr.callee.name : this.inPost;
-    const s = truthy(translateExpression(this.heap + 1, this.heap + 2, sPost, expr.post));
+    const callee = this.visitExpression(expr.callee);
+    const r = truthy(translateExpression(this.heap + 1, this.heap + 1, expr.pre));
+    let s = truthy(translateExpression(this.heap + 1, this.heap + 2, expr.post.expression));
+    s = replaceResultWithCall(callee, this.heap + 1, expr.args, expr.post.argument, s);
     const test: P = transformSpec(callee, expr.args, r, s, this.heap + 1);
     const consequent: A = { type: 'Literal', value: true };
     const alternate: A = { type: 'Literal', value: false };
@@ -168,13 +174,13 @@ class AssertionTranslator extends Visitor<A, void> {
   visitProgram (prog: Syntax.Program) {/*empty*/}
 }
 
-function translateExpression (oldHeap: Heap, heap: Heap, inPost: string | null, expr: Syntax.Expression): A {
-  const translator = new AssertionTranslator(oldHeap, heap, inPost);
+function translateExpression (oldHeap: Heap, heap: Heap, expr: Syntax.Expression): A {
+  const translator = new AssertionTranslator(oldHeap, heap);
   return translator.visitExpression(expr);
 }
 
 function translateNoHeapExpression (expr: Syntax.Expression): A {
-  const translator = new AssertionTranslator(0, 0, null);
+  const translator = new AssertionTranslator(0, 0);
   translator.allowsHeapReferences = false;
   return translator.visitExpression(expr);
 }
@@ -376,7 +382,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     });
 
     // verify invariant
-    const inv: A = translateNoHeapExpression(replaceThis(object, clz.invariant));
+    const inv: A = translateNoHeapExpression(replaceVar('this', object, clz.invariant));
     this.verify(truthy(inv), expr.loc, `class invariant ${clz.id.name}`);
 
     return object;
@@ -410,7 +416,6 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): A {
-    debugger;
     const callee = expr.id ? expr.id.name : this.freshVar();
     this.visitFunction(expr, callee);
     return callee;
@@ -426,11 +431,12 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const args: Array<string> = f.params.map(p => p.name);
     let req = tru;
     for (const r of f.requires) {
-      req = and(req, truthy(translateExpression(heap, heap, null, r)));
+      req = and(req, truthy(translateExpression(heap, heap, r)));
     }
     let ens = q;
     for (const s of f.ensures) {
-      ens = and(ens, truthy(translateExpression(heap, toHeap, callee, s)));
+      const s2: P = truthy(translateExpression(heap, toHeap, s.expression));
+      ens = and(ens, replaceResultWithCall(callee, heap, args, s.argument, s2));
     }
     return transformSpec(callee, args, req, ens, heap, toHeap, existsLocs, existsVars, q);
   }
@@ -459,7 +465,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     // assume preconditions
     for (const r of f.requires) {
-      const tr = translateExpression(this.heap, this.heap, null, r);
+      const tr = translateExpression(this.heap, this.heap, r);
       this.prop = and(this.prop, truthy(tr));
     }
 
@@ -494,9 +500,9 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.prop = and(this.prop, eq(this.resVar, { type: 'CallExpression', callee, heap: startHeap, args }));
 
     for (const ens of f.ensures) {
-      const ens2 = replaceFunctionResult(f, this.resVar, ens);
-      const ti = translateExpression(startHeap, this.heap, callee, ens);
-      this.verify(truthy(ti), ens.loc, stringifyExpr(ens),
+      const ens2 = ens.argument ? replaceVar(ens.argument.name, this.resVar, ens.expression) : ens.expression;
+      const ti = translateExpression(startHeap, this.heap, ens2);
+      this.verify(truthy(ti), ens.loc, stringifyExpr(ens.expression),
                   [{ type: 'AssertStatement', loc: ens.loc, expression: ens2}]);
     }
     this.vcs.forEach(vc => {
@@ -548,7 +554,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitAssertStatement (stmt: Syntax.AssertStatement): BreakCondition {
-    const a = translateExpression(this.oldHeap, this.heap, null, stmt.expression);
+    const a = translateExpression(this.oldHeap, this.heap, stmt.expression);
     this.verify(truthy(a), stmt.loc, 'assert: ' + stringifyExpr(stmt.expression), [stmt]);
     return not(truthy(a));
   }
@@ -584,7 +590,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   visitWhileStatement (stmt: Syntax.WhileStatement): BreakCondition {
     // verify invariants on entry
     for (const inv of stmt.invariants) {
-      const t = translateExpression(this.oldHeap, this.heap, null, inv);
+      const t = translateExpression(this.oldHeap, this.heap, inv);
       this.verify(truthy(t), inv.loc, 'invariant on entry: ' + stringifyExpr(inv),
                   [{ type: 'AssertStatement', loc: inv.loc, expression: inv }]);
     }
@@ -602,7 +608,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     let testEnter = this.visitExpression(stmt.test);
     this.prop = and(this.prop, truthy(testEnter));
     for (const inv of stmt.invariants) {
-      const ti = translateExpression(startHeap, this.heap, null, inv); // TODO old() for previous iteration
+      const ti = translateExpression(startHeap, this.heap, inv); // TODO old() for previous iteration
       this.prop = and(this.prop, truthy(ti));
     }
 
@@ -611,7 +617,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     // ensure invariants maintained
     for (const inv of stmt.invariants) {
-      const ti = translateExpression(startHeap, this.heap, null, inv);
+      const ti = translateExpression(startHeap, this.heap, inv);
       const assertCode: Syntax.Statement = { type: 'AssertStatement', loc: inv.loc, expression: inv };
       this.verify(truthy(ti), inv.loc, 'invariant maintained: ' + stringifyExpr(inv),
                   loopTestingCode(stmt).concat([assertCode]));
@@ -627,7 +633,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const testExit = this.visitExpression(stmt.test);
     this.prop = and(this.prop, falsy(testExit));
     for (const inv of stmt.invariants) {
-      const ti = translateExpression(this.oldHeap, this.heap, null, inv);
+      const ti = translateExpression(this.oldHeap, this.heap, inv);
       this.prop = and(this.prop, truthy(ti));
     }
     return and(truthy(testEnter), bcBody);
@@ -675,14 +681,17 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     for (const stmt of prog.body) {
       if (stmt.type === 'FunctionDeclaration') {
         // function should maintain invariants
-        prog.invariants.forEach(inv => { stmt.requires.push(inv); stmt.ensures.push(inv); });
+        prog.invariants.forEach(inv => {
+          stmt.requires.push(inv);
+          stmt.ensures.push({ argument: null, expression: inv, loc: inv.loc });
+        });
       }
       this.visitStatement(stmt);
     }
 
     // main program body needs to establish invariants
     for (const inv of prog.invariants) {
-      const ti = translateExpression(this.heap, this.heap, null, inv);
+      const ti = translateExpression(this.heap, this.heap, inv);
       this.verify(truthy(ti), inv.loc, 'initially: ' + stringifyExpr(inv),
                   [{ type: 'AssertStatement', loc: inv.loc, expression: inv }]);
     }

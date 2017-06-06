@@ -5,12 +5,12 @@ import { setOptions } from '../src/options';
 import VerificationCondition from '../src/verification';
 
 declare const requires: (x: boolean) => void;
-declare const ensures: (x: boolean) => void;
+declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
 declare const invariant: (x: boolean) => void;
 declare const assert: (x: boolean) => void;
 declare const old: (x: any) => any;
 declare const pure: () => boolean;
-declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any) => boolean) => boolean;
+declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any, sy: any) => boolean) => boolean;
 
 let vcs: Array<VerificationCondition>;
 
@@ -30,9 +30,12 @@ function code (fn: () => any) {
 function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string, debug: boolean = false) {
   const body = async () => {
     /* tslint:disable:no-unused-expression */
+    if (debug) {
+      setOptions({ quiet: false, verbose: true });
+      console.log(vcs.map(vc => vc.description).join('\n'));
+    }
     const vc = vcs.find(v => v.description === description);
     expect(vc).to.be.ok;
-    if (debug) setOptions({ quiet: false, verbose: true });
     const res = await vc.verify();
     if (res.status === 'error' && res.type === 'unexpected') console.log(res.error);
     if (expected === 'verified' || expected === 'unverified') {
@@ -64,7 +67,7 @@ describe('max()', () => {
     function max (a, b) {
       requires(typeof(a) === 'number');
       requires(typeof(b) === 'number');
-      ensures(max(a, b) >= a);
+      ensures(res => res >= a);
 
       if (a >= b) {
         return a;
@@ -79,10 +82,10 @@ describe('max()', () => {
   });
 
   it('has a description', async () => {
-    expect(vcs[0].description).to.be.eql('max: (max(a, b) >= a)');
+    expect(vcs[0].description).to.be.eql('max: (res >= a)');
   });
 
-  verified('max: (max(a, b) >= a)');
+  verified('max: (res >= a)');
 });
 
 describe('max() with missing pre', () => {
@@ -90,7 +93,7 @@ describe('max() with missing pre', () => {
   code(() => {
     function max (a, b) {
       requires(typeof(a) === 'number');
-      ensures(max(a, b) >= a);
+      ensures(res => res >= a);
 
       if (a >= b) {
         return a;
@@ -100,7 +103,7 @@ describe('max() with missing pre', () => {
     }
   });
 
-  unverified('max: (max(a, b) >= a)');
+  unverified('max: (res >= a)');
 
   it('returns counter-example', async () => {
     const m = await vcs[0].verify();
@@ -192,7 +195,7 @@ describe('sum', () => {
     function sumTo (n) {
       requires(typeof n === 'number');
       requires(n >= 0);
-      ensures(sumTo(n) === (n + 1) * n / 2);
+      ensures(res => res === (n + 1) * n / 2);
 
       let i = 0;
       let s = 0;
@@ -210,7 +213,7 @@ describe('sum', () => {
   verified('sumTo: invariant on entry: (s === (((i + 1) * i) / 2))');
   verified('sumTo: invariant maintained: (i <= n)');
   verified('sumTo: invariant maintained: (s === (((i + 1) * i) / 2))');
-  verified('sumTo: (sumTo(n) === (((n + 1) * n) / 2))');
+  verified('sumTo: (res === (((n + 1) * n) / 2))');
 });
 
 describe('global call', () => {
@@ -218,7 +221,7 @@ describe('global call', () => {
   code(() => {
     function inc (n) {
       requires(typeof(n) === 'number');
-      ensures(inc(n) > n);
+      ensures(res => res > n);
 
       return n + 1;
     }
@@ -230,7 +233,7 @@ describe('global call', () => {
 
   verified('precondition inc(i)');
   verified('assert: (j > 3)');
-  verified('inc: (inc(n) > n)');
+  verified('inc: (res > n)');
 });
 
 describe('inline global call', () => {
@@ -259,7 +262,7 @@ describe('post conditions global call', () => {
   code(() => {
     function inc (n) {
       requires(typeof(n) === 'number');
-      ensures(inc(n) > n);
+      ensures(res => res > n);
 
       return n + 1;
     }
@@ -274,7 +277,7 @@ describe('post conditions global call', () => {
     assert(k >= 5);
   });
 
-  verified('inc: (inc(n) > n)');
+  verified('inc: (res > n)');
   incorrect('inc2: precondition inc(n)');
   incorrect('inc2: precondition inc(inc(n))');
   verified('precondition inc(i)');
@@ -325,8 +328,8 @@ describe('fibonacci', () => {
     function fib (n) {
       requires(typeof(n) === 'number');
       requires(n >= 0);
-      ensures(fib(n) >= n);
-      ensures(fib(n) >= 1);
+      ensures(res => res >= n);
+      ensures(res => res >= 1);
 
       if (n <= 1) return 1;
       return fib(n - 1) + fib(n - 2);
@@ -335,7 +338,8 @@ describe('fibonacci', () => {
 
   verified('fib: precondition fib((n - 1))');
   verified('fib: precondition fib((n - 2))');
-  verified('fib: (fib(n) >= n)');
+  verified('fib: (res >= n)');
+  verified('fib: (res >= 1)');
 });
 
 describe('buggy fibonacci', () => {
@@ -344,7 +348,7 @@ describe('buggy fibonacci', () => {
     function fib (n) {
       requires(typeof(n) === 'number');
       requires(n >= 0);
-      ensures(fib(n) >= n);
+      ensures(res => res >= n);
 
       if (n <= 1) return n;
       return fib(n - 1) + fib(n - 2);
@@ -353,7 +357,7 @@ describe('buggy fibonacci', () => {
 
   verified('fib: precondition fib((n - 1))');
   verified('fib: precondition fib((n - 2))');
-  incorrect('fib: (fib(n) >= n)');
+  incorrect('fib: (res >= n)');
   it('returns counter-example', async () => {
     const m = await vcs[2].verify();
     if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
@@ -418,15 +422,15 @@ describe('simple higher-order functions', () => {
   code(() => {
     function inc (n) {
       requires(typeof(n) === 'number');
-      ensures(inc(n) > n);
+      ensures(res => res > n);
 
       return n + 1;
     }
 
     function twice (f, n) {
-      requires(spec(f, x => typeof(x) === 'number', x => f(x) > x));
+      requires(spec(f, (x) => typeof(x) === 'number', (x,y) => y > x));
       requires(typeof(n) === 'number');
-      ensures(twice(f, n) > n + 1);
+      ensures(res => res > n + 1);
 
       return f(f(n));
     }
@@ -436,10 +440,10 @@ describe('simple higher-order functions', () => {
     assert(y >= 5);
   });
 
-  verified('inc: (inc(n) > n)');
+  verified('inc: (res > n)');
   verified('twice: precondition f(n)');
   verified('twice: precondition f(f(n))');
-  verified('twice: (twice(f, n) > (n + 1))');
+  verified('twice: (res > (n + 1))');
   verified('precondition twice(inc, x)');
   verified('assert: (y >= 5)');
 });
@@ -450,7 +454,7 @@ describe('higher-order proofs', () => {
     function fib (n) {
       requires(n >= 0);
       ensures(pure());
-      ensures(typeof (fib(n)) === 'number');
+      ensures(res => typeof(res) === 'number');
 
       if (n <= 1) {
         return 1;
@@ -510,7 +514,7 @@ describe('higher-order proofs', () => {
   verified('fib: precondition fib((n - 1))');
   verified('fib: precondition fib((n - 2))');
   verified('fib: pure()');
-  verified('fib: (typeof(fib(n)) === "number")');
+  verified('fib: (typeof(res) === "number")');
   verified('fibInc: precondition fib(n)');
   verified('fibInc: precondition fib((n + 1))');
   verified('fibInc: precondition fib((n - 1))');
@@ -544,7 +548,7 @@ describe('mapLen example', () => {
       requires(lst === null || lst instanceof List);
       requires(spec(f, x => true, x => pure()));
       ensures(pure());
-      ensures(map(lst, f) === null || map(lst, f) instanceof List);
+      ensures(res => res === null || res instanceof List);
 
       if (lst === null) return null;
       return new List(f(lst.head), map(lst.tail, f));
@@ -553,14 +557,14 @@ describe('mapLen example', () => {
     function len (lst) {
       requires(lst === null || lst instanceof List);
       ensures(pure());
-      ensures(len(lst) >= 0);
+      ensures(res => res >= 0);
 
       return lst === null ? 0 : len(lst.tail) + 1;
     }
 
     function mapLen (lst, f) {
-      requires(spec(f, x => true, x => pure()));
       requires(lst === null || lst instanceof List);
+      requires(spec(f, x => true, x => pure()));
       ensures(pure());
       ensures(len(lst) === len(map(lst, f)));
 
@@ -590,11 +594,11 @@ describe('mapLen example', () => {
   verified('map: precondition map(lst.tail, f)');
   verified('map: class invariant List');
   verified('map: pure()');
-  verified('map: (map(lst, f) === null) || (map(lst, f) instanceof List)');
+  verified('map: (res === null) || (res instanceof List)');
   verified('len: property tail exists on object');
   verified('len: precondition len(lst.tail)');
   verified('len: pure()');
-  verified('len: (len(lst) >= 0)');
+  verified('len: (res >= 0)');
   verified('mapLen: precondition len(lst)');
   verified('mapLen: precondition map(lst, f)');
   verified('mapLen: precondition len(map(lst, f))');

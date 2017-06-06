@@ -10,6 +10,7 @@ export namespace Syntax {
                           | { type: 'Var', decl: VariableDeclaration }
                           | { type: 'Func', decl: Function }
                           | { type: 'SpecArg', decl: SpecExpression, argIdx: number }
+                          | { type: 'PostArg', decl: PostCondition }
                           | { type: 'Param', func: Function; decl: Identifier }
                           | { type: 'This', decl: ClassDeclaration }
                           | { type: 'Class', decl: ClassDeclaration };
@@ -67,10 +68,10 @@ export namespace Syntax {
   export interface PureExpression { type: 'PureExpression';
                                     loc: SourceLocation; }
   export interface SpecExpression { type: 'SpecExpression';
-                                    callee: Identifier; // not mutable
+                                    callee: Expression;
                                     args: Array<string>;
-                                    pre: Expression;
-                                    post: Expression;
+                                    pre: PreCondition;
+                                    post: PostCondition;
                                     loc: SourceLocation; }
   export interface NewExpression { type: 'NewExpression';
                                    callee: Identifier;
@@ -88,11 +89,15 @@ export namespace Syntax {
                                       object: Expression;
                                       property: string;
                                       loc: SourceLocation; }
+  export type PreCondition = Expression;
+  export interface PostCondition { argument: Identifier | null;
+                                   expression: Expression;
+                                   loc: SourceLocation; }
   export interface FunctionExpression { type: 'FunctionExpression';
                                         id: Identifier | null;
                                         params: Array<Identifier>;
-                                        requires: Array<Expression>;
-                                        ensures: Array<Expression>;
+                                        requires: Array<PreCondition>;
+                                        ensures: Array<PostCondition>;
                                         body: BlockStatement;
                                         freeVars: Array<string>;
                                         loc: SourceLocation; }
@@ -146,8 +151,8 @@ export namespace Syntax {
   export interface FunctionDeclaration { type: 'FunctionDeclaration';
                                          id: Identifier;
                                          params: Array<Identifier>;
-                                         requires: Array<Expression>;
-                                         ensures: Array<Expression>;
+                                         requires: Array<PreCondition>;
+                                         ensures: Array<PostCondition>;
                                          body: BlockStatement;
                                          freeVars: Array<string>;
                                          loc: SourceLocation; }
@@ -183,7 +188,7 @@ function unsupported (node: JSyntax.Node, description: string = 'unsupported syn
   });
 }
 
-function findPseudoCalls (type: string, stmts: Array<JSyntax.Statement>): Array<Syntax.Expression> {
+function findPseudoCalls (type: string, stmts: Array<JSyntax.Statement>): Array<JSyntax.Expression> {
   return flatMap(stmts, stmt => {
     if (stmt.type === 'ExpressionStatement' &&
         stmt.expression.type === 'CallExpression' &&
@@ -192,9 +197,29 @@ function findPseudoCalls (type: string, stmts: Array<JSyntax.Statement>): Array<
       if (stmt.expression.arguments.length !== 1) throw unsupported(stmt.expression, `${type} expects proposition as one single argument`);
       const arg = stmt.expression.arguments[0];
       if (arg.type === 'SpreadElement') throw unsupported(arg);
-      return [expressionAsJavaScript(arg)];
+      return [arg];
     }
     return [];
+  });
+}
+
+function findPreConditions (stmts: Array<JSyntax.Statement>): Array<Syntax.PreCondition> {
+  return findPseudoCalls('requires', stmts).map(expressionAsJavaScript);
+}
+
+function findInvariants (stmts: Array<JSyntax.Statement>): Array<Syntax.Expression> {
+  return findPseudoCalls('invariant', stmts).map(expressionAsJavaScript);
+}
+
+function findPostConditions (stmts: Array<JSyntax.Statement>): Array<Syntax.PostCondition> {
+  return findPseudoCalls('ensures', stmts).map(expr => {
+    if (expr.type === 'ArrowFunctionExpression' && expr.params.length === 1) {
+      if (expr.async || expr.generator) throw unsupported(expr);
+      if (expr.body.type === 'BlockStatement') throw unsupported(expr);
+      const argument = patternAsIdentifier(expr.params[0]);
+      return { argument, expression: expressionAsJavaScript(expr.body), loc: loc(expr) };
+    }
+    return { argument: null, expression: expressionAsJavaScript(expr), loc: loc(expr) };
   });
 }
 
@@ -475,29 +500,45 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       }
       if (expr.callee.type === 'Identifier' &&
           expr.callee.name === 'spec') {
-        if (expr.arguments.length !== 3) throw unsupported(expr, 'spec(f,req,ens) has three arguments');
+        if (expr.arguments.length !== 3) {
+          throw unsupported(expr, 'spec(f,req,ens) has three arguments');
+        }
         const [callee, arg1, arg2] = expr.arguments;
-        if (callee.type !== 'Identifier') throw unsupported(expr, 'spec(f, req, ens) requires f to be an identifier');
-        if (arg1.type !== 'ArrowFunctionExpression') throw unsupported(expr, 'spec(f, req, ens) requires req to be an arrow function');
-        if (arg2.type !== 'ArrowFunctionExpression') throw unsupported(expr, 'spec(f, req, ens) requires ens to be an arrow function');
+        if (callee.type === 'SpreadElement') {
+          throw unsupported(callee);
+        }
+        if (arg1.type !== 'ArrowFunctionExpression') {
+          throw unsupported(arg1, 'spec(f, req, ens) requires req to be an arrow function');
+        }
+        if (arg2.type !== 'ArrowFunctionExpression') {
+          throw unsupported(arg2, 'spec(f, req, ens) requires ens to be an arrow function');
+        }
         const r: JSyntax.ArrowFunctionExpression = arg1;
         const s: JSyntax.ArrowFunctionExpression = arg2;
-        if (r.body.type === 'BlockStatement') throw unsupported(expr, 'spec(f, req, ens) requires req to be an arrow function with an expression as body');
-        if (s.body.type === 'BlockStatement') throw unsupported(expr, 'spec(f, req, ens) requires ens to be an arrow function with an expression as body');
-        if ( r.params.length !== s.params.length &&
+        if (r.body.type === 'BlockStatement') {
+          throw unsupported(r, 'spec(f, req, ens) requires req to be an arrow function with an expression as body');
+        }
+        if (s.body.type === 'BlockStatement') {
+          throw unsupported(s, 'spec(f, req, ens) requires ens to be an arrow function with an expression as body');
+        }
+        if (r.params.length < s.params.length - 1 ||
+            r.params.length > s.params.length ||
             !r.params.every((p, idx) => {
               const otherP = s.params[idx];
               return p.type === 'Identifier' && otherP.type === 'Identifier' && p.name === otherP.name;
             })) {
           throw unsupported(expr, 'spec(f, req, ens) requires req and ens to have same parameters');
         }
+        let argument: Syntax.Identifier | null = null;
+        if (s.params.length > r.params.length) {
+          argument = patternAsIdentifier(s.params[s.params.length - 1]);
+        }
         return {
           type: 'SpecExpression',
-          callee: { type: 'Identifier', name: callee.name, refs: [],
-                    isWrittenTo: false, decl: { type: 'Unresolved' }, loc: loc(callee) },
+          callee: expressionAsJavaScript(callee),
           args: r.params.map(p => (p as JSyntax.Identifier).name),
           pre: expressionAsJavaScript(r.body),
-          post: expressionAsJavaScript(s.body),
+          post: { argument, expression: expressionAsJavaScript(s.body), loc: loc(s) },
           loc: loc(expr)
         };
       }
@@ -550,8 +591,8 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         type: 'FunctionExpression',
         id,
         params,
-        requires: findPseudoCalls('requires', body),
-        ensures: findPseudoCalls('ensures', body),
+        requires: findPreConditions(body),
+        ensures: findPostConditions(body),
         body: {
           type: 'BlockStatement',
           body: flatMap(withoutPseudoCalls('requires',
@@ -628,7 +669,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
       const stmts: Array<JSyntax.Statement> = stmt.body.type === 'BlockStatement' ? stmt.body.body : [stmt];
       return [{
         type: 'WhileStatement',
-        invariants: findPseudoCalls('invariant', stmts),
+        invariants: findInvariants(stmts),
         test: expressionAsJavaScript(stmt.test),
         body: {
           type: 'BlockStatement',
@@ -658,8 +699,8 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
         type: 'FunctionDeclaration',
         id,
         params,
-        requires: findPseudoCalls('requires', body),
-        ensures: findPseudoCalls('ensures', body),
+        requires: findPreConditions(body),
+        ensures: findPostConditions(body),
         body: {
           type: 'BlockStatement',
           body: flatMap(withoutPseudoCalls('requires',
@@ -1028,9 +1069,15 @@ class NameResolver extends Visitor<void,void> {
     this.visitExpression(expr.callee);
   }
 
+  visitPostCondition (expr: Syntax.PostCondition) {
+    if (expr.argument) {
+      this.scope.defSymbol(expr.argument, { type: 'PostArg', decl: expr });
+    }
+    this.visitExpression(expr.expression);
+  }
+
   visitSpecExpression (expr: Syntax.SpecExpression) {
     this.visitExpression(expr.callee);
-    if (isMutable(expr.callee)) throw unsupportedLoc(expr.callee.loc, 'spec(f,req,ens) requires f to be const');
     this.scoped(() => {
       expr.args.forEach((a, argIdx) => {
         this.scope.defSymbol(this.stringAsIdentifier(a), { type: 'SpecArg', decl: expr, argIdx });
@@ -1041,7 +1088,7 @@ class NameResolver extends Visitor<void,void> {
       expr.args.forEach((a, argIdx) => {
         this.scope.defSymbol(this.stringAsIdentifier(a), { type: 'SpecArg', decl: expr, argIdx });
       });
-      this.visitExpression(expr.post);
+      this.visitPostCondition(expr.post);
     }, true);
   }
 
@@ -1070,9 +1117,10 @@ class NameResolver extends Visitor<void,void> {
       if (expr.id) this.scope.defSymbol(expr.id, { type: 'Func', decl: expr });
       expr.params.forEach(p => this.scope.defSymbol(p, { type: 'Param', func: expr, decl: p }));
       expr.requires.forEach(r => this.visitExpression(r));
+      expr.ensures.forEach(s => {
+        this.scoped(() => this.visitPostCondition(s), true);
+      });
       expr.body.body.forEach(s => this.visitStatement(s));
-      this.allowOld = true;
-      expr.ensures.forEach(r => this.visitExpression(r));
     }, false, expr);
   }
 
@@ -1124,9 +1172,10 @@ class NameResolver extends Visitor<void,void> {
     this.scoped(() => {
       stmt.params.forEach(p => this.scope.defSymbol(p, { type: 'Param', func: stmt, decl: p }));
       stmt.requires.forEach(r => this.visitExpression(r));
+      stmt.ensures.forEach(s => {
+        this.scoped(() => this.visitPostCondition(s), true);
+      });
       stmt.body.body.forEach(s => this.visitStatement(s));
-      this.allowOld = true;
-      stmt.ensures.forEach(r => this.visitExpression(r));
     }, false, stmt);
   }
 
@@ -1159,7 +1208,7 @@ export function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
   const body = flatMap(withoutPseudoCalls('invariant', stmts), statementAsJavaScript);
   const prog: Syntax.Program = {
     body,
-    invariants: findPseudoCalls('invariant', stmts)
+    invariants: findInvariants(stmts)
   };
   const resolver = new NameResolver();
   resolver.visitProgram(prog);
@@ -1225,8 +1274,18 @@ class Stringifier extends Visitor<string,string> {
     return `${this.visitExpression(expr.callee)}(${expr.args.map(a => this.visitExpression(a)).join(', ')})`;
   }
 
+  visitPostCondition (expr: Syntax.PostCondition): string {
+    if (expr.argument) {
+      return `${this.visitExpression(expr.argument)} => ${this.visitExpression(expr.expression)}`;
+    }
+    return this.visitExpression(expr.expression);
+  }
+
   visitSpecExpression (expr: Syntax.SpecExpression): string {
-    return `spec(${this.visitExpression(expr.callee)}, (${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), (${expr.args.join(', ')}) => (${this.visitExpression(expr.post)}))`;
+    if (expr.post.argument) {
+      return `spec(${this.visitExpression(expr.callee)}, (${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), (${[...expr.args, expr.post.argument.name].join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
+    }
+    return `spec(${this.visitExpression(expr.callee)}, (${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), (${expr.args.join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
   }
 
   visitPureExpression (expr: Syntax.PureExpression): string {
@@ -1350,45 +1409,25 @@ export function stringifyStmt (stmt: Syntax.Statement): string {
 
 class Substituter extends Visitor<Syntax.Expression, void> {
 
-  f: Syntax.Function | null = null;
-  r: string | null;
-  t: string | null = null;
+  theta: { [vname: string]: string | Syntax.Expression } = {};
 
-  replaceFunctionResult (f: Syntax.Function, r: string) {
-    this.f = f;
-    this.r = r;
-  }
-
-  replaceThis (t: string) {
-    this.t = t;
-  }
-
-  callMatchesParams (expr: Syntax.CallExpression): boolean {
-    if (!this.f || expr.args.length !== this.f.params.length) return false;
-    for (let i = 0; i < expr.args.length; i++) {
-      const arg: Syntax.Expression = expr.args[i];
-      if (arg.type !== 'Identifier' ||
-          arg.decl.type !== 'Param' ||
-          arg.decl.func !== this.f ||
-          arg.decl.decl !== this.f.params[i]) {
-      return false;
-      }
-    }
-    return true;
+  replaceVar (orig: string, expr: string | Syntax.Expression): Substituter {
+    this.theta[orig] = expr;
+    return this;
   }
 
   visitIdentifier (expr: Syntax.Identifier): Syntax.Expression {
-    if (this.t && expr.name === 'this') {
-        return {
-        type: 'Identifier',
-        name: this.t,
-        decl: expr.decl,
-        isWrittenTo: false,
-        refs: [],
-        loc: expr.loc
-      };
-    }
-    return expr;
+    if (!(expr.name in this.theta)) return expr;
+    const e: string | Syntax.Expression = this.theta[expr.name];
+    if (typeof(e) !== 'string') return e;
+    return {
+      type: 'Identifier',
+      name: e,
+      decl: expr.decl,
+      isWrittenTo: false,
+      refs: [],
+      loc: expr.loc
+    };
   }
 
   visitOldIdentifier (expr: Syntax.OldIdentifier): Syntax.Expression {
@@ -1468,19 +1507,6 @@ class Substituter extends Visitor<Syntax.Expression, void> {
   }
 
   visitCallExpression (expr: Syntax.CallExpression): Syntax.Expression {
-    if (this.f && this.r && expr.callee.type === 'Identifier' &&
-        expr.callee.decl.type === 'Func' &&
-        expr.callee.decl.decl === this.f &&
-        this.callMatchesParams(expr)) {
-      return {
-        type: 'Identifier',
-        name: this.r,
-        decl: { type: 'Unresolved' },
-        refs: [],
-        isWrittenTo: false,
-        loc: expr.loc
-      };
-    }
     return {
       type: 'CallExpression',
       callee: this.visitExpression(expr.callee),
@@ -1489,13 +1515,21 @@ class Substituter extends Visitor<Syntax.Expression, void> {
     };
   }
 
+  visitPostCondition (expr: Syntax.PostCondition): Syntax.PostCondition {
+    return {
+      argument: expr.argument,
+      expression: this.visitExpression(expr.expression),
+      loc: expr.loc
+    };
+  }
+
   visitSpecExpression (expr: Syntax.SpecExpression): Syntax.Expression {
     return {
       type: 'SpecExpression',
-      callee: expr.callee,
+      callee: this.visitExpression(expr.callee),
       args: expr.args,
       pre: this.visitExpression(expr.pre),
-      post: this.visitExpression(expr.post),
+      post: this.visitPostCondition(expr.post),
       loc: expr.loc
     };
   }
@@ -1542,7 +1576,7 @@ class Substituter extends Visitor<Syntax.Expression, void> {
       id: expr.id,
       params: expr.params,
       requires: expr.requires.map(r => this.visitExpression(r)),
-      ensures: expr.ensures.map(e => this.visitExpression(e)),
+      ensures: expr.ensures.map(e => this.visitPostCondition(e)),
       body: expr.body,
       freeVars: expr.freeVars,
       loc: expr.loc
@@ -1562,15 +1596,9 @@ class Substituter extends Visitor<Syntax.Expression, void> {
   visitProgram (prog: Syntax.Program) {/*empty*/}
 }
 
-export function replaceFunctionResult (f: Syntax.Function, r: string, expr: Syntax.Expression): Syntax.Expression {
+export function replaceVar (v: string, t: string, expr: Syntax.Expression): Syntax.Expression {
   const sub = new Substituter();
-  sub.replaceFunctionResult(f, r);
-  return sub.visitExpression(expr);
-}
-
-export function replaceThis (t: string, expr: Syntax.Expression): Syntax.Expression {
-  const sub = new Substituter();
-  sub.replaceThis(t);
+  sub.replaceVar(v, t);
   return sub.visitExpression(expr);
 }
 
