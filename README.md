@@ -4,6 +4,8 @@
 
 Program Verification for ECMAScript/JavaScript ([esverify.org](http://esverify.org/)).
 
+**Alpha: This is still a research prototype and not yet ready for production use**
+
 ## Example
 
 Given a simple JavaScript `max` function, we can add pre- and post-conditions
