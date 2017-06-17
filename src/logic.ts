@@ -798,6 +798,14 @@ export class Substituter extends Transformer {
   }
 }
 
+export function replaceResultWithCall (callee: A, heap: Heap, args: Array<string>, result: { name: string } | null, post: P): P {
+  if (!result) return post;
+    // replace result argument with orig. function invocation
+  const sub = new Substituter();
+  sub.replaceVar(result.name, { type: 'CallExpression', callee, heap, args });
+  return sub.visitProp(post);
+}
+
 export function removePrefix (prefix: P, prop: P): P {
   if (prefix.type !== 'And' || prop.type !== 'And') return prop;
   let prefixLength = 0;

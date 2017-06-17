@@ -3,7 +3,7 @@ declare const require: (s: string) => any;
 declare const fetch: (s: string, opts: any) => Promise<any>;
 
 import { P, Vars, Locs, Heap, Heaps, Classes } from './logic';
-import { Model, SMTInput, SMTOutput, vcToSMT, smtToModel } from './smt';
+import { Model, SMTInput, vcToSMT, smtToModel } from './smt';
 import { Syntax, stringifyStmt } from './javascript';
 import { Message, MessageException, unexpected } from './message';
 import { options } from './options';
