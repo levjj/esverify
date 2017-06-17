@@ -671,3 +671,15 @@ describe('functions returning functions', () => {
 
   verified('twice: spec(res, (x) => ((typeof(x) === "number")), (x, y) => ((typeof(y) === "number") && (y > (x + 1))))');
 });
+
+describe('function bug', () => {
+
+  code(() => {
+    function f (x) {
+      ensures(!spec(f, y => true, y => y !== x));
+      f(x);
+    }
+  });
+
+  verified('f: !spec(f, (y) => (true), (y) => ((y !== x)))');
+});
