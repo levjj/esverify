@@ -80,6 +80,15 @@ class QuantifierTransformer extends Transformer {
       this.position = !this.position;
     }
   }
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): A {
+    this.position = expr.operator === '!' ? !this.position : this.position;
+    try {
+      return super.visitUnaryExpression(expr);
+    } finally {
+      this.position = expr.operator === '!' ? !this.position : this.position;
+    }
+  }
 }
 
 class QuantifierLifter extends QuantifierTransformer {
