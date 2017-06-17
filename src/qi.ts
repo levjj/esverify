@@ -1,4 +1,4 @@
-import { Syntax, A, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Traverser, Reducer, tru, and, eq, implies, eqProp, copy } from './logic';
+import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Traverser, Reducer, tru, and, eq, implies, eqProp, copy } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
 declare const console: { log: (s: string) => void };
@@ -78,15 +78,6 @@ class QuantifierTransformer extends Transformer {
       return super.visitNot(prop);
     } finally {
       this.position = !this.position;
-    }
-  }
-
-  visitUnaryExpression (expr: Syntax.UnaryExpression): A {
-    this.position = expr.operator === '!' ? !this.position : this.position;
-    try {
-      return super.visitUnaryExpression(expr);
-    } finally {
-      this.position = expr.operator === '!' ? !this.position : this.position;
     }
   }
 }
