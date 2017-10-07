@@ -533,7 +533,83 @@ describe('higher-order proofs', () => {
   verified('fibMono: (fib(n) <= fib(m))');
 });
 
-describe('mapLen example', () => {
+describe('simple class invariant', () => {
+
+  code(() => {
+    function greaterThree (y: number) {
+      return y > 3;
+    }
+
+    class A {
+      readonly x: number;
+      constructor (x: number) {
+        this.x = x;
+      }
+      invariant () {
+        return greaterThree(this.x);
+      }
+    }
+
+    function greaterTwo (a: A) {
+      requires(a instanceof A);
+      ensures(a.x > 2);
+      greaterThree(a.x);
+    }
+  });
+
+  verified('greaterTwo: property x exists on object');
+  verified('greaterTwo: (a.x > 2)');
+});
+
+describe('mapLen internal', () => {
+
+  code(() => {
+    class List {
+      head: any;
+      tail: List;
+      constructor (head, tail) {
+        this.head = head; this.tail = tail;
+      }
+      invariant () { return this.tail === null || this.tail instanceof List; }
+    }
+
+    function len (lst) {
+      requires(lst === null || lst instanceof List);
+      ensures(res => typeof(res) === 'number');
+      ensures(pure());
+      return lst === null ? 0 : 1 + len(lst.tail);
+    }
+
+    function map (f, lst) {
+      requires(lst === null || lst instanceof List);
+      requires(spec(f, x => true, x => pure()));
+      ensures(pure());
+      ensures(res => res === null || res instanceof List);
+      ensures(res => len(lst) === len(res));
+      len(lst);
+      const res = lst === null ? null : new List(f(lst.head), map(f, lst.tail));
+      len(res);
+      return res;
+    }
+  });
+
+  verified('len: property tail exists on object');
+  verified('len: precondition len(lst.tail)');
+  verified('len: (typeof(res) === "number")');
+  verified('len: pure()');
+  verified('map: precondition len(lst)');
+  verified('map: property head exists on object');
+  verified('map: precondition f(lst.head)');
+  verified('map: property tail exists on object');
+  verified('map: precondition map(f, lst.tail)');
+  verified('map: class invariant List');
+  verified('map: precondition len(res)');
+  verified('map: pure()');
+  verified('map: (res === null) || (res instanceof List)');
+  verified('map: (len(lst) === len(res))');
+});
+
+describe('mapLen external', () => {
 
   code(() => {
 
@@ -620,6 +696,56 @@ describe('mapLen example', () => {
   verified('mapLen: pure()');
   verified('mapLen: (len(lst) === len(map(lst, f)))');
 
+});
+
+describe('map invariant', () => {
+
+  code(() => {
+    class List {
+      head: any;
+      tail: List;
+      each: (element: any) => boolean;
+      constructor (head, tail, each) {
+        this.head = head; this.tail = tail; this.each = each;
+      }
+      invariant () {
+        return spec(this.each,
+                    x => true,
+                    (x,y) => pure() &&
+                          typeof(this.each(x)) === 'boolean') &&
+               this.each(this.head) &&
+               (this.tail === null ||
+                this.tail instanceof List && this.each === this.tail.each);
+      }
+    }
+
+    function map (f, lst, newEach) {
+      requires(spec(newEach, x => true,
+                             x => pure() && typeof(newEach(x)) === 'boolean'));
+      requires(spec(f, x => lst.each(x), x => pure() && newEach(f(x))));
+      requires(lst === null || lst instanceof List);
+      ensures(map(f, lst, newEach) === null ||
+              (map(f, lst, newEach) instanceof List &&
+               map(f, lst, newEach).each === newEach));
+      if (lst === null) {
+        return null;
+      } else {
+        lst.each(lst.head);
+        newEach(f(lst.head));
+        return new List(f(lst.head), map(f, lst, newEach), newEach);
+      }
+    }
+  });
+
+  verified('map: property each exists on object');
+  verified('map: property head exists on object');
+  verified('map: precondition lst.each(lst.head)');
+  verified('map: precondition f(lst.head)');
+  verified('map: precondition newEach(f(lst.head))');
+  verified('map: precondition map(f, lst, newEach)');
+  // FIXME: verified('map: class invariant List');
+  verified('map: (map(f, lst, newEach) === null) ||'
+       + ' (map(f, lst, newEach) instanceof List) && (map(f, lst, newEach).each === newEach)');
 });
 
 describe('nested function bug', () => {
