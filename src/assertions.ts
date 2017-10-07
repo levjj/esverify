@@ -44,13 +44,6 @@ class AssertionTranslator extends Visitor<A, void> {
     return expr;
   }
 
-  visitArrayExpression (expr: Syntax.ArrayExpression): A {
-    return {
-      type: 'ArrayExpression',
-      elements: expr.elements.map(e => this.visitExpression(e))
-    };
-  }
-
   visitUnaryExpression (expr: Syntax.UnaryExpression): A {
     const argument = this.visitExpression(expr.argument);
     return { type: 'UnaryExpression', operator: expr.operator, argument };
@@ -175,10 +168,6 @@ class PropositionTranslator extends Visitor<P, void> {
   }
 
   visitLiteral (expr: Syntax.Literal): P {
-    return this.translateProposition(expr);
-  }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): P {
     return this.translateProposition(expr);
   }
 

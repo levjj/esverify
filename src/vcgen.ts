@@ -80,10 +80,6 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     return expr;
   }
 
-  visitArrayExpression (expr: Syntax.ArrayExpression): A {
-    return { type: 'ArrayExpression', elements: expr.elements.map(e => this.visitExpression(e)) };
-  }
-
   visitUnaryExpression (expr: Syntax.UnaryExpression): A {
     return { type: 'UnaryExpression', operator: expr.operator, argument: this.visitExpression(expr) };
   }

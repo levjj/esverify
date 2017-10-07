@@ -27,9 +27,6 @@ export namespace Syntax {
   export interface Literal { type: 'Literal';
                              value: undefined | null | boolean | number | string;
                              loc: SourceLocation; }
-  export interface ArrayExpression { type: 'ArrayExpression';
-                                     elements: Array<Expression>;
-                                     loc: SourceLocation; }
   export type UnaryOperator = '-' | '+' | '!' | '~' | 'typeof' | 'void';
   export interface UnaryExpression { type: 'UnaryExpression';
                                      operator: UnaryOperator;
@@ -104,7 +101,6 @@ export namespace Syntax {
   export type Expression = Identifier
                          | OldIdentifier
                          | Literal
-                         | ArrayExpression
                          | UnaryExpression
                          | BinaryExpression
                          | LogicalExpression
@@ -354,11 +350,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
     case 'ObjectExpression':
       throw unsupported(expr);
     case 'ArrayExpression':
-      return {
-        type: 'ArrayExpression',
-        elements: expr.elements.map(expressionAsJavaScript),
-        loc: loc(expr)
-      };
+      throw unsupported(expr);
     case 'SequenceExpression':
       return {
         type: 'SequenceExpression',
@@ -833,7 +825,6 @@ export abstract class Visitor<E,S> {
   abstract visitIdentifier (expr: Syntax.Identifier): E;
   abstract visitOldIdentifier (expr: Syntax.OldIdentifier): E;
   abstract visitLiteral (expr: Syntax.Literal): E;
-  abstract visitArrayExpression (expr: Syntax.ArrayExpression): E;
   abstract visitUnaryExpression (expr: Syntax.UnaryExpression): E;
   abstract visitBinaryExpression (expr: Syntax.BinaryExpression): E;
   abstract visitLogicalExpression (expr: Syntax.LogicalExpression): E;
@@ -854,7 +845,6 @@ export abstract class Visitor<E,S> {
       case 'Identifier': return this.visitIdentifier(expr);
       case 'OldIdentifier': return this.visitOldIdentifier(expr);
       case 'Literal': return this.visitLiteral(expr);
-      case 'ArrayExpression': return this.visitArrayExpression(expr);
       case 'UnaryExpression': return this.visitUnaryExpression(expr);
       case 'BinaryExpression': return this.visitBinaryExpression(expr);
       case 'LogicalExpression': return this.visitLogicalExpression(expr);
@@ -1030,10 +1020,6 @@ class NameResolver extends Visitor<void,void> {
   }
 
   visitLiteral (expr: Syntax.Literal) { /* empty */ }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression) {
-    expr.elements.forEach(e => this.visitExpression(e));
-  }
 
   visitUnaryExpression (expr: Syntax.UnaryExpression) {
     this.visitExpression(expr.argument);
@@ -1236,10 +1222,6 @@ class Stringifier extends Visitor<string,string> {
     return expr.value === undefined ? 'undefined' : JSON.stringify(expr.value);
   }
 
-  visitArrayExpression (expr: Syntax.ArrayExpression): string {
-    return `[${expr.elements.map(e => this.visitExpression(e)).join(', ')}]`;
-    }
-
   visitUnaryExpression (expr: Syntax.UnaryExpression): string {
     switch (expr.operator) {
       case 'typeof':
@@ -1440,14 +1422,6 @@ class Substituter extends Visitor<Syntax.Expression, void> {
 
   visitPureExpression (expr: Syntax.PureExpression): Syntax.Expression {
     return expr;
-  }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): Syntax.Expression {
-    return {
-      type: 'ArrayExpression',
-      elements: expr.elements.map(e => this.visitExpression(e)),
-      loc: expr.loc
-    };
   }
 
   visitUnaryExpression (expr: Syntax.UnaryExpression): Syntax.Expression {

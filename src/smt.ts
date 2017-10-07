@@ -80,16 +80,6 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     }
   }
 
-  visitArrayExpression (expr: Syntax.ArrayExpression): SMTInput {
-    const arrayToSMT = (elements: Array<A>): SMTInput => {
-      if (elements.length === 0) return `empty`;
-      const [head, ...tail] = elements;
-      const h = head || {type: 'Literal', value: 'undefined'};
-      return `(cons ${this.visitExpr(h)} ${arrayToSMT(tail)})`;
-    };
-    return `(jsarr ${arrayToSMT(expr.elements)})`;
-  }
-
   visitUnaryExpression (expr: Syntax.UnaryExpression): SMTInput {
     const arg = this.visitExpr(expr.argument);
     const op = unOpToSMT[expr.operator];
@@ -251,20 +241,17 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
 ; Values in JavaScript
-(declare-datatypes () (
-  (JSVal
-    (jsnum (numv Int))
-    (jsbool (boolv Bool))
-    (jsstr (strv String))
-    jsnull
-    jsundefined
-    (jsarr (items JSValList))
-    (jsobj (oidx Int))
-    (jsfun (fidx Int)))
-  (JSValList empty (cons (car JSVal) (cdr JSValList)))))
+(declare-datatypes () ((JSVal
+  (jsnum (numv Int))
+  (jsbool (boolv Bool))
+  (jsstr (strv String))
+  jsnull
+  jsundefined
+  (jsobj (oidx Int))
+  (jsfun (fidx Int)))))
 
 ; Types in JavaScript
-(declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSArray JSObj JSFunction)))
+(declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSObj JSFunction)))
 
 (define-fun _type ((x JSVal)) JSType
   (ite (is-jsnum x) JSNum
@@ -272,9 +259,8 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
   (ite (is-jsstr x) JSString
   (ite (is-jsnull x) JSObj
   (ite (is-jsundefined x) JSUndefined
-  (ite (is-jsarr x) JSArray
   (ite (is-jsfun x) JSFunction
-  JSObj))))))))
+  JSObj)))))))
 
 (define-fun _falsy ((x JSVal)) Bool
   (or (is-jsnull x)

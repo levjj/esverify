@@ -26,8 +26,6 @@ export namespace Syntax {
                                    heap: HeapExpression; }
   export interface Literal { type: 'Literal';
                              value: undefined | null | boolean | number | string; }
-  export interface ArrayExpression { type: 'ArrayExpression';
-                                     elements: Array<Expression>; }
   export type UnaryOperator = '-' | '+' | '!' | '~' | 'typeof' | 'void';
   export interface UnaryExpression { type: 'UnaryExpression';
                                      operator: UnaryOperator;
@@ -53,7 +51,6 @@ export namespace Syntax {
   export type Expression = Variable
                          | HeapReference
                          | Literal
-                         | ArrayExpression
                          | UnaryExpression
                          | BinaryExpression
                          | ConditionalExpression
@@ -228,10 +225,6 @@ function eqExpr (exprA: A, exprB: A): boolean {
     case 'Literal':
       return exprA.type === exprB.type &&
              exprA.value === exprB.value;
-    case 'ArrayExpression':
-      return exprA.type === exprB.type &&
-             exprA.elements.length === exprB.elements.length &&
-             exprA.elements.every((e,idx) => eqExpr(e, exprB.elements[idx]));
     case 'UnaryExpression':
       return exprA.type === exprB.type &&
              exprA.operator === exprB.operator &&
@@ -331,7 +324,6 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitVariable (expr: Syntax.Variable): R;
   abstract visitHeapReference (expr: Syntax.HeapReference): R;
   abstract visitLiteral (expr: Syntax.Literal): R;
-  abstract visitArrayExpression (expr: Syntax.ArrayExpression): R;
   abstract visitUnaryExpression (expr: Syntax.UnaryExpression): R;
   abstract visitBinaryExpression (expr: Syntax.BinaryExpression): R;
   abstract visitConditionalExpression (expr: Syntax.ConditionalExpression): R;
@@ -368,7 +360,6 @@ export abstract class Visitor<L,H,R,S> {
     switch (expr.type) {
       case 'HeapReference': return this.visitHeapReference(expr);
       case 'Literal': return this.visitLiteral(expr);
-      case 'ArrayExpression': return this.visitArrayExpression(expr);
       case 'UnaryExpression': return this.visitUnaryExpression(expr);
       case 'BinaryExpression': return this.visitBinaryExpression(expr);
       case 'ConditionalExpression': return this.visitConditionalExpression(expr);
@@ -432,10 +423,6 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   }
 
   visitLiteral (expr: Syntax.Literal) { return this.empty(); }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression) {
-    return this.r(...expr.elements.map(e => this.visitExpr(e)));
-  }
 
   visitUnaryExpression (expr: Syntax.UnaryExpression) {
     return this.visitExpr(expr.argument);
@@ -575,10 +562,6 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
 
   visitLiteral (expr: Syntax.Literal): A {
     return expr;
-  }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): A {
-    return { type: 'ArrayExpression', elements: expr.elements.map(e => this.visitExpr(e)) };
   }
 
   visitUnaryExpression (expr: Syntax.UnaryExpression): A {
