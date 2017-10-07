@@ -136,3 +136,4 @@ which displays verification results inline.
 Inspired by [Dafny](https://github.com/Microsoft/dafny) and
 [LiquidHaskell](https://github.com/ucsd-progsys/liquidhaskell).
 
+Thanks also to Tommy, Sohum and Cormac for support and advice.
