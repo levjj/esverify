@@ -1,7 +1,7 @@
 import VerificationCondition from './verification';
 import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, isMutable, replaceVar } from './javascript';
 import { A, P, Classes, Vars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy, implies, and, or, eq, not, heapEq, heapStore, removePrefix, replaceResultWithCall, transformClassInvariant } from './logic';
-import { translateExpression, translateNoHeapExpression } from './assertions';
+import { translateExpression } from './assertions';
 import { eraseTriggersProp } from './qi';
 
 type BreakCondition = P;
@@ -195,11 +195,16 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       this.have({ type: 'HasProperty', object: object, property });
       this.have(eq({ type: 'MemberExpression', object, property }, args[idx]));
     });
+    this.have({ type: 'AccessTrigger', object, heap: this.heap, fuel: 1 });
 
-    // verify invariant
-    const inv: P = translateExpression(this.heap, this.heap, replaceVar('this', object, clz.invariant));
-    this.verify(inv, expr.loc, `class invariant ${clz.id.name}`);
-
+    // verify invariant for all possible heaps by using fresh heap
+    try {
+      this.heap++;
+      const inv: P = translateExpression(this.heap, this.heap, replaceVar('this', object, clz.invariant));
+      this.verify(inv, expr.loc, `class invariant ${clz.id.name}`);
+    } finally {
+      this.heap--;
+    }
     return object;
   }
 
@@ -220,7 +225,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   visitMemberExpression (expr: Syntax.MemberExpression): A {
     const object = this.visitExpression(expr.object);
     const property = expr.property;
-    this.have({ type: 'AccessTrigger', object: object, fuel: 1 });
+    this.have({ type: 'AccessTrigger', heap: this.heap, object: object, fuel: 1 });
     this.verify(
       { type: 'HasProperty', object, property }, expr.loc, `property ${property} exists on object`,
       [{
@@ -485,8 +490,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): BreakCondition {
     this.classes.add(stmt.id.name);
     this.testBody = this.testBody.concat([stmt]);
-    const inv: P = translateNoHeapExpression(stmt.invariant);
-    this.have(transformClassInvariant(stmt.id.name, stmt.fields, inv));
+    const inv: P = translateExpression(this.heap, this.heap, stmt.invariant);
+    this.have(transformClassInvariant(stmt.id.name, stmt.fields, inv, this.heap));
     return fls;
   }
 

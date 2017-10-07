@@ -5,10 +5,6 @@ class PureContextError extends Error {
   constructor () { super('not supported in pure functional context'); }
 }
 
-class HeapReferenceContextError extends Error {
-  constructor () { super('heap references not supported in this context'); }
-}
-
 class PropositionContextError extends Error {
   constructor () { super('spec syntax not supported in this context'); }
 }
@@ -16,18 +12,15 @@ class PropositionContextError extends Error {
 class AssertionTranslator extends Visitor<A, void> {
   readonly oldHeap: Heap;
   readonly heap: Heap;
-  readonly allowsHeapReferences: boolean;
 
-  constructor (oldHeap: Heap, heap: Heap, allowsHeapReferences: boolean = true) {
+  constructor (oldHeap: Heap, heap: Heap) {
     super();
     this.oldHeap = oldHeap;
     this.heap = heap;
-    this.allowsHeapReferences = allowsHeapReferences;
   }
 
   visitIdentifier (expr: Syntax.Identifier): A {
     if (isMutable(expr)) {
-      if (!this.allowsHeapReferences) throw new HeapReferenceContextError();
       return { type: 'HeapReference', heap: this.heap, loc: expr.name };
     } else {
       return expr.name;
@@ -35,7 +28,6 @@ class AssertionTranslator extends Visitor<A, void> {
   }
 
   visitOldIdentifier (expr: Syntax.OldIdentifier): A {
-    if (!this.allowsHeapReferences) throw new HeapReferenceContextError();
     if (!isMutable(expr.id)) { throw new Error('not mutable'); }
     return { type: 'HeapReference', heap: this.oldHeap, loc: expr.id.name };
   }
@@ -141,17 +133,15 @@ class AssertionTranslator extends Visitor<A, void> {
 class PropositionTranslator extends Visitor<P, void> {
   readonly oldHeap: Heap;
   readonly heap: Heap;
-  readonly allowsHeapReferences: boolean;
 
-  constructor (oldHeap: Heap, heap: Heap, allowsHeapReferences: boolean = true) {
+  constructor (oldHeap: Heap, heap: Heap) {
     super();
     this.oldHeap = oldHeap;
     this.heap = heap;
-    this.allowsHeapReferences = allowsHeapReferences;
   }
 
   translateExpression (expr: Syntax.Expression): A {
-    const translator = new AssertionTranslator(this.oldHeap, this.heap, this.allowsHeapReferences);
+    const translator = new AssertionTranslator(this.oldHeap, this.heap);
     return translator.visitExpression(expr);
   }
 
@@ -253,10 +243,5 @@ class PropositionTranslator extends Visitor<P, void> {
 
 export function translateExpression (oldHeap: Heap, heap: Heap, expr: Syntax.Expression): P {
   const translator = new PropositionTranslator(oldHeap, heap);
-  return translator.visitExpression(expr);
-}
-
-export function translateNoHeapExpression (expr: Syntax.Expression): P {
-  const translator = new PropositionTranslator(0, 0, false);
   return translator.visitExpression(expr);
 }

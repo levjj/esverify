@@ -97,6 +97,7 @@ export namespace Syntax {
                                  args: Array<Expression>;
                                  fuel: number; }
   export interface ForAllAccess { type: 'ForAllAccess';
+                                  heap: Heap;
                                   prop: Proposition;
                                   instantiations: Array<AccessTrigger>;
                                   fuel: number; }
@@ -108,6 +109,7 @@ export namespace Syntax {
                                  property: string; }
   export interface AccessTrigger { type: 'AccessTrigger';
                                    object: Expression;
+                                   heap: HeapExpression;
                                    fuel: number; }
   export type Proposition = Truthy
                           | And
@@ -298,6 +300,7 @@ export function eqProp (propA: P, propB: P): boolean {
              eqProp(propA.prop, propB.prop);
     case 'ForAllAccess':
       return propA.type === propB.type &&
+             eqHeap(propA.heap, propB.heap) &&
              eqProp(propA.prop, propB.prop);
     case 'InstanceOf':
       return propA.type === propB.type &&
@@ -309,6 +312,7 @@ export function eqProp (propA: P, propB: P): boolean {
              propA.property === propB.property;
     case 'AccessTrigger':
       return propA.type === propB.type &&
+             eqHeap(propA.heap, propB.heap) &&
              eqExpr(propA.object, propB.object);
   }
 }
@@ -685,6 +689,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
   visitForAllAccess (prop: Syntax.ForAllAccess): P {
     return {
       type: 'ForAllAccess',
+      heap: prop.heap,
       prop: this.visitProp(prop.prop),
       instantiations: [...prop.instantiations], // shallow copy, do not process
       fuel: prop.fuel
@@ -711,6 +716,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     return {
       type: 'AccessTrigger',
       object: this.visitExpr(prop.object),
+      heap: this.visitHeapExpr(prop.heap),
       fuel: prop.fuel
     };
   }
@@ -771,11 +777,14 @@ export class Substituter extends Transformer {
   }
 
   visitForAllAccess (prop: Syntax.ForAllAccess): P {
+    const origThetaHeap = Object.assign({}, this.thetaHeap);
     const origThetaVar = Object.assign({}, this.thetaVar);
     try {
+      delete this.thetaHeap[prop.heap];
       delete this.thetaVar['this'];
       return super.visitForAllAccess(prop);
     } finally {
+      this.thetaHeap = origThetaHeap;
       this.thetaVar = origThetaVar;
     }
   }
@@ -800,7 +809,7 @@ export function removePrefix (prefix: P, prop: P): P {
   return and(...prop.clauses.slice(prefixLength));
 }
 
-export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: Heap, toHeap: Heap = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
   const numHeaps = Math.max(0, toHeap - heap - 1);
   const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
   const preP: P = { type: 'Precondition', callee, heap, args };
@@ -828,7 +837,7 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
   return and(truthy(fnCheck), forAll);
 }
 
-export function transformClassInvariant (className: string, fields: Array<string>, inv: P): P {
+export function transformClassInvariant (className: string, fields: Array<string>, inv: P, heap: Heap): P {
   const instP: P = { type: 'InstanceOf', left: 'this', right: className };
   let prop: P = truthy({
     type: 'BinaryExpression',
@@ -846,5 +855,5 @@ export function transformClassInvariant (className: string, fields: Array<string
   }
   prop = and(prop, inv);
   prop = implies(instP, prop);
-  return { type: 'ForAllAccess', prop, instantiations: [], fuel: 0 };
+  return { type: 'ForAllAccess', heap, prop, instantiations: [], fuel: 0 };
 }

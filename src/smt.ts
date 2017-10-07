@@ -1,5 +1,5 @@
 import { flatMap } from './util';
-import { Syntax, A, P, Classes, Vars, Locs, Heap, Heaps, Visitor, implies } from './logic';
+import { Syntax, P, Classes, Vars, Locs, Heap, Heaps, Visitor, implies } from './logic';
 import { instantiateQuantifiers } from './qi';
 import { MessageException } from './message';
 import { options } from './options';
@@ -185,9 +185,9 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitForAllCalls (prop: Syntax.ForAllCalls): SMTInput {
-    const {callee, heap, args} = prop;
+    const {callee, heap, args, fuel} = prop;
     const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
-    const callP: P = { type: 'CallTrigger', callee, heap, args: args, fuel: prop.fuel };
+    const callP: P = { type: 'CallTrigger', callee, heap, args: args, fuel };
     let p = this.visitProp(implies(callP, prop.prop));
     if (prop.existsLocs.size + prop.existsHeaps.size + prop.existsVars.size > 0) {
       p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
@@ -204,10 +204,12 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitForAllAccess (prop: Syntax.ForAllAccess): SMTInput {
-    const accessP: P = { type: 'AccessTrigger', object: 'this', fuel: prop.fuel };
+    const {heap, fuel} = prop;
+    const accessP: P = { type: 'AccessTrigger', object: 'this', heap, fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
-    return `(forall ((${this.visitVariable('this')} JSVal)) (!\n  ${p}\n  :pattern (${trigger})))`;
+    return `(forall ((${this.visitVariable('this')} JSVal) `
+                  + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
   }
 
   visitInstanceOf (prop: Syntax.InstanceOf): SMTInput {
@@ -219,7 +221,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): SMTInput {
-    return `(access ${this.visitExpr(prop.object)})`;
+    return `(access ${this.visitExpr(prop.object)} ${this.visitHeapExpr(prop.heap)})`;
   }
 }
 
@@ -422,7 +424,7 @@ ${[...Array(10).keys()].map(i => `
 (declare-fun has (JSVal String) Bool)
 (declare-fun field (JSVal String) JSVal)
 (declare-fun instanceof (JSVal ClassName) Bool)
-(declare-fun access (JSVal) Bool)
+(declare-fun access (JSVal Heap) Bool)
 
 ; Declarations
 

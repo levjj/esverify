@@ -99,7 +99,7 @@ class QuantifierLifter extends QuantifierTransformer {
     if (this.position) return copy(prop);
     const sub = new Substituter();
     sub.replaceVar('this', this.freshVar('this'));
-    const trigger = this.visitProp({ type: 'AccessTrigger', object: 'this', fuel: prop.fuel });
+    const trigger = this.visitProp({ type: 'AccessTrigger', object: 'this', heap: prop.heap, fuel: prop.fuel });
     return sub.visitProp(implies(trigger, prop.prop));
   }
 }
@@ -225,6 +225,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
   instantiateAccess (prop: Syntax.ForAllAccess, trigger: Syntax.AccessTrigger) {
     const sub = new Substituter();
     sub.replaceVar('this', trigger.object);
+    sub.replaceHeap(prop.heap, trigger.heap);
     const replaced = sub.visitProp(prop.prop);
     return this.consumeFuel(replaced, trigger.fuel);
   }
