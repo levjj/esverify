@@ -4,7 +4,7 @@
 
 Program Verification for ECMAScript/JavaScript ([esverify.org](http://esverify.org/)).
 
-**Alpha: This is still a research prototype and not yet ready for production use**
+**Alpha: This is still a research prototype and not yet ready for production use.**
 
 ## Example
 
@@ -30,7 +30,7 @@ body with an SMT solver.
 
 More examples can be found in the `tests` directory.
 
-## Supported Features:
+## Supported Features
 
 * expressions with boolean values, integer arithmetic and strings
 * function pre- and postconditions as well as inline assertions and invariants
