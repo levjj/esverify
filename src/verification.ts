@@ -47,7 +47,7 @@ export default class VerificationCondition {
       return this.result = this.process(smtout);
     } catch (error) {
       if (error instanceof MessageException) return this.result = error.msg;
-      return this.result = unexpected(error, this.loc);
+      return this.result = unexpected(error, this.loc, this.description);
     } finally {
       this.inprocess = false;
     }
@@ -111,7 +111,7 @@ ${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
         if (e instanceof Error && e.message === 'assertion failed') {
           return { status: 'error', type: 'incorrect', description: this.description, loc: this.loc, model: m, error: e };
         } else {
-          return unexpected(e, this.loc);
+          return unexpected(e, this.loc, this.description);
         }
       }
     } else if (out && out.startsWith('unsat')) {
