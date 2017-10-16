@@ -101,6 +101,9 @@ export namespace Syntax {
                                   prop: Proposition;
                                   instantiations: Array<AccessTrigger>;
                                   fuel: number; }
+  export interface IsType { type: 'IsType';
+                            value: Expression;
+                            datatype: 'num' | 'bool' | 'str' | 'obj' | 'fun'; }
   export interface InstanceOf { type: 'InstanceOf';
                                 left: Expression;
                                 right: ClassName; }
@@ -124,6 +127,7 @@ export namespace Syntax {
                           | ForAllCalls
                           | CallTrigger
                           | ForAllAccess
+                          | IsType
                           | InstanceOf
                           | HasProperty
                           | AccessTrigger;
@@ -302,6 +306,10 @@ export function eqProp (propA: P, propB: P): boolean {
       return propA.type === propB.type &&
              eqHeap(propA.heap, propB.heap) &&
              eqProp(propA.prop, propB.prop);
+    case 'IsType':
+      return propA.type === propB.type &&
+             eqExpr(propA.value, propB.value) &&
+             propA.datatype === propB.datatype;
     case 'InstanceOf':
       return propA.type === propB.type &&
              eqExpr(propA.left, propB.left) &&
@@ -347,6 +355,7 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitForAllCalls (prop: Syntax.ForAllCalls): S;
   abstract visitCallTrigger (prop: Syntax.CallTrigger): S;
   abstract visitForAllAccess (prop: Syntax.ForAllAccess): S;
+  abstract visitIsType (prop: Syntax.IsType): S;
   abstract visitInstanceOf (prop: Syntax.InstanceOf): S;
   abstract visitHasProperty (prop: Syntax.HasProperty): S;
   abstract visitAccessTrigger (prop: Syntax.AccessTrigger): S;
@@ -387,6 +396,7 @@ export abstract class Visitor<L,H,R,S> {
       case 'ForAllCalls': return this.visitForAllCalls(prop);
       case 'CallTrigger': return this.visitCallTrigger(prop);
       case 'ForAllAccess': return this.visitForAllAccess(prop);
+      case 'IsType': return this.visitIsType(prop);
       case 'InstanceOf': return this.visitInstanceOf(prop);
       case 'HasProperty': return this.visitHasProperty(prop);
       case 'AccessTrigger': return this.visitAccessTrigger(prop);
@@ -500,6 +510,10 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   visitHeapEq (prop: Syntax.HeapEq): R {
     return this.r(this.visitHeapExpr(prop.left),
                   this.visitHeapExpr(prop.right));
+  }
+
+  visitIsType (prop: Syntax.IsType): R {
+    return this.visitExpr(prop.value);
   }
 
   visitInstanceOf (prop: Syntax.InstanceOf): R {
@@ -696,6 +710,14 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     };
   }
 
+  visitIsType (prop: Syntax.IsType): P {
+    return {
+      type: 'IsType',
+      value: this.visitExpr(prop.value),
+      datatype: prop.datatype
+    };
+  }
+
   visitInstanceOf (prop: Syntax.InstanceOf): P {
     return {
       type: 'InstanceOf',
@@ -839,17 +861,7 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
 
 export function transformClassInvariant (className: string, fields: Array<string>, inv: P, heap: Heap): P {
   const instP: P = { type: 'InstanceOf', left: 'this', right: className };
-  let prop: P = truthy({
-    type: 'BinaryExpression',
-    left: {
-      type: 'UnaryExpression',
-      operator: 'typeof',
-      argument: 'this'
-    },
-    operator: '===',
-    right: { type: 'Literal', value: 'object' }
-  });
-  prop = and(prop, not(eq('this', { type: 'Literal', value: null })));
+  let prop: P = { type: 'IsType', value: 'this', datatype: 'obj' };
   for (const property of fields) {
     prop = and(prop, { type: 'HasProperty', object: 'this', property });
   }

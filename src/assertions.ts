@@ -102,7 +102,10 @@ class AssertionTranslator extends Visitor<A, void> {
   }
 
   visitInExpression (expr: Syntax.InExpression): A {
-    const test: P = { type: 'HasProperty', object: this.visitExpression(expr.object), property: expr.property };
+    const object = this.visitExpression(expr.object);
+    const test: P = and(
+      { type: 'IsType', value: object, datatype: 'obj' },
+      { type: 'HasProperty', object, property: expr.property });
     const consequent: A = { type: 'Literal', value: true };
     const alternate: A = { type: 'Literal', value: false };
     return { type: 'ConditionalExpression', test, consequent, alternate };
@@ -217,7 +220,10 @@ class PropositionTranslator extends Visitor<P, void> {
   }
 
   visitInExpression (expr: Syntax.InExpression): P {
-    return { type: 'HasProperty', object: this.translateExpression(expr.object), property: expr.property };
+    const object = this.translateExpression(expr.object);
+    return and(
+      { type: 'IsType', value: object, datatype: 'obj' },
+      { type: 'HasProperty', object, property: expr.property });
   }
 
   visitMemberExpression (expr: Syntax.MemberExpression): P {

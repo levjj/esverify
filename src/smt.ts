@@ -212,6 +212,10 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
                   + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
   }
 
+  visitIsType (prop: Syntax.IsType): SMTInput {
+    return `(is-js${prop.datatype} ${this.visitExpr(prop.value)})`;
+  }
+
   visitInstanceOf (prop: Syntax.InstanceOf): SMTInput {
     return `(instanceof ${this.visitExpr(prop.left)} ${this.visitClassName(prop.right)})`;
   }

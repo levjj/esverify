@@ -180,17 +180,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     const object = this.freshVar();
     this.have({ type: 'InstanceOf', left: object, right: clz.id.name });
-    this.have(truthy({
-      type: 'BinaryExpression',
-      left: {
-        type: 'UnaryExpression',
-        operator: 'typeof',
-        argument: object
-      },
-      operator: '===',
-      right: { type: 'Literal', value: 'object' }
-    }));
-    this.have(not(eq(object, { type: 'Literal', value: null })));
+    this.have({ type: 'IsType', value: object, datatype: 'obj' });
     clz.fields.forEach((property, idx) => {
       this.have({ type: 'HasProperty', object: object, property });
       this.have(eq({ type: 'MemberExpression', object, property }, args[idx]));
@@ -216,7 +206,10 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitInExpression (expr: Syntax.InExpression): A {
-    const test: P = { type: 'HasProperty', object: this.visitExpression(expr.object), property: expr.property };
+    const object = this.visitExpression(expr.object);
+    const test: P = and(
+      { type: 'IsType', value: object, datatype: 'obj' },
+      { type: 'HasProperty', object, property: expr.property });
     const consequent: A = { type: 'Literal', value: true };
     const alternate: A = { type: 'Literal', value: false };
     return { type: 'ConditionalExpression', test, consequent, alternate };
