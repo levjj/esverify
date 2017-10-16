@@ -970,3 +970,61 @@ describe('merge sort', () => {
   verified('sort: isSorted(res)');
   verified('sort: pure()');
 });
+
+describe('promise', () => {
+
+  code(() => {
+    class Promise {
+      value: any;
+      constructor (value) {
+        this.value = value;
+      }
+    }
+
+    function resolve (fulfill) {
+      // fulfill is value, promise or then-able
+      requires(!('then' in fulfill) || spec(fulfill.then, () => true, () => true));
+
+      if (fulfill instanceof Promise) {
+        return fulfill;
+      } else if ('then' in fulfill) {
+        return new Promise(fulfill.then());
+      } else {
+        return new Promise(fulfill);
+      }
+    }
+
+    function then (promise, fulfill) {
+      // fulfill returns value or promise
+      requires(promise instanceof Promise);
+      requires(spec(fulfill, x => true, (x, res) => true));
+
+      const res = fulfill(promise.value);
+      if (res instanceof Promise) {
+        return res;
+      } else {
+        return new Promise(res);
+      }
+    }
+
+    const p = resolve(0);
+    const p2 = then(p, n => {
+      return n + 2;
+    });
+    const p3 = then(p2, n => {
+      return new Promise(n + 5);
+    });
+  });
+
+  verified('resolve: property then exists on object');
+  verified('resolve: precondition fulfill.then()');
+  verified('resolve: class invariant Promise');
+  verified('resolve: class invariant Promise');
+  verified('then: property value exists on object');
+  verified('then: precondition fulfill(promise.value)');
+  verified('then: class invariant Promise');
+  verified('precondition resolve(0)');
+  verified('precondition then(p, (function  (n) {\n  return (n + 2);\n}))');
+  verified('func: class invariant Promise');
+  verified('precondition then(p2, (function  (n) {\n  return new Promise((n + 5));\n}))');
+});
