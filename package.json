@@ -33,19 +33,19 @@
     "url": "https://github.com/levjj/esverify.git"
   },
   "dependencies": {
-    "@types/esprima": "^2.1.35",
-    "@types/estree": "0.0.35",
-    "esprima": "^3.1.3",
+    "@types/esprima": "^4.0.1",
+    "@types/estree": "0.0.38",
+    "esprima": "^4.0.0",
     "minimist": "^1.2.0"
   },
   "devDependencies": {
-    "@types/chai": "^3.5.2",
+    "@types/chai": "^4.0.4",
     "@types/mocha": "^2.2.43",
-    "chai": "^3.5.0",
+    "chai": "^4.0.4",
     "commitizen": "^2.9.6",
     "cz-conventional-changelog": "^2.0.0",
     "husky": "^0.13.3",
-    "mocha": "^3.5.3",
+    "mocha": "^2.2.43",
     "semantic-release": "^6.3.6",
     "ts-loader": "^1.3.3",
     "ts-node": "^1.7.3",

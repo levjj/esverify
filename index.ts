@@ -1,4 +1,4 @@
-import { parse } from 'esprima';
+import { parseScript } from 'esprima';
 import * as Syntax from 'estree';
 import { Message, MessageException, unexpected, log } from './src/message';
 import { programAsJavaScript } from './src/javascript';
@@ -10,7 +10,7 @@ export function verificationConditions (src: string, opts: Partial<Options> = {}
   setOptions(opts);
   let node: Syntax.Program;
   try {
-    node = parse(src, { loc: true });
+    node = parseScript(src, { loc: true });
   } catch (e) {
     const line: number = e.lineNumber || 0;
     const column: number = 0;
