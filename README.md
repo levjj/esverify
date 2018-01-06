@@ -6,6 +6,11 @@ Program Verification for ECMAScript/JavaScript ([esverify.org](http://esverify.o
 
 **Alpha: This is still a research prototype and not yet ready for production use.**
 
+## Documentation
+
+A detailed documentation of esverify and its theoretical foundations is
+currently work-in-progress and will be published soon.
+
 ## Example
 
 Given a simple JavaScript `max` function, we can add pre- and post-conditions
@@ -136,4 +141,6 @@ which displays verification results inline.
 Inspired by [Dafny](https://github.com/Microsoft/dafny) and
 [LiquidHaskell](https://github.com/ucsd-progsys/liquidhaskell).
 
+This project is developed by the
+[Software and Languages Research Group at University of California, Santa Cruz](http://slang.soe.ucsc.edu/).
 Thanks also to Tommy, Sohum and Cormac for support and advice.
