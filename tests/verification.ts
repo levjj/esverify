@@ -42,7 +42,10 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
       const st = res.status === 'error' && res.type === 'incorrect' ? res.type : res.status;
       expect(st).to.be.eql(expected);
     } else {
-      expect(res.status === 'error' && res.type === expected).to.be.true;
+      expect(res.status).to.equal('error');
+      if (res.status === 'error') {
+        expect(res.type).to.equal(expected);
+      }
     }
   };
   if (debug) {
