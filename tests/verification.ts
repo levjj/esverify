@@ -239,6 +239,22 @@ describe('global call', () => {
   verified('inc: (res > n)');
 });
 
+describe('assert within function', () => {
+
+  code(() => {
+    function f (n) {
+      requires(typeof(n) === 'number');
+      ensures(res => res > 3);
+
+      assert(n > 3);
+      return n;
+    }
+  });
+
+  incorrect('f: assert: (n > 3)');
+  verified('f: (res > 3)');
+});
+
 describe('inline global call', () => {
 
   code(() => {
