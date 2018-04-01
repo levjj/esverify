@@ -146,6 +146,18 @@ ${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
         });
       }));
     }
+    if (!options.quiet && options.verbose) {
+      p = p.then(() => new Promise<string>((resolve, reject) => {
+        const writeFile = require('fs').writeFile;
+        writeFile('/tmp/vc.smt', smt, (err: Error, out: string) => {
+          if (err) {
+            reject(new Error('cannot write: ' + String(err)));
+          } else {
+            resolve('');
+          }
+        });
+      }));
+    }
     p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
       const spawn = require('child_process').spawn;
       const p = spawn(options.z3path, ['-smt2', '-in'], {stdio: ['pipe', 'pipe', 'ignore']});
