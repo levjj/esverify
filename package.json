@@ -18,7 +18,7 @@
     "esverify": "./bin/esverify.js"
   },
   "engines": {
-    "node": ">=7"
+    "node": ">=8.9"
   },
   "bugs": {
     "url": "https://github.com/levjj/esverify/issues"
