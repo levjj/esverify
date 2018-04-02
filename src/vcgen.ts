@@ -1,6 +1,8 @@
 import VerificationCondition from './verification';
-import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, isMutable, replaceVar } from './javascript';
-import { A, P, Classes, Vars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy, implies, and, or, eq, not, heapEq, heapStore, removePrefix, replaceResultWithCall, transformClassInvariant } from './logic';
+import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, isMutable,
+         replaceVar } from './javascript';
+import { A, P, Classes, Vars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy, implies, and, or, eq, not,
+         heapEq, heapStore, removePrefix, replaceResultWithCall, transformClassInvariant } from './logic';
 import { translateExpression } from './assertions';
 import { eraseTriggersProp } from './qi';
 
@@ -65,7 +67,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   verify (vc: P, loc: Syntax.SourceLocation, desc: string, testBody: Array<Syntax.Statement> = []) {
-    this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, and(this.prop, not(vc)), loc, desc, this.freeVars, this.testBody.concat(testBody)));
+    this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, and(this.prop, not(vc)),
+                                            loc, desc, this.freeVars, this.testBody.concat(testBody)));
   }
 
   visitIdentifier (expr: Syntax.Identifier): A {
@@ -240,7 +243,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     });
   }
 
-  transformDef (f: Syntax.Function, callee: string, heap: number, toHeap: number = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+  transformDef (f: Syntax.Function, callee: string, heap: number, toHeap: number = heap + 1,
+                existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
     const args: Array<string> = f.params.map(p => p.name);
     let req = tru;
     for (const r of f.requires) {
@@ -316,7 +320,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       const ens2 = ens.argument ? replaceVar(ens.argument.name, this.resVar, ens.expression) : ens.expression;
       const ti = translateExpression(startHeap, this.heap, ens2);
       this.verify(ti, ens.loc, stringifyExpr(ens.expression),
-                  [{ type: 'AssertStatement', loc: ens.loc, expression: ens2}]);
+                  [{ type: 'AssertStatement', loc: ens.loc, expression: ens2 }]);
     }
     this.vcs.forEach(vc => {
       vc.description = (f.id ? f.id.name : 'func') + ': ' + vc.description;

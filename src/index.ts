@@ -1,12 +1,13 @@
 import { parseScript } from 'esprima';
 import * as Syntax from 'estree';
-import { Message, MessageException, unexpected, log } from './src/message';
-import { programAsJavaScript } from './src/javascript';
-import VerificationCondition from './src/verification';
-import { vcgenProgram } from './src/vcgen';
-import { Options, options, setOptions } from './src/options';
+import { Message, MessageException, unexpected, log } from './message';
+import { programAsJavaScript } from './javascript';
+import VerificationCondition from './verification';
+import { vcgenProgram } from './vcgen';
+import { Options, options, setOptions } from './options';
 
-export function verificationConditions (src: string, opts: Partial<Options> = {}): Message | Array<VerificationCondition> {
+export function verificationConditions (src: string, opts: Partial<Options> = {}):
+                Message | Array<VerificationCondition> {
   setOptions(opts);
   let node: Syntax.Program;
   try {
@@ -14,7 +15,7 @@ export function verificationConditions (src: string, opts: Partial<Options> = {}
   } catch (e) {
     const line: number = e.lineNumber || 0;
     const column: number = 0;
-    const loc = { file: options.filename, start: { line, column }, end: { line, column: column + 1 }};
+    const loc = { file: options.filename, start: { line, column }, end: { line, column: column + 1 } };
     return { status: 'error', type: 'parse-error', loc, description: e.description || 'parse error' };
   }
   try {

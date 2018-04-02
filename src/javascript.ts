@@ -15,7 +15,7 @@ export namespace Syntax {
                           | { type: 'This', decl: ClassDeclaration }
                           | { type: 'Class', decl: ClassDeclaration };
 
-  interface Position { line: number; column: number; }
+  export interface Position { line: number; column: number; }
   export interface SourceLocation { file: string; start: Position; end: Position; }
 
   export type ClassName = string;
@@ -190,7 +190,9 @@ function findPseudoCalls (type: string, stmts: Array<JSyntax.Statement>): Array<
         stmt.expression.type === 'CallExpression' &&
         stmt.expression.callee.type === 'Identifier' &&
         stmt.expression.callee.name === type) {
-      if (stmt.expression.arguments.length !== 1) throw unsupported(stmt.expression, `${type} expects proposition as one single argument`);
+      if (stmt.expression.arguments.length !== 1) {
+        throw unsupported(stmt.expression, `${type} expects proposition as one single argument`);
+      }
       const arg = stmt.expression.arguments[0];
       if (arg.type === 'SpreadElement') throw unsupported(arg);
       return [arg];
@@ -302,7 +304,8 @@ function checkDistinct (params: Array<JSyntax.Pattern>): void {
   }
 }
 
-function assignUpdate (left: Syntax.Identifier, op: Syntax.BinaryOperator, right: JSyntax.Expression, stmt: JSyntax.Expression): Syntax.AssignmentExpression {
+function assignUpdate (left: Syntax.Identifier, op: Syntax.BinaryOperator, right: JSyntax.Expression,
+                       stmt: JSyntax.Expression): Syntax.AssignmentExpression {
   return {
     type: 'AssignmentExpression',
     left,
@@ -539,7 +542,13 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       return {
         type: 'CallExpression',
         callee: expressionAsJavaScript(expr.callee),
-        args: expr.arguments.map(expressionAsJavaScript),
+        args: expr.arguments.map(expr => {
+          if (expr.type === 'SpreadElement') {
+            throw unsupported(expr);
+          } else {
+            return expressionAsJavaScript(expr);
+          }
+        }),
         loc: loc(expr)
       };
     case 'NewExpression':
@@ -548,7 +557,13 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       return {
         type: 'NewExpression',
         callee: patternAsIdentifier(expr.callee),
-        args: expr.arguments.map(expressionAsJavaScript),
+        args: expr.arguments.map(expr => {
+          if (expr.type === 'SpreadElement') {
+            throw unsupported(expr);
+          } else {
+            return expressionAsJavaScript(expr);
+          }
+        }),
         loc: loc(expr)
       };
     case 'MemberExpression':
@@ -615,7 +630,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
           type: 'VariableDeclaration',
           kind: stmt.kind === 'let' ? 'let' : 'const',
           id: patternAsIdentifier(decl.id),
-          init: decl.init ? expressionAsJavaScript(decl.init) : {type: 'Literal', value: undefined, loc: loc(stmt)},
+          init: decl.init ? expressionAsJavaScript(decl.init) : { type: 'Literal', value: undefined, loc: loc(stmt) },
           loc: loc(stmt)
         };
         return d;
@@ -675,7 +690,8 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
     case 'ReturnStatement':
       return [{
         type: 'ReturnStatement',
-        argument: stmt.argument ? expressionAsJavaScript(stmt.argument) : { type: 'Literal', value: undefined, loc: loc(stmt) },
+        argument: stmt.argument ? expressionAsJavaScript(stmt.argument)
+                                : { type: 'Literal', value: undefined, loc: loc(stmt) },
         loc: loc(stmt)
       }];
     case 'FunctionDeclaration': {
@@ -897,11 +913,13 @@ function unsupportedLoc (loc: Syntax.SourceLocation, description: string = '') {
 }
 
 function undefinedId (loc: Syntax.SourceLocation) {
-  return new MessageException({ status: 'error', type: 'undefined-identifier', loc, description: ''});
+  return new MessageException({ status: 'error', type: 'undefined-identifier', loc, description: '' });
 }
 
 function alreadyDefined (loc: Syntax.SourceLocation, decl: Syntax.Declaration) {
-  if (decl.type === 'Unresolved') throw unexpected(new Error('decl should be resolved'));
+  if (decl.type === 'Unresolved') {
+    throw unexpected(new Error('decl should be resolved'));
+  }
   const { file, start } = decl.decl.loc;
   return new MessageException({ status: 'error', type: 'already-defined', loc,
                                 description: `at ${file}:${start.line}:${start.column}` });
@@ -994,7 +1012,7 @@ class NameResolver extends Visitor<void,void> {
   allowOld: boolean = false;
 
   stringAsIdentifier (name: string): Syntax.Identifier {
-    const loc = { file: options.filename, start: { line: 0, column: 0}, end: { line: 0, column: 0}};
+    const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
     return { type: 'Identifier', name, refs: [], decl: { type: 'Unresolved' }, isWrittenTo: false, loc };
   }
 
@@ -1241,7 +1259,8 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitConditionalExpression (expr: Syntax.ConditionalExpression): string {
-    return `${this.visitExpression(expr.test)} ? ${this.visitExpression(expr.consequent)} : ${this.visitExpression(expr.alternate)}`;
+    return `${this.visitExpression(expr.test)} ? ${this.visitExpression(expr.consequent)} ` +
+                                              `: ${this.visitExpression(expr.alternate)}`;
   }
 
   visitAssignmentExpression (expr: Syntax.AssignmentExpression): string {
@@ -1265,9 +1284,14 @@ class Stringifier extends Visitor<string,string> {
 
   visitSpecExpression (expr: Syntax.SpecExpression): string {
     if (expr.post.argument) {
-      return `spec(${this.visitExpression(expr.callee)}, (${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), (${[...expr.args, expr.post.argument.name].join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
+      return `spec(${this.visitExpression(expr.callee)}, ` +
+                  `(${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), ` +
+                  `(${[...expr.args, expr.post.argument.name].join(', ')}) => ` +
+                     `(${this.visitExpression(expr.post.expression)}))`;
     }
-    return `spec(${this.visitExpression(expr.callee)}, (${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), (${expr.args.join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
+    return `spec(${this.visitExpression(expr.callee)}, ` +
+                `(${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), ` +
+                `(${expr.args.join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
   }
 
   visitPureExpression (expr: Syntax.PureExpression): string {
@@ -1291,7 +1315,8 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): string {
-    return `(function ${expr.id ? expr.id.name : ''} (${expr.params.map(p => p.name).join(', ')}) ${this.visitStatements(expr.body.body)})`;
+    return `(function ${expr.id ? expr.id.name : ''} (${expr.params.map(p => p.name).join(', ')}) ` +
+            `${this.visitStatements(expr.body.body)})`;
   }
 
   indent (f: () => void) {
@@ -1336,7 +1361,9 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitIfStatement (stmt: Syntax.IfStatement): string {
-    return this.i(`if (${this.visitExpression(stmt.test)}) ${this.visitStatements(stmt.consequent.body)} else ${this.visitStatements(stmt.alternate.body)}\n`);
+    return this.i(`if (${this.visitExpression(stmt.test)}) ` +
+                  `${this.visitStatements(stmt.consequent.body)} else ` +
+                  `${this.visitStatements(stmt.alternate.body)}\n`);
   }
 
   visitReturnStatement (stmt: Syntax.ReturnStatement): string {
@@ -1352,7 +1379,8 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): string {
-    return this.i(`function ${stmt.id.name} (${stmt.params.map(p => p.name).join(', ')}) ${this.visitStatements(stmt.body.body)}\n`);
+    return this.i(`function ${stmt.id.name} (${stmt.params.map(p => p.name).join(', ')}) ` +
+                  `${this.visitStatements(stmt.body.body)}\n`);
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): string {
@@ -1579,7 +1607,7 @@ export function replaceVar (v: string, t: string, expr: Syntax.Expression): Synt
 export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.Statement> {
   return [{
     type: 'FunctionDeclaration',
-    id: { type: 'Identifier', name: 'test', decl: {type: 'Unresolved'}, refs: [], isWrittenTo: false, loc: whl.loc },
+    id: { type: 'Identifier', name: 'test', decl: { type: 'Unresolved' }, refs: [], isWrittenTo: false, loc: whl.loc },
     params: [],
     requires: [],
     ensures: [],
@@ -1600,7 +1628,7 @@ export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.State
       type: 'CallExpression',
       args: [],
       callee: {
-        type: 'Identifier', name: 'test', decl: {type: 'Unresolved'},
+        type: 'Identifier', name: 'test', decl: { type: 'Unresolved' },
         refs: [], isWrittenTo: false, loc: whl.loc
       },
       loc: whl.loc

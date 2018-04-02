@@ -1,4 +1,5 @@
-import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Traverser, Reducer, tru, and, eq, implies, eqProp, copy } from './logic';
+import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Traverser, Reducer, tru, and, eq,
+         implies, eqProp, copy } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
 declare const console: { log: (s: string) => void };
@@ -122,7 +123,7 @@ class MaximumDepthFinder extends Reducer<number> {
 
 class TriggerFueler extends Traverser {
 
-  fuel: number;
+  fuel: number = 0;
 
   visitCallTrigger (prop: Syntax.CallTrigger): void {
     super.visitCallTrigger(prop);
@@ -196,7 +197,7 @@ class TriggerCollector extends Reducer<Triggers> {
 }
 
 class QuantifierInstantiator extends QuantifierTransformer {
-  triggers: Triggers;
+  triggers: Triggers = [[], []];
   instantiations: number;
 
   constructor (heaps: Heaps, locs: Locs, vars: Vars) {

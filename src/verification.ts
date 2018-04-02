@@ -25,7 +25,8 @@ export default class VerificationCondition {
   inprocess: boolean;
   result: Message | null;
 
-  constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation, description: string, freeVars: Vars, body: Array<Syntax.Statement>) {
+  constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation,
+               description: string, freeVars: Vars, body: Array<Syntax.Statement>) {
     this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap + 1).keys()]);
     this.locs = new Set([...locs]);
@@ -109,7 +110,14 @@ ${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
         return { status: 'unverified', description: this.description, loc: this.loc, model: m };
       } catch (e) {
         if (e instanceof Error && e.message === 'assertion failed') {
-          return { status: 'error', type: 'incorrect', description: this.description, loc: this.loc, model: m, error: e };
+          return {
+            status: 'error',
+            type: 'incorrect',
+            description: this.description,
+            loc: this.loc,
+            model: m,
+            error: e
+          };
         } else {
           return unexpected(e, this.loc, this.description);
         }
@@ -160,7 +168,7 @@ ${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
     }
     p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
       const spawn = require('child_process').spawn;
-      const p = spawn(options.z3path, ['-smt2', '-in'], {stdio: ['pipe', 'pipe', 'ignore']});
+      const p = spawn(options.z3path, ['-smt2', '-in'], { stdio: ['pipe', 'pipe', 'ignore'] });
       let result: string = '';
       p.stdout.on('data', (data: Object) => { result += data.toString(); });
       p.on('exit', (code: number) => resolve(result));

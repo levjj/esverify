@@ -57,8 +57,9 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitHeapEffect (expr: Syntax.HeapEffect): SMTInput {
-    const {callee, heap, args} = expr;
-    return `(eff${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, args } = expr;
+    return `(eff${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
+             `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitVariable (expr: Syntax.Variable): SMTInput {
@@ -101,8 +102,9 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitCallExpression (expr: Syntax.CallExpression): SMTInput {
-    const {callee, heap, args} = expr;
-    return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, args } = expr;
+    return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
+            `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitMemberExpression (expr: Syntax.MemberExpression): SMTInput {
@@ -175,17 +177,19 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitPrecondition (prop: Syntax.Precondition): SMTInput {
-    const {callee, heap, args} = prop;
-    return `(pre${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, args } = prop;
+    return `(pre${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
+             `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitPostcondition (prop: Syntax.Postcondition): SMTInput {
-    const {callee, heap, args} = prop;
-    return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, args } = prop;
+    return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
+            `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitForAllCalls (prop: Syntax.ForAllCalls): SMTInput {
-    const {callee, heap, args, fuel} = prop;
+    const { callee, heap, args, fuel } = prop;
     const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
     const callP: P = { type: 'CallTrigger', callee, heap, args: args, fuel };
     let p = this.visitProp(implies(callP, prop.prop));
@@ -199,12 +203,13 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitCallTrigger (prop: Syntax.CallTrigger): SMTInput {
-    const {callee, heap, args} = prop;
-    return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, args } = prop;
+    return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
+            `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitForAllAccess (prop: Syntax.ForAllAccess): SMTInput {
-    const {heap, fuel} = prop;
+    const { heap, fuel } = prop;
     const accessP: P = { type: 'AccessTrigger', object: 'this', heap, fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
@@ -448,7 +453,7 @@ ${propositionToAssert(prop)}
 }
 
 function modelError (smt: SMTOutput): MessageException {
-  const loc = { file: options.filename, start: { line: 0, column: 0}, end: { line: 0, column: 0} };
+  const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
   return new MessageException({ status: 'error', type: 'unrecognized-model', loc, description: `cannot parse ${smt}` });
 }
 
@@ -483,13 +488,14 @@ export type Model = { [varName: string]: any };
 
 export function smtToModel (smt: SMTOutput): Model {
   // assumes smt starts with "sat", so remove "sat"
-  smt = smt.slice(3, smt.length);
-  if (smt.trim().startsWith('(error')) return {};
+  const smt2 = smt.slice(3, smt.length);
+  // return empty model if there was an error
+  if (smt2.trim().startsWith('(error')) return {};
 
   // remove outer parens
-  smt = smt.trim().slice(2, smt.length - 4);
+  const smt3 = smt2.trim().slice(2, smt2.length - 4);
   const model: Model = {};
-  smt.split(/\)\s+\(/m).forEach(str => {
+  smt3.split(/\)\s+\(/m).forEach(str => {
     // these are now just pairs of varname value
     const both = str.trim().split(' ');
     if (both.length < 2) return;

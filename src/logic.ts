@@ -190,7 +190,7 @@ export function not (arg: P): P {
 }
 
 export function heapStore (target: Heap, loc: string, expr: A): P {
-  return { type: 'HeapEq', left: target + 1, right: { type: 'HeapStore', target, loc, expr }};
+  return { type: 'HeapEq', left: target + 1, right: { type: 'HeapStore', target, loc, expr } };
 }
 
 export function heapEq (left: Syntax.HeapExpression, right: Syntax.HeapExpression): P {
@@ -812,7 +812,8 @@ export class Substituter extends Transformer {
   }
 }
 
-export function replaceResultWithCall (callee: A, heap: Heap, args: Array<string>, result: { name: string } | null, post: P): P {
+export function replaceResultWithCall (callee: A, heap: Heap, args: Array<string>,
+                                       result: { name: string } | null, post: P): P {
   if (!result) return post;
     // replace result argument with orig. function invocation
   const sub = new Substituter();
@@ -831,7 +832,8 @@ export function removePrefix (prefix: P, prop: P): P {
   return and(...prop.clauses.slice(prefixLength));
 }
 
-export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: Heap, toHeap: Heap = heap + 1, existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: Heap, toHeap: Heap = heap + 1,
+                               existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
   const numHeaps = Math.max(0, toHeap - heap - 1);
   const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
   const preP: P = { type: 'Precondition', callee, heap, args };
@@ -845,7 +847,18 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
     s = and(ens, heapEq(heap, { type: 'HeapEffect', callee, heap, args }));
   }
   const prop = and(implies(req, preP), implies(and(req, postP), s));
-  const forAll: P = { type: 'ForAllCalls', callee, heap, args, existsHeaps, existsLocs, existsVars, prop, instantiations: [], fuel: 0 };
+  const forAll: P = {
+    type: 'ForAllCalls',
+    callee,
+    heap,
+    args,
+    existsHeaps,
+    existsLocs,
+    existsVars,
+    prop,
+    instantiations: [],
+    fuel: 0
+  };
   const fnCheck: A = {
     type: 'BinaryExpression',
     left: {
