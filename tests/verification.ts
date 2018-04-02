@@ -830,7 +830,7 @@ describe('function bug', () => {
   verified('f: !spec(f, (y) => (true), (y) => ((y !== x)))');
 });
 
-describe.skip('merge sort', () => {
+describe('merge sort', () => {
 
   code(() => {
     class IntList {
@@ -862,9 +862,7 @@ describe.skip('merge sort', () => {
       requires(snd === null || snd instanceof IntList);
       requires(typeof(alternate) === 'boolean');
       ensures(res => res instanceof IntListPartition);
-      // ensures(pure());
-      let i = 23;
-      let j = i + 1;
+      ensures(pure());
 
       if (lst === null) {
         return new IntListPartition(fst, snd);
@@ -898,30 +896,23 @@ describe.skip('merge sort', () => {
       ensures(res => !(right !== null && (left === null || right.head < left.head))
                       ||
                     (res !== null && res.head === right.head));
-      // ensures(pure());
+      ensures(pure());
 
       if (left === null) {
-        assert(isSorted(right));
         return right;
       } else if (right === null) {
-        assert(isSorted(left));
         return left;
       } else if (left.head <= right.head) {
         isSorted(left);
         isSorted(left.tail);
         const merged = merge(left.tail, right);
-        let i = 23;
-        i++;
         const res = new IntList(left.head, merged);
         isSorted(res);
-        // assert(isSorted(res));
         return res;
       } else {
         isSorted(right);
         isSorted(right.tail);
         const merged = merge(left, right.tail);
-        let j = 23;
-        j++;
         const res = new IntList(right.head, merged);
         isSorted(res);
         return res;
@@ -932,7 +923,7 @@ describe.skip('merge sort', () => {
       requires(list === null || list instanceof IntList);
       ensures(res => res === null || res instanceof IntList);
       ensures(res => isSorted(res));
-      // ensures(pure());
+      ensures(pure());
 
       if (list === null || list.tail === null) {
         isSorted(list);
@@ -954,7 +945,7 @@ describe.skip('merge sort', () => {
   verified('partition: class invariant IntList');
   verified('partition: precondition partition(lst.tail, fst, new IntList(lst.head, snd), true)');
   verified('partition: (res instanceof IntListPartition)');
-  // verified('partition: pure()');
+  verified('partition: pure()');
   verified('isSorted: property tail exists on object');
   verified('isSorted: property head exists on object');
   verified('isSorted: property tail exists on object');
@@ -982,16 +973,13 @@ describe.skip('merge sort', () => {
   verified('merge: class invariant IntList');
   verified('merge: precondition isSorted(res)');
   verified('merge: (res === null) || (res instanceof IntList)');
-  verified('merge: assert: isSorted(left)');
-  verified('merge: assert: isSorted(right)');
-  verified('merge: assert: isSorted(res)');
   verified('merge: isSorted(res)');
   verified('merge: ((left === null) && (right === null) === (res === null))');
   verified('merge: !(left !== null) && (right === null) || (right.head >= left.head) || ' +
                   '(res !== null) && (res.head === left.head)');
   verified('merge: !(right !== null) && (left === null) || (right.head < left.head) || ' +
                   '(res !== null) && (res.head === right.head)');
-  // verified('merge: pure()');
+  verified('merge: pure()');
   verified('sort: property tail exists on object');
   verified('sort: precondition isSorted(list)');
   verified('sort: assert: isSorted(list)');
@@ -1003,7 +991,7 @@ describe.skip('merge sort', () => {
   verified('sort: precondition merge(sort(part.left), sort(part.right))');
   verified('sort: (res === null) || (res instanceof IntList)');
   verified('sort: isSorted(res)');
-  // verified('sort: pure()');
+  verified('sort: pure()');
 });
 
 describe('promise', () => {
