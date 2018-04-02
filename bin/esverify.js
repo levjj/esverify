@@ -21,6 +21,8 @@ function usage(err) {
   console.log('                          (default format is "colored")');
   console.log('  -q, --quiet             Suppresses output');
   console.log('  -v, --verbose           Prints SMT input, output and test code');
+  console.log('  --logsmt PATH           Path for logging SMT input in verbose mode');
+  console.log('                          (default path is "/tmp/vc.smt")');
   console.log('  -h, --help              Prints this help text and exit');
   console.log('  --version               Prints version information');
   process.exit(err ? 1 : 0);
@@ -28,7 +30,7 @@ function usage(err) {
 
 var opts = minimist(process.argv.slice(2), {
   boolean: ['noqi', 'remote', 'quiet', 'verbose', 'help', 'version'],
-  string: ['logformat', 'z3path', 'z3url'],
+  string: ['logformat', 'z3path', 'z3url', 'logsmt'],
   default: { quiet: false },
   alias: {r: 'remote', f: 'logformat', q: 'quiet', v: 'verbose', h: 'help' },
   unknown: function(opt) { if (opt[0] == '-' && opt != '-') usage(true); }
