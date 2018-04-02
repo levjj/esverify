@@ -2,6 +2,9 @@
   "extends": "tslint-config-standard",
   "rules": {
     "indent": [true, "spaces"],
-    "semicolon": [true, "always"]
+    "semicolon": [true, "always"],
+    "no-var-keyword": true,
+    "no-parameter-reassignment": true,
+    "max-line-length": [true, 120]
   }
 }

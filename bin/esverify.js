@@ -2,7 +2,7 @@
 
 var fs = require('fs');
 var minimist = require('minimist');
-var esverify = require('../esverify.js');
+var esverify = require('../build/main/index.js');
 
 function error(msg) {
   console.error(msg);

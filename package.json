@@ -1,13 +1,18 @@
 {
   "name": "esverify",
   "version": "0.0.0-development",
-  "description": "ECMAScript verification with SMT solvers",
+  "description": "ECMAScript program verifier based on SMT solving",
   "author": "Christopher Schuster <cs@livoris.net>",
   "license": "MIT",
-  "main": "dist/esverify.js",
+  "main": "build/main/index.js",
+  "typings": "build/main/index.d.ts",
+  "module": "build/module/index.js",
   "files": [
     "bin",
-    "esverify.js"
+    "build/main/*.js",
+    "build/main/*.d.ts",
+    "build/module/*.js",
+    "build/module/*.d.ts"
   ],
   "bin": {
     "esverify": "./bin/esverify.js"
@@ -20,11 +25,11 @@
   },
   "homepage": "https://github.com/levjj/esverify#readme",
   "scripts": {
-    "lint": "tsc --noEmit && tslint --project . --type-check -e **/node_modules/** -t codeFrame index.ts src/*.ts",
+    "lint": "tsc --noEmit && tslint --project .",
     "test": "TS_NODE_DISABLE_WARNINGS=true mocha -r ts-node/register tests/*.ts",
-    "build": "webpack --debug",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.module.json",
     "commit": "git-cz",
-    "commitmsg": "validate-commit-msg",
+    "commitmsg": "commitlint -x @commitlint/config-conventional -e $GIT_PARAMS",
     "prepush": "npm run lint && npm test && npm run build",
     "semantic-release": "semantic-release pre && npm publish && semantic-release post"
   },
@@ -39,29 +44,28 @@
     "minimist": "^1.2.0"
   },
   "devDependencies": {
-    "@types/chai": "^4.0.4",
-    "@types/mocha": "^2.2.43",
-    "chai": "^4.0.4",
+    "@commitlint/cli": "^6.1.3",
+    "@commitlint/config-conventional": "^6.1.3",
+    "@commitlint/prompt": "^6.1.3",
+    "@types/chai": "^4.1.2",
+    "@types/mocha": "^5.0.0",
+    "chai": "^4.1.2",
     "commitizen": "^2.9.6",
-    "cz-conventional-changelog": "^2.0.0",
-    "husky": "^0.13.3",
-    "mocha": "^2.2.43",
-    "semantic-release": "^6.3.6",
-    "ts-loader": "^1.3.3",
-    "ts-node": "^1.7.3",
-    "tslint": "^5.7.0",
-    "tslint-config-standard": "^5.0.2",
-    "typescript": "^2.5.3",
-    "validate-commit-msg": "^2.14.0",
-    "webpack": "^1.15.0"
+    "cz-conventional-changelog": "^2.1.0",
+    "husky": "^0.14.3",
+    "mocha": "^5.0.5",
+    "semantic-release": "^15.1.4",
+    "ts-loader": "^4.1.0",
+    "ts-node": "^5.0.1",
+    "tslint": "^5.9.1",
+    "tslint-config-standard": "^7.0.0",
+    "typescript": "^2.8.1",
+    "webpack": "^4.4.1",
+    "webpack-cli": "^2.0.13"
   },
   "config": {
     "commitizen": {
-      "path": "cz-conventional-changelog"
-    },
-    "validate-commit-msg": {
-      "types": "conventional-commit-types",
-      "helpMessage": "Use \"npm run commit\" instead, we use conventional-changelog format (https://github.com/commitizen/cz-cli)"
+      "path": "@commitlint/prompt"
     }
   }
 }

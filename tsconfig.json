@@ -1,22 +1,32 @@
 {
-  "compileOnSave": false,
   "compilerOptions": {
-    "declaration": false,
+    "target": "es2017",
+    "outDir": "build/main",
+    "rootDir": "src",
+    "moduleResolution": "node",
     "module": "commonjs",
-    "noImplicitAny": true,
-    "noImplicitThis": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "strictNullChecks": true,
     "noUnusedLocals": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noFallthroughCasesInSwitch": true,
+    "traceResolution": false,
+    "listEmittedFiles": false,
+    "listFiles": false,
+    "pretty": true,
     "preserveConstEnums": true,
     "removeComments": false,
     "sourceMap": true,
-    "outDir": "build",
-    "target": "es6",
-    "strictNullChecks": true,
-    "lib": ["es2016"],
+    "lib": ["es2017"],
+    "types": [],
     "typeRoots": ["node_modules/@types"]
   },
   "files": [
-    "index.ts",
+    "src/index.ts",
     "src/javascript.ts",
     "src/logic.ts",
     "src/options.ts",
@@ -24,5 +34,6 @@
     "src/util.ts",
     "src/vcgen.ts",
     "src/verification.ts"
-  ]
+  ],
+  "compileOnSave": false
 }
