@@ -8,6 +8,7 @@ branches:
 cache:
   directories:
     - node_modules
+    - ~/.npm
 before_script:
   - wget https://github.com/Z3Prover/z3/releases/download/z3-4.5.0/z3-4.5.0-x64-ubuntu-14.04.zip -O /tmp/z3-4.5.0-x64-ubuntu-14.04.zip
   - unzip -d . /tmp/z3-4.5.0-x64-ubuntu-14.04.zip
@@ -19,4 +20,4 @@ script:
   - npm test
   - npm run build
 after_success:
-  - npm run semantic-release
+  - npm run travis-deploy-once "npm run semantic-release"
