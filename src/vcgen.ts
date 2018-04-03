@@ -373,7 +373,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   visitAssertStatement (stmt: Syntax.AssertStatement): BreakCondition {
     const a = translateExpression(this.oldHeap, this.heap, stmt.expression);
     this.verify(a, stmt.loc, 'assert: ' + stringifyExpr(stmt.expression), [stmt]);
-    this.prop = and(this.prop, a);
+    this.have(a);
     return fls;
   }
 
