@@ -1,5 +1,5 @@
 import { flatMap } from './util';
-import { Syntax, P, Classes, Vars, Locs, Heap, Heaps, Visitor, implies } from './logic';
+import { Syntax, P, Classes, Vars, FreeVars, Locs, Heap, Heaps, Visitor, implies } from './logic';
 import { instantiateQuantifiers } from './qi';
 import { MessageException } from './message';
 import { options } from './options';
@@ -107,8 +107,12 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
             `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
+  visitNewExpression (expr: Syntax.NewExpression): SMTInput {
+    return `(jsobj_${expr.className}${expr.args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+  }
+
   visitMemberExpression (expr: Syntax.MemberExpression): SMTInput {
-    return `(field ${this.visitExpr(expr.object)} "${expr.property}")`;
+    return `(field ${this.visitExpr(expr.object)} ${this.visitExpr(expr.property)})`;
   }
 
   visitTruthy (prop: Syntax.Truthy): SMTInput {
@@ -217,16 +221,12 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
                   + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
   }
 
-  visitIsType (prop: Syntax.IsType): SMTInput {
-    return `(is-js${prop.datatype} ${this.visitExpr(prop.value)})`;
-  }
-
   visitInstanceOf (prop: Syntax.InstanceOf): SMTInput {
     return `(instanceof ${this.visitExpr(prop.left)} ${this.visitClassName(prop.right)})`;
   }
 
   visitHasProperty (prop: Syntax.HasProperty): SMTInput {
-    return `(has ${this.visitExpr(prop.object)} "${prop.property}")`;
+    return `(has ${this.visitExpr(prop.object)} ${this.visitExpr(prop.property)})`;
   }
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): SMTInput {
@@ -246,10 +246,13 @@ function propositionToAssert (prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: Vars, p: P): SMTInput {
+export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
+
+(declare-sort Func) ; unspecified function
+(declare-sort Obj) ; unspecified object
 
 ; Values in JavaScript
 (declare-datatypes () ((JSVal
@@ -258,8 +261,13 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
   (jsstr (strv String))
   jsnull
   jsundefined
-  (jsobj (oidx Int))
-  (jsfun (fidx Int)))))
+  (jsfun (funv Func))
+  (jsobj (objv Obj))
+${[...classes].map(({ cls, fields }) =>
+  fields.length === 0
+  ? `  jsobj_${cls}\n`
+  : `  (jsobj_${cls} ${fields.map(field => `(${cls}-${field} JSVal)`).join(' ')})\n`
+).join('')})))
 
 ; Types in JavaScript
 (declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSObj JSFunction)))
@@ -272,6 +280,17 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
   (ite (is-jsundefined x) JSUndefined
   (ite (is-jsfun x) JSFunction
   JSObj)))))))
+
+(define-fun _tostring ((x JSVal)) String
+  (ite (is-jsnum x) (int.to.str (numv x))
+  (ite (is-jsbool x) (ite (boolv x) "true" "false")
+  (ite (is-jsstr x) (strv x)
+  (ite (is-jsnull x) "null"
+  (ite (is-jsundefined x) "undefined"
+  (ite (is-jsfun x) "function () { ... }"
+${[...classes].map(({ cls }) =>
+  `  (ite (is-jsobj_${cls} x) "[object ${cls}]"`).join('\n')}
+  "[object Object]"${[...classes].map(c => ')').join('')})))))))
 
 (define-fun _falsy ((x JSVal)) Bool
   (or (is-jsnull x)
@@ -430,15 +449,39 @@ ${[...Array(10).keys()].map(i => `
 
 ; Objects
 (declare-sort ClassName)
-(declare-fun has (JSVal String) Bool)
-(declare-fun field (JSVal String) JSVal)
-(declare-fun instanceof (JSVal ClassName) Bool)
+(declare-const c_Object ClassName)
+(declare-const c_Function ClassName)
+${[...classes].map(({ cls }) => `(declare-const c_${cls} ClassName)\n`).join('')}
+(assert (distinct c_Object c_Function ${[...classes].map(({ cls }) => 'c_' + cls).join(' ')}))
+
+(declare-fun objhas (Obj String) Bool)
+(declare-fun objfield (Obj String) JSVal)
+
+(define-fun has ((obj JSVal) (prop JSVal)) Bool
+  (or (and (is-jsobj obj) (objhas (objv obj) (_tostring prop)))
+${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
+`      (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}"))`).join('\n')}
+))
+
+(define-fun field ((obj JSVal) (prop JSVal)) JSVal
+  (ite (is-jsobj obj) (objfield (objv obj) (_tostring prop))
+${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
+`  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}")) (${cls}-${field} obj)`).join('\n')}
+  jsundefined
+${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')}))
+
+(define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
+  (or (and (is-jsfun obj) (= cls c_Object))
+      (and (is-jsfun obj) (= cls c_Function))
+      (and (is-jsobj obj) (= cls c_Object))
+${[...classes].map(({ cls }) =>
+`      (and (is-jsobj_${cls} obj) (= cls c_Object))
+      (and (is-jsobj_${cls} obj) (= cls c_${cls}))`).join('\n')}
+))
+
 (declare-fun access (JSVal Heap) Bool)
 
 ; Declarations
-
-${[...classes].map(c => `(declare-const c_${c} ClassName)\n`).join('')}
-${classes.size === 0 ? '' : `(assert (distinct ${[...classes].map(c => 'c_' + c).join(' ')}))`}
 ${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}
 ${[...locs].map(l => `(declare-const l_${l} Loc)\n`).join('')}
 ${locs.size === 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_' + l).join(' ')}))`}
@@ -449,42 +492,121 @@ ${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
 ${propositionToAssert(prop)}
 
 (check-sat)
-(get-value (${[...freeVars].map(v => `v_${v}`).join(' ')}))`;
+(get-value (${[...freeVars].map(v => typeof v === 'string' ? `v_${v}` : `(select h_${v.heap} l_${v.name})`)
+                           .join(' ')}))`;
 }
+
+export namespace Model {
+  /* tslint:disable:ter-indent */
+
+  export interface Num { type: 'num'; v: number; }
+  export interface Bool { type: 'bool'; v: boolean; }
+  export interface Str { type: 'str'; v: string; }
+  export interface Null { type: 'null'; }
+  export interface Undefined { type: 'undefined'; }
+  export interface Fun { type: 'fun'; v: string; }
+  export interface Obj { type: 'obj'; v: string; }
+  export interface ObjCls { type: 'obj-cls'; cls: string; args: Array<Value>; }
+  export type Value = Num | Bool | Str | Null | Undefined | Fun | Obj | ObjCls;
+}
+
+export type Model = { [varName: string]: Model.Value };
 
 function modelError (smt: SMTOutput): MessageException {
   const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
   return new MessageException({ status: 'error', type: 'unrecognized-model', loc, description: `cannot parse ${smt}` });
 }
 
-function smtToArray (smt: SMTOutput): Array<any> {
-  const s = smt.trim();
-  if (s === 'empty') return [];
-  const m = s.match(/^\(cons (\w+|\(.*\))\ (.*)\)$/);
-  if (!m) throw modelError(s);
-  const [, h, t] = m;
-  return [smtToValue(h)].concat(smtToArray(t));
-}
+type SExpr = string | SExprList;
+interface SExprList extends Array<SExpr> {}
 
-function smtToValue (smt: SMTOutput): any {
-  const s = smt.trim();
-  if (s === 'jsundefined') return undefined;
-  if (s === 'jsnull') return null;
-  const m = s.match(/^\((\w+)\ (.*)\)$/);
-  if (!m) throw modelError(s);
-  const [, tag, v] = m;
-  if (tag.startsWith('jsfun')) return () => 0;
-  switch (tag) {
-    case 'jsbool': return v === 'true';
-    case 'jsnum': const neg = v.match(/\(- ([0-9]+)\)/); return neg ? -neg[1] : +v;
-    case 'jsstr': return v.substr(1, v.length - 2);
-    case 'jsarr': return smtToArray(v);
-    case 'jsobj': return {};
-    default: throw modelError(tag);
+function parseSExpr (input: string): SExpr {
+  let idx = 0;
+
+  function skipWS () {
+    while (input[idx] === ' ' || input[idx] === '\t' || input[idx] === '\n') idx++;
+  }
+
+  function sexpr (): SExpr | null {
+    skipWS();
+    if (input[idx] === '(') {
+      idx++;
+      const list: SExprList = [];
+      for (let next = sexpr(); next !== null; next = sexpr()) {
+        list.push(next);
+      }
+      skipWS();
+      if (input[idx++] !== ')') throw modelError(input);
+      return list;
+    }
+    const m = input.substr(idx).match(/^("[^"]*")|^\w+/);
+    if (m) {
+      idx += m[0].length;
+      return m[0];
+    }
+    return null;
+  }
+
+  const result = sexpr();
+  if (result === null) {
+    throw modelError(input);
+  } else {
+    return result;
   }
 }
 
-export type Model = { [varName: string]: any };
+function smtToValue (s: SExpr): Model.Value {
+  if (typeof s === 'string') {
+    if (s === 'jsundefined') {
+      return { type: 'undefined' };
+    } else if (s === 'jsnull') {
+      return { type: 'null' };
+    } else if (s.startsWith('jsobj_')) {
+      return { type: 'obj-cls', cls: s.substr(6), args: [] };
+    } else {
+      throw modelError(s);
+    }
+  } else {
+    if (s.length < 1) throw modelError(s.toString());
+    const tag = s[0];
+    if (typeof tag !== 'string') throw modelError(tag.toString());
+    if (tag === 'jsbool') {
+      if (s.length !== 2) throw modelError(s.toString());
+      const v = s[1];
+      if (typeof v !== 'string') throw modelError(s.toString());
+      return { type: 'bool', v: v === 'true' };
+    } else if (tag === 'jsnum') {
+      if (s.length !== 2) throw modelError(s.toString());
+      const v = s[1];
+      if (typeof v !== 'string') throw modelError(s.toString());
+      const neg = v.match(/\(- ([0-9]+)\)/);
+      return { type: 'num', v: neg ? -neg[1] : +v };
+    } else if (tag === 'jsstr') {
+      if (s.length !== 2) throw modelError(s.toString());
+      const v = s[1];
+      if (typeof v !== 'string') throw modelError(s.toString());
+      return { type: 'str', v: v.substr(1, v.length - 2) };
+    } else if (tag === 'jsfun') {
+      if (s.length !== 2) throw modelError(s.toString());
+      const v = s[1];
+      if (typeof v !== 'string') throw modelError(s.toString());
+      return { type: 'fun', v };
+    } else if (tag === 'jsobj') {
+      if (s.length !== 2) throw modelError(s.toString());
+      const v = s[1];
+      if (typeof v !== 'string') throw modelError(s.toString());
+      return { type: 'obj', v };
+    } else if (tag.startsWith('jsobj_')) {
+      return {
+        type: 'obj-cls',
+        cls: tag.substr(6),
+        args: s.slice(1).map(smtToValue)
+      };
+    } else {
+      throw modelError(tag);
+    }
+  }
+}
 
 export function smtToModel (smt: SMTOutput): Model {
   // assumes smt starts with "sat", so remove "sat"
@@ -492,17 +614,24 @@ export function smtToModel (smt: SMTOutput): Model {
   // return empty model if there was an error
   if (smt2.trim().startsWith('(error')) return {};
 
-  // remove outer parens
-  const smt3 = smt2.trim().slice(2, smt2.length - 4);
+  const data = parseSExpr(smt2.trim());
   const model: Model = {};
-  smt3.split(/\)\s+\(/m).forEach(str => {
-    // these are now just pairs of varname value
-    const both = str.trim().split(' ');
-    if (both.length < 2) return;
-    const name = both[0].trim();
-    const value = both.slice(1, both.length).join(' ').trim();
-    const val = smtToValue(value);
-    model[name.substr(2)] = val;
+  if (typeof data === 'string') throw modelError(data);
+  data.forEach(nameAndValue => {
+    if (typeof nameAndValue === 'string') throw modelError(nameAndValue);
+    if (nameAndValue.length !== 2) throw modelError(smt);
+    const nameExpr: SExpr = nameAndValue[0];
+    let name: string;
+    if (typeof nameExpr === 'string') { // v_x
+      name = nameExpr.substr(2);
+    } else { // (select h_i l_x)
+      if (nameExpr.length !== 3) throw modelError(smt);
+      if (nameExpr[0] !== 'select') throw modelError(smt);
+      const loc = nameExpr[2];
+      if (typeof loc !== 'string') throw modelError(smt);
+      name = loc.substr(2);
+    }
+    model[name] = smtToValue(nameAndValue[1]);
   });
   return model;
 }

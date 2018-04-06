@@ -45,9 +45,12 @@ export namespace Syntax {
                                     callee: Expression;
                                     heap: HeapExpression;
                                     args: Array<Expression>; }
+  export interface NewExpression { type: 'NewExpression';
+                                   className: ClassName;
+                                   args: Array<Expression>; }
   export interface MemberExpression { type: 'MemberExpression';
                                       object: Expression;
-                                      property: string; }
+                                      property: Expression; }
   export type Expression = Variable
                          | HeapReference
                          | Literal
@@ -55,6 +58,7 @@ export namespace Syntax {
                          | BinaryExpression
                          | ConditionalExpression
                          | CallExpression
+                         | NewExpression
                          | MemberExpression;
 
   export interface Truthy { type: 'Truthy';
@@ -101,15 +105,12 @@ export namespace Syntax {
                                   prop: Proposition;
                                   instantiations: Array<AccessTrigger>;
                                   fuel: number; }
-  export interface IsType { type: 'IsType';
-                            value: Expression;
-                            datatype: 'num' | 'bool' | 'str' | 'obj' | 'fun'; }
   export interface InstanceOf { type: 'InstanceOf';
                                 left: Expression;
                                 right: ClassName; }
   export interface HasProperty { type: 'HasProperty';
                                  object: Expression;
-                                 property: string; }
+                                 property: Expression; }
   export interface AccessTrigger { type: 'AccessTrigger';
                                    object: Expression;
                                    heap: HeapExpression;
@@ -127,7 +128,6 @@ export namespace Syntax {
                           | ForAllCalls
                           | CallTrigger
                           | ForAllAccess
-                          | IsType
                           | InstanceOf
                           | HasProperty
                           | AccessTrigger;
@@ -139,7 +139,9 @@ export type Heap = Syntax.Heap;
 export type Heaps = Set<Syntax.Heap>;
 export type Locs = Set<Syntax.Location>;
 export type Vars = Set<Syntax.Variable>;
-export type Classes = Set<Syntax.ClassName>;
+export type Classes = Set<{ cls: Syntax.ClassName, fields: Array<string> }>;
+export type FreeVar = Syntax.Variable | { name: Syntax.Variable, heap: Heap };
+export type FreeVars = Array<FreeVar>;
 
 export const und: A = { type: 'Literal', value: undefined };
 export const tru: P = { type: 'True' };
@@ -251,10 +253,15 @@ function eqExpr (exprA: A, exprB: A): boolean {
              eqExpr(exprA.callee, exprB.callee) &&
              exprA.args.length === exprB.args.length &&
              exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
+    case 'NewExpression':
+      return exprA.type === exprB.type &&
+             exprA.className === exprB.className &&
+             exprA.args.length === exprB.args.length &&
+             exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
     case 'MemberExpression':
       return exprA.type === exprB.type &&
              eqExpr(exprA.object, exprB.object) &&
-             exprA.property === exprB.property;
+             eqExpr(exprA.property, exprB.property);
   }
 }
 
@@ -306,10 +313,6 @@ export function eqProp (propA: P, propB: P): boolean {
       return propA.type === propB.type &&
              eqHeap(propA.heap, propB.heap) &&
              eqProp(propA.prop, propB.prop);
-    case 'IsType':
-      return propA.type === propB.type &&
-             eqExpr(propA.value, propB.value) &&
-             propA.datatype === propB.datatype;
     case 'InstanceOf':
       return propA.type === propB.type &&
              eqExpr(propA.left, propB.left) &&
@@ -317,7 +320,7 @@ export function eqProp (propA: P, propB: P): boolean {
     case 'HasProperty':
       return propA.type === propB.type &&
              eqExpr(propA.object, propB.object) &&
-             propA.property === propB.property;
+             eqExpr(propA.property, propB.property);
     case 'AccessTrigger':
       return propA.type === propB.type &&
              eqHeap(propA.heap, propB.heap) &&
@@ -340,6 +343,7 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitBinaryExpression (expr: Syntax.BinaryExpression): R;
   abstract visitConditionalExpression (expr: Syntax.ConditionalExpression): R;
   abstract visitCallExpression (expr: Syntax.CallExpression): R;
+  abstract visitNewExpression (expr: Syntax.NewExpression): R;
   abstract visitMemberExpression (expr: Syntax.MemberExpression): R;
 
   abstract visitTruthy (prop: Syntax.Truthy): S;
@@ -355,7 +359,6 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitForAllCalls (prop: Syntax.ForAllCalls): S;
   abstract visitCallTrigger (prop: Syntax.CallTrigger): S;
   abstract visitForAllAccess (prop: Syntax.ForAllAccess): S;
-  abstract visitIsType (prop: Syntax.IsType): S;
   abstract visitInstanceOf (prop: Syntax.InstanceOf): S;
   abstract visitHasProperty (prop: Syntax.HasProperty): S;
   abstract visitAccessTrigger (prop: Syntax.AccessTrigger): S;
@@ -377,6 +380,7 @@ export abstract class Visitor<L,H,R,S> {
       case 'BinaryExpression': return this.visitBinaryExpression(expr);
       case 'ConditionalExpression': return this.visitConditionalExpression(expr);
       case 'CallExpression': return this.visitCallExpression(expr);
+      case 'NewExpression': return this.visitNewExpression(expr);
       case 'MemberExpression': return this.visitMemberExpression(expr);
     }
   }
@@ -396,7 +400,6 @@ export abstract class Visitor<L,H,R,S> {
       case 'ForAllCalls': return this.visitForAllCalls(prop);
       case 'CallTrigger': return this.visitCallTrigger(prop);
       case 'ForAllAccess': return this.visitForAllAccess(prop);
-      case 'IsType': return this.visitIsType(prop);
       case 'InstanceOf': return this.visitInstanceOf(prop);
       case 'HasProperty': return this.visitHasProperty(prop);
       case 'AccessTrigger': return this.visitAccessTrigger(prop);
@@ -456,8 +459,12 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
                   ...expr.args.map(a => this.visitExpr(a)));
   }
 
+  visitNewExpression (expr: Syntax.NewExpression): R {
+    return this.r(...expr.args.map(a => this.visitExpr(a)));
+  }
+
   visitMemberExpression (expr: Syntax.MemberExpression): R {
-    return this.visitExpr(expr.object);
+    return this.r(this.visitExpr(expr.object), this.visitExpr(expr.property));
   }
 
   visitTruthy (prop: Syntax.Truthy): R {
@@ -510,10 +517,6 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   visitHeapEq (prop: Syntax.HeapEq): R {
     return this.r(this.visitHeapExpr(prop.left),
                   this.visitHeapExpr(prop.right));
-  }
-
-  visitIsType (prop: Syntax.IsType): R {
-    return this.visitExpr(prop.value);
   }
 
   visitInstanceOf (prop: Syntax.InstanceOf): R {
@@ -617,11 +620,19 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     };
   }
 
+  visitNewExpression (expr: Syntax.NewExpression): A {
+    return {
+     type: 'NewExpression',
+     className: expr.className,
+     args: expr.args.map(a => this.visitExpr(a))
+    };
+  }
+
   visitMemberExpression (expr: Syntax.MemberExpression): A {
     return {
       type: 'MemberExpression',
       object: this.visitExpr(expr.object),
-      property: expr.property
+      property: this.visitExpr(expr.property)
     };
   }
 
@@ -707,14 +718,6 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       prop: this.visitProp(prop.prop),
       instantiations: [...prop.instantiations], // shallow copy, do not process
       fuel: prop.fuel
-    };
-  }
-
-  visitIsType (prop: Syntax.IsType): P {
-    return {
-      type: 'IsType',
-      value: this.visitExpr(prop.value),
-      datatype: prop.datatype
     };
   }
 
@@ -812,6 +815,12 @@ export class Substituter extends Transformer {
   }
 }
 
+export function replaceVar (v: string, subst: A, prop: P): P {
+  const sub = new Substituter();
+  sub.replaceVar(v, subst);
+  return sub.visitProp(prop);
+}
+
 export function replaceResultWithCall (callee: A, heap: Heap, args: Array<string>,
                                        result: { name: string } | null, post: P): P {
   if (!result) return post;
@@ -874,11 +883,5 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
 
 export function transformClassInvariant (className: string, fields: Array<string>, inv: P, heap: Heap): P {
   const instP: P = { type: 'InstanceOf', left: 'this', right: className };
-  let prop: P = { type: 'IsType', value: 'this', datatype: 'obj' };
-  for (const property of fields) {
-    prop = and(prop, { type: 'HasProperty', object: 'this', property });
-  }
-  prop = and(prop, inv);
-  prop = implies(instP, prop);
-  return { type: 'ForAllAccess', heap, prop, instantiations: [], fuel: 0 };
+  return { type: 'ForAllAccess', heap, prop: implies(instP, inv), instantiations: [], fuel: 0 };
 }

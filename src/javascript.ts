@@ -79,12 +79,12 @@ export namespace Syntax {
                                           right: Identifier;
                                           loc: SourceLocation; }
   export interface InExpression { type: 'InExpression';
-                                  property: string;
+                                  property: Expression;
                                   object: Expression;
                                   loc: SourceLocation; }
   export interface MemberExpression { type: 'MemberExpression';
                                       object: Expression;
-                                      property: string;
+                                      property: Expression;
                                       loc: SourceLocation; }
   export type PreCondition = Expression;
   export interface PostCondition { argument: Identifier | null;
@@ -234,6 +234,10 @@ function withoutPseudoCalls (type: string, stmts: Array<JSyntax.Statement>): Arr
   });
 }
 
+export function nullLoc (): Syntax.SourceLocation {
+  return { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
+}
+
 function loc (n: JSyntax.Node): Syntax.SourceLocation {
   if (!n.loc) {
     throw new MessageException(unexpected(new Error('No location information available on nodes')));
@@ -380,12 +384,9 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         };
       }
       if (expr.operator === 'in') {
-        if (expr.left.type !== 'Literal' || typeof(expr.left.value) !== 'string') {
-          throw unsupported(expr, "'in' check only works for string keys");
-        }
         return {
           type: 'InExpression',
-          property: expr.left.value,
+          property: expressionAsJavaScript(expr.left),
           object: expressionAsJavaScript(expr.right),
           loc: loc(expr)
         };
@@ -567,13 +568,18 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         loc: loc(expr)
       };
     case 'MemberExpression':
-      if (expr.computed) throw unsupported(expr, 'computed index not supported');
-      if (expr.property.type !== 'Identifier') throw unsupported(expr.property, 'index needs to be identifier');
       if (expr.object.type === 'Super') throw unsupported(expr.object);
+      let property: Syntax.Expression;
+      if (expr.computed) {
+        property = expressionAsJavaScript(expr.property);
+      } else {
+        if (expr.property.type !== 'Identifier') throw unsupported(expr.property);
+        property = { type: 'Literal', value: expr.property.name, loc: loc(expr.property) };
+      }
       return {
         type: 'MemberExpression',
         object: expressionAsJavaScript(expr.object),
-        property: expr.property.name,
+        property,
         loc: loc(expr)
       };
     case 'FunctionExpression':
@@ -929,6 +935,10 @@ function assignToConst (loc: Syntax.SourceLocation) {
   return new MessageException({ status: 'error', type: 'assignment-to-const', loc, description: '' });
 }
 
+function refInInvariant (loc: Syntax.SourceLocation) {
+  return new MessageException({ status: 'error', type: 'reference-in-invariant', loc, description: '' });
+}
+
 function isWrittenTo (decl: Syntax.Declaration): boolean {
   return decl.type === 'Var' && decl.decl.kind === 'let';
 }
@@ -971,12 +981,15 @@ class Scope {
     return decl;
   }
 
-  useSymbol (sym: Syntax.Identifier, write: boolean = false, clz: boolean = false) {
+  useSymbol (sym: Syntax.Identifier, write: boolean = false, clz: boolean = false, allowRef: boolean = true) {
     const decl = this.lookupUse(sym, clz);
     sym.decl = decl;
     switch (decl.type) {
       case 'Var':
         decl.decl.id.refs.push(sym);
+        if (!allowRef) {
+          throw refInInvariant(sym.loc);
+        }
         if (write) {
           if (decl.decl.kind === 'const') {
             throw assignToConst(sym.loc);
@@ -1010,26 +1023,30 @@ class NameResolver extends Visitor<void,void> {
 
   scope: Scope = new Scope();
   allowOld: boolean = false;
+  allowRef: boolean = true;
 
   stringAsIdentifier (name: string): Syntax.Identifier {
     const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
     return { type: 'Identifier', name, refs: [], decl: { type: 'Unresolved' }, isWrittenTo: false, loc };
   }
 
-  scoped (action: () => void, allowsOld: boolean = this.allowOld, fn: null | Syntax.Function = this.scope.func) {
-    const { scope, allowOld } = this;
+  scoped (action: () => void, allowsOld: boolean = this.allowOld, allowsRef: boolean = this.allowRef,
+          fn: null | Syntax.Function = this.scope.func) {
+    const { scope, allowOld, allowRef } = this;
     try {
       this.scope = new Scope(scope, fn);
       this.allowOld = allowsOld;
+      this.allowRef = allowsRef;
       action();
     } finally {
       this.scope = scope;
       this.allowOld = allowOld;
+      this.allowRef = allowRef;
     }
   }
 
   visitIdentifier (expr: Syntax.Identifier) {
-    this.scope.useSymbol(expr);
+    this.scope.useSymbol(expr, false, false, this.allowRef);
   }
 
   visitOldIdentifier (expr: Syntax.OldIdentifier) {
@@ -1109,11 +1126,13 @@ class NameResolver extends Visitor<void,void> {
   }
 
   visitInExpression (expr: Syntax.InExpression) {
+    this.visitExpression(expr.property);
     this.visitExpression(expr.object);
   }
 
   visitMemberExpression (expr: Syntax.MemberExpression) {
     this.visitExpression(expr.object);
+    this.visitExpression(expr.property);
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression) {
@@ -1125,7 +1144,7 @@ class NameResolver extends Visitor<void,void> {
         this.scoped(() => this.visitPostCondition(s), true);
       });
       expr.body.body.forEach(s => this.visitStatement(s));
-    }, false, expr);
+    }, false, this.allowRef, expr);
   }
 
   visitVariableDeclaration (stmt: Syntax.VariableDeclaration) {
@@ -1180,7 +1199,7 @@ class NameResolver extends Visitor<void,void> {
         this.scoped(() => this.visitPostCondition(s), true);
       });
       stmt.body.body.forEach(s => this.visitStatement(s));
-    }, false, stmt);
+    }, false, true, stmt);
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration) {
@@ -1188,10 +1207,31 @@ class NameResolver extends Visitor<void,void> {
     this.scoped(() => {
       this.scope.defSymbol(this.stringAsIdentifier('this'), { type: 'This', decl: stmt });
       this.visitExpression(stmt.invariant);
-    }, false);
+    }, false, false);
+  }
+
+  builtinClass (name: string) {
+    const id: Syntax.Identifier = {
+      type: 'Identifier',
+      name: name,
+      refs: [],
+      decl: { type: 'Unresolved' },
+      isWrittenTo: false,
+      loc: nullLoc()
+    };
+    const decl: Syntax.ClassDeclaration = {
+      type: 'ClassDeclaration',
+      id,
+      fields: [],
+      invariant: { type: 'Literal', value: true, loc: nullLoc() },
+      loc: nullLoc()
+    };
+    this.scope.defSymbol(id, { type: 'Class', decl });
   }
 
   visitProgram (prog: Syntax.Program) {
+    this.builtinClass('Object');
+    this.builtinClass('Function');
     prog.body.forEach(stmt => this.visitStatement(stmt));
     prog.invariants.forEach(inv => this.visitExpression(inv));
   }
@@ -1307,11 +1347,17 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitInExpression (expr: Syntax.InExpression): string {
-    return `("${expr.property}" in ${this.visitExpression(expr.object)})`;
+    return `(${this.visitExpression(expr.property)} in ${this.visitExpression(expr.object)})`;
   }
 
   visitMemberExpression (expr: Syntax.MemberExpression): string {
-    return `${this.visitExpression(expr.object)}.${expr.property}`;
+    if (expr.property.type === 'Literal' &&
+        typeof expr.property.value === 'string' &&
+        /^[a-zA-Z_]+$/.test(expr.property.value)) {
+      return `${this.visitExpression(expr.object)}.${expr.property.value}`;
+    } else {
+      return `${this.visitExpression(expr.object)}[${this.visitExpression(expr.property)}]`;
+    }
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): string {
@@ -1417,7 +1463,7 @@ export function stringifyStmt (stmt: Syntax.Statement): string {
   return (new Stringifier()).visitStatement(stmt);
 }
 
-class Substituter extends Visitor<Syntax.Expression, void> {
+export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
 
   theta: { [vname: string]: string | Syntax.Expression } = {};
 
@@ -1557,7 +1603,7 @@ class Substituter extends Visitor<Syntax.Expression, void> {
   visitInExpression (expr: Syntax.InExpression): Syntax.Expression {
     return {
       type: 'InExpression',
-      property: expr.property,
+      property: this.visitExpression(expr.property),
       object: this.visitExpression(expr.object),
       loc: expr.loc
     };
@@ -1567,7 +1613,7 @@ class Substituter extends Visitor<Syntax.Expression, void> {
     return {
       type: 'MemberExpression',
       object: this.visitExpression(expr.object),
-      property: expr.property,
+      property: this.visitExpression(expr.property),
       loc: expr.loc
     };
   }
@@ -1585,22 +1631,114 @@ class Substituter extends Visitor<Syntax.Expression, void> {
     };
   }
 
-  visitVariableDeclaration (stmt: Syntax.VariableDeclaration) {/*empty*/}
-  visitBlockStatement (stmt: Syntax.BlockStatement) {/*empty*/}
-  visitExpressionStatement (stmt: Syntax.ExpressionStatement) {/*empty*/}
-  visitAssertStatement (stmt: Syntax.AssertStatement) {/*empty*/}
-  visitIfStatement (stmt: Syntax.IfStatement) {/*empty*/}
-  visitReturnStatement (stmt: Syntax.ReturnStatement) {/*empty*/}
-  visitWhileStatement (stmt: Syntax.WhileStatement) {/*empty*/}
-  visitDebuggerStatement (stmt: Syntax.DebuggerStatement) {/*empty*/}
-  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration) {/*empty*/}
-  visitClassDeclaration (stmt: Syntax.ClassDeclaration) {/*empty*/}
-  visitProgram (prog: Syntax.Program) {/*empty*/}
+  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): Syntax.Statement {
+    return {
+      type: 'VariableDeclaration',
+      id: stmt.id,
+      init: this.visitExpression(stmt.init),
+      kind: stmt.kind,
+      loc: stmt.loc
+    };
+  }
+
+  visitBlockStatement (stmt: Syntax.BlockStatement): Syntax.BlockStatement {
+    return {
+      type: 'BlockStatement',
+      body: stmt.body.map(s => this.visitStatement(s)),
+      loc: stmt.loc
+    };
+  }
+
+  visitExpressionStatement (stmt: Syntax.ExpressionStatement): Syntax.Statement {
+    return {
+      type: 'ExpressionStatement',
+      expression: this.visitExpression(stmt.expression),
+      loc: stmt.loc
+    };
+  }
+
+  visitAssertStatement (stmt: Syntax.AssertStatement): Syntax.Statement {
+    return {
+      type: 'AssertStatement',
+      expression: this.visitExpression(stmt.expression),
+      loc: stmt.loc
+    };
+  }
+
+  visitIfStatement (stmt: Syntax.IfStatement): Syntax.Statement {
+    return {
+      type: 'IfStatement',
+      test: this.visitExpression(stmt.test),
+      consequent: this.visitBlockStatement(stmt.consequent),
+      alternate: this.visitBlockStatement(stmt.alternate),
+      loc: stmt.loc
+    };
+  }
+
+  visitReturnStatement (stmt: Syntax.ReturnStatement): Syntax.Statement {
+    return {
+      type: 'ReturnStatement',
+      argument: this.visitExpression(stmt.argument),
+      loc: stmt.loc
+    };
+  }
+
+  visitWhileStatement (stmt: Syntax.WhileStatement): Syntax.Statement {
+    return {
+      type: 'WhileStatement',
+      invariants: stmt.invariants.map(inv => this.visitExpression(inv)),
+      test: this.visitExpression(stmt.test),
+      body: this.visitBlockStatement(stmt.body),
+      loc: stmt.loc
+    };
+  }
+
+  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): Syntax.Statement {
+    return {
+      type: 'DebuggerStatement',
+      loc: stmt.loc
+    };
+  }
+
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): Syntax.Statement {
+    return {
+      type: 'FunctionDeclaration',
+      id: stmt.id,
+      params: stmt.params,
+      requires: stmt.requires.map(r => this.visitExpression(r)),
+      ensures: stmt.ensures.map(e => ({
+        argument: e.argument,
+        expression: this.visitExpression(e.expression),
+        loc: e.loc
+      })),
+      body: this.visitBlockStatement(stmt.body),
+      freeVars: stmt.freeVars,
+      loc: stmt.loc
+    };
+  }
+
+  visitClassDeclaration (stmt: Syntax.ClassDeclaration): Syntax.Statement {
+    return {
+      type: 'ClassDeclaration',
+      id: stmt.id,
+      fields: stmt.fields,
+      invariant: this.visitExpression(stmt.invariant),
+      loc: stmt.loc
+    };
+  }
+
+  visitProgram (prog: Syntax.Program): Syntax.Statement {
+    return {
+      type: 'BlockStatement',
+      body: prog.body.map(s => this.visitStatement(s)),
+      loc: nullLoc()
+    };
+  }
 }
 
-export function replaceVar (v: string, t: string, expr: Syntax.Expression): Syntax.Expression {
+export function replaceVar (v: string, subst: string | Syntax.Expression, expr: Syntax.Expression): Syntax.Expression {
   const sub = new Substituter();
-  sub.replaceVar(v, t);
+  sub.replaceVar(v, subst);
   return sub.visitExpression(expr);
 }
 

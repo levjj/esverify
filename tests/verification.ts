@@ -112,7 +112,7 @@ describe('max() with missing pre', () => {
     const m = await vcs[0].verify();
     if (m.status !== 'unverified') throw new Error();
     expect(m.model).to.have.property('b');
-    expect(m.model.b).to.eql(false);
+    expect(m.model.b).to.eql({ type: 'bool', v: false });
   });
 });
 
@@ -381,7 +381,7 @@ describe('buggy fibonacci', () => {
     const m = await vcs[2].verify();
     if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
     expect(m.model).to.have.property('n');
-    expect(m.model.n).to.eql(2);
+    expect(m.model.n).to.eql({ type: 'num', v: 2 });
   });
 });
 
@@ -576,8 +576,32 @@ describe('simple class invariant', () => {
     }
   });
 
-  verified('greaterTwo: property x exists on object');
+  verified('greaterTwo: a has property "x"');
   verified('greaterTwo: (a.x > 2)');
+});
+
+describe('class invariant with reference to mutable variable', () => {
+
+  const code = () => {
+    let x = 23;
+
+    class A {
+      readonly x: number;
+      constructor (x: number) {
+        this.x = x;
+      }
+      invariant () {
+        return x > 4;
+      }
+    }
+  };
+
+  it('gets rejected', () => {
+    const src = code.toString();
+    const t = verificationConditions(src.substring(14, src.length - 2));
+    expect(t).to.have.property('status', 'error');
+    expect(t).to.have.property('type', 'reference-in-invariant');
+  });
 });
 
 describe('mapLen internal', () => {
@@ -612,14 +636,14 @@ describe('mapLen internal', () => {
     }
   });
 
-  verified('len: property tail exists on object');
+  verified('len: lst has property "tail"');
   verified('len: precondition len(lst.tail)');
   verified('len: (typeof(res) === "number")');
   verified('len: pure()');
   verified('map: precondition len(lst)');
-  verified('map: property head exists on object');
+  verified('map: lst has property "head"');
   verified('map: precondition f(lst.head)');
-  verified('map: property tail exists on object');
+  verified('map: lst has property "tail"');
   verified('map: precondition map(f, lst.tail)');
   verified('map: class invariant List');
   verified('map: precondition len(res)');
@@ -683,14 +707,14 @@ describe('mapLen external', () => {
     }
   });
 
-  verified('map: property head exists on object');
+  verified('map: lst has property "head"');
   verified('map: precondition f(lst.head)');
-  verified('map: property tail exists on object');
+  verified('map: lst has property "tail"');
   verified('map: precondition map(lst.tail, f)');
   verified('map: class invariant List');
   verified('map: pure()');
   verified('map: (res === null) || (res instanceof List)');
-  verified('len: property tail exists on object');
+  verified('len: lst has property "tail"');
   verified('len: precondition len(lst.tail)');
   verified('len: pure()');
   verified('len: (res >= 0)');
@@ -699,16 +723,14 @@ describe('mapLen external', () => {
   verified('mapLen: precondition len(map(lst, f))');
   verified('mapLen: assert: (l === 0)');
   verified('mapLen: assert: (r === 0)');
-  verified('mapLen: property tail exists on object');
+  verified('mapLen: lst has property "tail"');
   verified('mapLen: precondition len(lst.tail)');
   verified('mapLen: assert: (l === (l1 + 1))');
-  verified('mapLen: property head exists on object');
+  verified('mapLen: lst has property "head"');
   verified('mapLen: precondition f(lst.head)');
-  verified('mapLen: property tail exists on object');
   verified('mapLen: precondition map(lst.tail, f)');
   verified('mapLen: precondition len(map(lst.tail, f))');
   verified('mapLen: assert: (r === (r1 + 1))');
-  verified('mapLen: property tail exists on object');
   verified('mapLen: precondition mapLen(lst.tail, f)');
   verified('mapLen: assert: (l1 === r1)');
   verified('mapLen: assert: (l === r)');
@@ -728,43 +750,33 @@ describe('map invariant', () => {
         this.head = head; this.tail = tail; this.each = each;
       }
       invariant () {
-        return spec(this.each,
-                    x => true,
-                    (x,y) => pure() &&
-                          typeof(this.each(x)) === 'boolean') &&
+        return spec(this.each, x => true, (x, y) => pure() && typeof(y) === 'boolean') &&
                this.each(this.head) &&
-               (this.tail === null ||
-                this.tail instanceof List && this.each === this.tail.each);
+               (this.tail === null || this.tail instanceof List && this.each === this.tail.each);
       }
     }
 
     function map (f, lst, newEach) {
-      requires(spec(newEach, x => true,
-                             x => pure() && typeof(newEach(x)) === 'boolean'));
-      requires(spec(f, x => lst.each(x), x => pure() && newEach(f(x))));
+      requires(spec(newEach, x => true, (x, y) => pure() && typeof(y) === 'boolean'));
+      requires(lst === null || spec(f, x => lst.each(x), (x, y) => pure() && newEach(y)));
       requires(lst === null || lst instanceof List);
-      ensures(map(f, lst, newEach) === null ||
-              (map(f, lst, newEach) instanceof List &&
-               map(f, lst, newEach).each === newEach));
+      ensures(res => res === null || (res instanceof List && res.each === newEach));
+      ensures(pure());
       if (lst === null) {
         return null;
       } else {
-        lst.each(lst.head);
-        newEach(f(lst.head));
-        return new List(f(lst.head), map(f, lst, newEach), newEach);
+        return new List(f(lst.head), map(f, lst.tail, newEach), newEach);
       }
     }
   });
 
-  verified('map: property each exists on object');
-  verified('map: property head exists on object');
-  verified('map: precondition lst.each(lst.head)');
+  verified('map: lst has property "head"');
+  verified('map: lst has property "tail"');
   verified('map: precondition f(lst.head)');
-  verified('map: precondition newEach(f(lst.head))');
-  verified('map: precondition map(f, lst, newEach)');
-  // FIXME: verified('map: class invariant List');
-  verified('map: (map(f, lst, newEach) === null) ||'
-       + ' (map(f, lst, newEach) instanceof List) && (map(f, lst, newEach).each === newEach)');
+  verified('map: precondition map(f, lst.tail, newEach)');
+  verified('map: class invariant List');
+  verified('map: pure()');
+  verified('map: (res === null) || (res instanceof List) && (res.each === newEach)');
 });
 
 describe('nested function bug', () => {
@@ -936,39 +948,29 @@ describe('merge sort', () => {
   });
 
   verified('partition: class invariant IntListPartition');
-  verified('partition: property tail exists on object');
-  verified('partition: property head exists on object');
+  verified('partition: lst has property "head"');
+  verified('partition: lst has property "tail"');
   verified('partition: class invariant IntList');
   verified('partition: precondition partition(lst.tail, new IntList(lst.head, fst), snd, false)');
-  verified('partition: property tail exists on object');
-  verified('partition: property head exists on object');
-  verified('partition: class invariant IntList');
   verified('partition: precondition partition(lst.tail, fst, new IntList(lst.head, snd), true)');
   verified('partition: (res instanceof IntListPartition)');
   verified('partition: pure()');
-  verified('isSorted: property tail exists on object');
-  verified('isSorted: property head exists on object');
-  verified('isSorted: property tail exists on object');
-  verified('isSorted: property head exists on object');
-  verified('isSorted: property tail exists on object');
+  verified('isSorted: list has property "head"');
+  verified('isSorted: list has property "tail"');
   verified('isSorted: precondition isSorted(list.tail)');
   verified('isSorted: (typeof(res) === "boolean")');
   verified('isSorted: pure()');
-  verified('merge: property head exists on object');
-  verified('merge: property head exists on object');
+  verified('merge: left has property "head"');
+  verified('merge: left has property "tail"');
+  verified('merge: right has property "head"');
+  verified('merge: right has property "tail"');
   verified('merge: precondition isSorted(left)');
-  verified('merge: property tail exists on object');
   verified('merge: precondition isSorted(left.tail)');
-  verified('merge: property tail exists on object');
   verified('merge: precondition merge(left.tail, right)');
-  verified('merge: property head exists on object');
   verified('merge: class invariant IntList');
   verified('merge: precondition isSorted(res)');
   verified('merge: precondition isSorted(right)');
-  verified('merge: property tail exists on object');
   verified('merge: precondition isSorted(right.tail)');
-  verified('merge: property head exists on object');
-  verified('merge: property tail exists on object');
   verified('merge: precondition merge(left, right.tail)');
   verified('merge: class invariant IntList');
   verified('merge: precondition isSorted(res)');
@@ -980,13 +982,13 @@ describe('merge sort', () => {
   verified('merge: !(right !== null) && (left === null) || (right.head < left.head) || ' +
                   '(res !== null) && (res.head === right.head)');
   verified('merge: pure()');
-  verified('sort: property tail exists on object');
+  verified('sort: list has property "tail"');
   verified('sort: precondition isSorted(list)');
   verified('sort: assert: isSorted(list)');
   verified('sort: precondition partition(list, null, null, false)');
-  verified('sort: property left exists on object');
+  verified('sort: part has property "left"');
   verified('sort: precondition sort(part.left)');
-  verified('sort: property right exists on object');
+  verified('sort: part has property "right"');
   verified('sort: precondition sort(part.right)');
   verified('sort: precondition merge(sort(part.left), sort(part.right))');
   verified('sort: (res === null) || (res instanceof IntList)');
@@ -1039,15 +1041,66 @@ describe('promise', () => {
     });
   });
 
-  verified('resolve: property then exists on object');
+  verified('resolve: fulfill has property "then"');
   verified('resolve: precondition fulfill.then()');
   verified('resolve: class invariant Promise');
   verified('resolve: class invariant Promise');
-  verified('then: property value exists on object');
+  verified('then: promise has property "value"');
   verified('then: precondition fulfill(promise.value)');
   verified('then: class invariant Promise');
   verified('precondition resolve(0)');
   verified('precondition then(p, (function  (n) {\n  return (n + 2);\n}))');
   verified('func: class invariant Promise');
   verified('precondition then(p2, (function  (n) {\n  return new Promise((n + 5));\n}))');
+});
+
+describe('simple object access', () => {
+
+  code(() => {
+    class A {
+      b: number;
+      constructor (b) {
+        this.b = b;
+      }
+      invariant () {
+        return this.b >= 0;
+      }
+    }
+
+    function f (a: A) {
+      requires(a instanceof A);
+      ensures(res => res >= 0);
+
+      return a.b;
+    }
+
+    function g (a: A) {
+      requires(a instanceof A);
+      ensures(res => res < 0);
+
+      return a.b;
+    }
+
+    function h () {
+      const a = new A(23);
+      assert(a instanceof A);
+      assert(a instanceof Object);
+      assert('b' in a);
+      assert(a.b > 22);
+      assert(a['b'] > 22);
+      const p = 'b';
+      assert(a[p] > 22);
+    }
+  });
+
+  verified('f: a has property "b"');
+  verified('f: (res >= 0)');
+  verified('g: a has property "b"');
+  incorrect('g: (res < 0)');
+  verified('h: class invariant A');
+  verified('h: assert: (a instanceof A)');
+  verified('h: assert: (a instanceof Object)');
+  verified('h: assert: ("b" in a)');
+  verified('h: assert: (a.b > 22)');
+  verified('h: assert: (a[p] > 22)');
 });

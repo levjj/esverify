@@ -1,8 +1,9 @@
 import VerificationCondition from './verification';
 import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, isMutable,
-         replaceVar } from './javascript';
-import { A, P, Classes, Vars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy, implies, and, or, eq, not,
-         heapEq, heapStore, removePrefix, replaceResultWithCall, transformClassInvariant } from './logic';
+         replaceVar as replaceJSVar, nullLoc } from './javascript';
+import { A, P, Classes, Vars, FreeVars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy,
+         implies, and, or, eq, not, heapEq, heapStore, removePrefix, replaceVar,
+         replaceResultWithCall, transformClassInvariant } from './logic';
 import { translateExpression } from './assertions';
 import { eraseTriggersProp } from './qi';
 
@@ -17,7 +18,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   prop: P;
   vcs: Array<VerificationCondition>;
   resVar: string | null;
-  freeVars: Vars;
+  freeVars: FreeVars;
   testBody: ReadonlyArray<Syntax.Statement>;
 
   constructor (classes: Classes, oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, prop: P = tru) {
@@ -30,7 +31,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.prop = prop;
     this.vcs = [];
     this.resVar = null;
-    this.freeVars = new Set();
+    this.freeVars = [];
     this.testBody = [];
   }
 
@@ -64,6 +65,99 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     while (this.vars.has(`_tmp_${i}`)) i++;
     this.vars.add(`_tmp_${i}`);
     return `_tmp_${i}`;
+  }
+
+  freeVar (name: string) {
+    this.freeVars.push(name);
+    this.testBody = this.testBody.concat([{
+      type: 'VariableDeclaration',
+      id: {
+        type: 'Identifier',
+        name,
+        decl: { type: 'Unresolved' },
+        loc: nullLoc(),
+        refs: [],
+        isWrittenTo: false
+      },
+      init: {
+        type: 'Identifier',
+        name: `__free__${name}`,
+        decl: { type: 'Unresolved' },
+        loc: nullLoc(),
+        refs: [],
+        isWrittenTo: false
+      },
+      kind: 'const',
+      loc: nullLoc()
+    }, {
+      type: 'VariableDeclaration',
+      id: {
+        type: 'Identifier',
+        name: `old_${name}`,
+        decl: { type: 'Unresolved' },
+        loc: nullLoc(),
+        refs: [],
+        isWrittenTo: false
+      },
+      init: {
+        type: 'Identifier',
+        name,
+        decl: { type: 'Unresolved' },
+        loc: nullLoc(),
+        refs: [],
+        isWrittenTo: false
+      },
+      kind: 'const',
+      loc: nullLoc()
+    }]);
+  }
+
+  freeLoc (name: string) {
+    this.freeVars.push({ name, heap: this.heap });
+    this.testBody = this.testBody.concat([{
+      type: 'ExpressionStatement',
+      expression: {
+        type: 'AssignmentExpression',
+        left: {
+          type: 'Identifier',
+          name,
+          decl: { type: 'Unresolved' },
+          loc: nullLoc(),
+          refs: [],
+          isWrittenTo: false
+        },
+        right: {
+          type: 'Identifier',
+          name: `__free__${name}`,
+          decl: { type: 'Unresolved' },
+          loc: nullLoc(),
+          refs: [],
+          isWrittenTo: false
+        },
+        loc: nullLoc()
+      },
+      loc: nullLoc()
+    }, {
+      type: 'VariableDeclaration',
+      id: {
+        type: 'Identifier',
+        name: `old_${name}`,
+        decl: { type: 'Unresolved' },
+        loc: nullLoc(),
+        refs: [],
+        isWrittenTo: false
+      },
+      init: {
+        type: 'Identifier',
+        name,
+        decl: { type: 'Unresolved' },
+        loc: nullLoc(),
+        refs: [],
+        isWrittenTo: false
+      },
+      kind: 'const',
+      loc: nullLoc()
+    }]);
   }
 
   verify (vc: P, loc: Syntax.SourceLocation, desc: string, testBody: Array<Syntax.Statement> = []) {
@@ -175,29 +269,13 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitNewExpression (expr: Syntax.NewExpression): A {
-    // evaluate arguments
     const args: Array<A> = expr.args.map(e => this.visitExpression(e));
 
     if (expr.callee.decl.type !== 'Class') throw new Error('Class not resolved');
     const clz: Syntax.ClassDeclaration = expr.callee.decl.decl;
-
-    const object = this.freshVar();
-    this.have({ type: 'InstanceOf', left: object, right: clz.id.name });
-    this.have({ type: 'IsType', value: object, datatype: 'obj' });
-    clz.fields.forEach((property, idx) => {
-      this.have({ type: 'HasProperty', object: object, property });
-      this.have(eq({ type: 'MemberExpression', object, property }, args[idx]));
-    });
-    this.have({ type: 'AccessTrigger', object, heap: this.heap, fuel: 1 });
-
-    // verify invariant for all possible heaps by using fresh heap
-    try {
-      this.heap++;
-      const inv: P = translateExpression(this.heap, this.heap, replaceVar('this', object, clz.invariant));
-      this.verify(inv, expr.loc, `class invariant ${clz.id.name}`);
-    } finally {
-      this.heap--;
-    }
+    const object: A = { type: 'NewExpression', className: clz.id.name, args };
+    const inv: P = translateExpression(this.heap, this.heap, clz.invariant);
+    this.verify(replaceVar('this', object, inv), expr.loc, `class invariant ${clz.id.name}`);
     return object;
   }
 
@@ -210,9 +288,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
   visitInExpression (expr: Syntax.InExpression): A {
     const object = this.visitExpression(expr.object);
-    const test: P = and(
-      { type: 'IsType', value: object, datatype: 'obj' },
-      { type: 'HasProperty', object, property: expr.property });
+    const property = this.visitExpression(expr.property);
+    const test: P = { type: 'HasProperty', object, property };
     const consequent: A = { type: 'Literal', value: true };
     const alternate: A = { type: 'Literal', value: false };
     return { type: 'ConditionalExpression', test, consequent, alternate };
@@ -220,15 +297,17 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
   visitMemberExpression (expr: Syntax.MemberExpression): A {
     const object = this.visitExpression(expr.object);
-    const property = expr.property;
+    const property = this.visitExpression(expr.property);
     this.have({ type: 'AccessTrigger', heap: this.heap, object: object, fuel: 1 });
     this.verify(
-      { type: 'HasProperty', object, property }, expr.loc, `property ${property} exists on object`,
+      { type: 'HasProperty', object, property }, expr.loc,
+      `${stringifyExpr(expr.object)} has property ${stringifyExpr(expr.property)}`,
       [{
         type: 'AssertStatement',
         loc: expr.loc,
-        expression: { type: 'InExpression', object: expr.object, property, loc: expr.loc }}]);
-    return { type: 'MemberExpression', object, property: expr.property };
+        expression: { type: 'InExpression', object: expr.object, property: expr.property, loc: expr.loc }
+      }]);
+    return { type: 'MemberExpression', object, property };
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): A {
@@ -260,9 +339,6 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
   visitFunctionBody (f: Syntax.Function, callee: string) {
 
-    const startHeap = this.heap;
-    const startBody = this.testBody;
-
     // add function name to scope
     this.vars.add(callee);
 
@@ -271,10 +347,10 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     for (const p of f.params) {
       args.push(p.name);
       this.vars.add(p.name);
-      this.freeVars.add(p.name);
+      this.freeVar(p.name);
     }
     for (const fv of f.freeVars) {
-      this.freeVars.add(fv);
+      this.freeLoc(fv);
     }
 
     // add special result variable
@@ -287,8 +363,11 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     }
 
     // assume non-rec spec
-    this.prop = and(this.prop, this.transformDef(f, callee, startHeap + 1));
+    this.prop = and(this.prop, this.transformDef(f, callee, this.heap + 1));
     const pre = this.prop;
+
+    const startHeap = this.heap;
+    const startBody = this.testBody;
 
     // internal verification conditions
     const res = this.visitStatement(f.body);
@@ -314,10 +393,10 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     }]);
 
     // ensure post conditions
-    this.prop = and(this.prop, eq(this.resVar, { type: 'CallExpression', callee, heap: startHeap, args }));
+    this.have(eq(this.resVar, { type: 'CallExpression', callee, heap: startHeap, args }));
 
     for (const ens of f.ensures) {
-      const ens2 = ens.argument ? replaceVar(ens.argument.name, this.resVar, ens.expression) : ens.expression;
+      const ens2 = ens.argument ? replaceJSVar(ens.argument.name, this.resVar, ens.expression) : ens.expression;
       const ti = translateExpression(startHeap, this.heap, ens2);
       this.verify(ti, ens.loc, stringifyExpr(ens.expression),
                   [{ type: 'AssertStatement', loc: ens.loc, expression: ens2 }]);
@@ -337,11 +416,11 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const t = this.visitExpression(stmt.init);
     if (stmt.kind === 'const') {
       this.vars.add(stmt.id.name);
-      this.prop = and(this.prop, eq(stmt.id.name, t));
+      this.have(eq(stmt.id.name, t));
       this.testBody = origBody.concat([stmt]);
     } else {
       this.locs.add(stmt.id.name);
-      this.prop = and(this.prop, heapStore(this.heap, stmt.id.name, t));
+      this.have(heapStore(this.heap, stmt.id.name, t));
       this.heap++;
       this.testBody = origBody.concat(stmt);
     }
@@ -354,9 +433,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     for (const s of stmt.body) {
       const [tHeap, tProp, tBC] = this.tryStatement(not(bc), s);
       this.testBody = this.testBody.concat(s);
-      this.prop = and(this.prop,
-                      implies(bc, heapEq(tHeap, this.heap)),
-                      implies(not(bc), tProp));
+      this.have(implies(bc, heapEq(tHeap, this.heap)));
+      this.have(implies(not(bc), tProp));
       this.heap = tHeap;
       bc = or(bc, tBC);
     }
@@ -384,9 +462,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const [lHeap, lProp, lBC] = this.tryStatement(truthy(t), stmt.consequent);
     const [rHeap, rProp, rBC] = this.tryStatement(falsy(t), stmt.alternate);
     const newHeap = Math.max(lHeap, rHeap);
-    this.prop = and(this.prop,
-                    implies(truthy(t), and(lProp, heapEq(newHeap, lHeap))),
-                    implies(falsy(t), and(rProp, heapEq(newHeap, rHeap))));
+    this.have(implies(truthy(t), and(lProp, heapEq(newHeap, lHeap))));
+    this.have(implies(falsy(t), and(rProp, heapEq(newHeap, rHeap))));
     this.heap = newHeap;
     this.testBody = origBody.concat(stmt);
     return or(and(truthy(t), lBC), and(falsy(t), rBC));
@@ -400,7 +477,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       loc: stmt.argument.loc });
     const t = this.visitExpression(stmt.argument);
     if (!this.resVar) throw new Error('return outside function');
-    this.prop = and(this.prop, eq(this.resVar, t));
+    this.have(eq(this.resVar, t));
     this.testBody = origBody.concat(stmt);
     return tru;
   }
@@ -424,10 +501,9 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.testBody = this.testBody.concat({ type: 'ExpressionStatement', expression: stmt.test, loc: stmt.test.loc });
 
     let testEnter = this.visitExpression(stmt.test);
-    this.prop = and(this.prop, truthy(testEnter));
+    this.have(truthy(testEnter));
     for (const inv of stmt.invariants) {
-      const ti = translateExpression(startHeap, this.heap, inv); // TODO old() for previous iteration
-      this.prop = and(this.prop, ti);
+      this.have(translateExpression(startHeap, this.heap, inv)); // TODO old() for previous iteration
     }
 
     // internal verification conditions
@@ -449,10 +525,9 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     // assume loop condition false and invariants true
     const testExit = this.visitExpression(stmt.test);
-    this.prop = and(this.prop, falsy(testExit));
+    this.have(falsy(testExit));
     for (const inv of stmt.invariants) {
-      const ti = translateExpression(this.oldHeap, this.heap, inv);
-      this.prop = and(this.prop, ti);
+      this.have(translateExpression(this.oldHeap, this.heap, inv));
     }
     return and(truthy(testEnter), bcBody);
   }
@@ -476,7 +551,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const inlinedP: P = eraseTriggersProp(inliner.prop);
     const inlinedSpec: P = this.transformDef(fun, callee, this.heap + 1, inliner.heap,
                                              existsLocs, existsVars, inlinedP);
-    this.prop = and(this.prop, inlinedSpec);
+    this.have(inlinedSpec);
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
@@ -486,7 +561,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): BreakCondition {
-    this.classes.add(stmt.id.name);
+    this.classes.add({ cls: stmt.id.name, fields: stmt.fields });
     this.testBody = this.testBody.concat([stmt]);
     const inv: P = translateExpression(this.heap, this.heap, stmt.invariant);
     this.have(transformClassInvariant(stmt.id.name, stmt.fields, inv, this.heap));

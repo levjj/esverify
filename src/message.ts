@@ -18,10 +18,12 @@ export interface Unsupported extends BaseError { type: 'unsupported'; loc: Synta
 export interface UndefinedIdentifier extends BaseError { type: 'undefined-identifier'; }
 export interface AlreadyDefinedIdentifier extends BaseError { type: 'already-defined'; }
 export interface AssignmentToConst extends BaseError { type: 'assignment-to-const'; }
+export interface ReferenceInInvariant extends BaseError { type: 'reference-in-invariant'; }
 export interface ModelError extends BaseError { type: 'unrecognized-model'; }
 export interface UnexpectedError extends BaseError { type: 'unexpected'; error: Error; }
 export type Message = Verified | Unverified | Unknown | Incorrect | ParseError | Unsupported | UndefinedIdentifier
-                    | AlreadyDefinedIdentifier | AssignmentToConst | ModelError | UnexpectedError;
+                    | AlreadyDefinedIdentifier | AssignmentToConst | ReferenceInInvariant | ModelError
+                    | UnexpectedError;
 
 function formatSimple (msg: Message): string {
   const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;

@@ -2,9 +2,9 @@ declare const console: { log: (s: string) => void };
 declare const require: (s: string) => any;
 declare const fetch: (s: string, opts: any) => Promise<any>;
 
-import { P, Vars, Locs, Heap, Heaps, Classes } from './logic';
+import { P, Vars, FreeVars, Locs, Heap, Heaps, Classes } from './logic';
 import { Model, SMTInput, vcToSMT, smtToModel } from './smt';
-import { Syntax, stringifyStmt } from './javascript';
+import { Syntax, stringifyStmt, Substituter } from './javascript';
 import { Message, MessageException, unexpected } from './message';
 import { options } from './options';
 
@@ -19,14 +19,14 @@ export default class VerificationCondition {
   vars: Vars;
   prop: P;
   loc: Syntax.SourceLocation;
-  freeVars: Vars;
+  freeVars: FreeVars;
   testBody: Array<Syntax.Statement>;
   description: string;
   inprocess: boolean;
   result: Message | null;
 
   constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation,
-               description: string, freeVars: Vars, body: Array<Syntax.Statement>) {
+               description: string, freeVars: FreeVars, body: Array<Syntax.Statement>) {
     this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap + 1).keys()]);
     this.locs = new Set([...locs]);
@@ -73,19 +73,36 @@ export default class VerificationCondition {
     return smt;
   }
 
+  private modelValueToJavaScript (val: Model.Value): string {
+    switch (val.type) {
+      case 'num':
+      case 'bool':
+      case 'str':
+        return JSON.stringify(val.v);
+      case 'null':
+        return 'null';
+      case 'undefined':
+        return 'undefined';
+      case 'fun':
+        return 'function() { }';
+      case 'obj':
+        return '{}';
+      case 'obj-cls':
+        return `new ${val.cls}(${val.args.map(this.modelValueToJavaScript).join(', ')})`;
+    }
+  }
+
   private testCode (model: Model): string {
-    const declarations = Object.keys(model).map(v =>
-            `let ${v} = ${typeof(model[v]) === 'function' ? '(function(){})' : JSON.stringify(model[v])};\n`);
-    const oldValues = Object.keys(model).map(v =>
-            `let old_${v} = ${v};\n`);
+    const sub: Substituter = new Substituter();
+    Object.keys(model).forEach(varName => {
+      sub.replaceVar(`__free__${varName}`, this.modelValueToJavaScript(model[varName]));
+    });
     return `
 function assert(p) { if (!p) throw new Error("assertion failed"); }
 function pure() { return true; /* not tested dynamically */ }
 function spec() { return true; /* not tested dynamically */ }
-${declarations.join('')}
-${oldValues.join('')}
 
-${this.testBody.map(s => stringifyStmt(s)).join('\n')}`;
+${this.testBody.map(s => stringifyStmt(sub.visitStatement(s))).join('\n')}`;
   }
 
   private process (out: SMTOutput): Message {
