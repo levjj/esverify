@@ -552,6 +552,57 @@ describe('higher-order proofs', () => {
   verified('fibMono: (fib(n) <= fib(m))');
 });
 
+describe('global mutable variable with missing invariant', () => {
+
+  code(() => {
+    let x = 23;
+    let y = 42;
+    let z = 69;
+
+    invariant(typeof y === 'number');
+
+    invariant(typeof z === 'number' && z > 22);
+
+    function f () {
+      ensures(res => res > 22);
+
+      return x;
+    }
+
+    function g () {
+      ensures(res => res > 22);
+
+      return y;
+    }
+
+    function h () {
+      ensures(res => res > 22);
+
+      return z;
+    }
+  });
+
+  incorrect('f: (res > 22)');
+  incorrect('g: (res > 22)');
+  verified('h: (res > 22)');
+
+  it('returns counter-example for missing invariant', async () => {
+    const m = await vcs[0].verify();
+    expect(m.description).to.eql('f: (res > 22)');
+    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
+    expect(m.model).to.have.property('x');
+    expect(m.model.x).to.eql({ type: 'bool', v: true });
+  });
+
+  it('returns counter-example with insufficient invariant', async () => {
+    const m = await vcs[3].verify();
+    expect(m.description).to.eql('g: (res > 22)');
+    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
+    expect(m.model).to.have.property('y');
+    expect(m.model.y).to.eql({ type: 'num', v: 0 });
+  });
+});
+
 describe('simple class invariant', () => {
 
   code(() => {
