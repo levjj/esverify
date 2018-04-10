@@ -1230,3 +1230,68 @@ describe('simple arrays', () => {
   verified('precondition f(a2)');
   incorrect('a2 has property 2');
 });
+
+describe('function subtyping with same type', () => {
+
+  code(() => {
+    function f (g) {
+      requires(spec(g, x => x > 3, (x, y) => y > x));
+      ensures(res => spec(res, x => x > 3, (x, y) => y > x));
+      return g;
+    }
+  });
+
+  verified('f: spec(res, (x) => ((x > 3)), (x, y) => ((y > x)))');
+});
+
+describe('function subtyping with stronger pre', () => {
+
+  code(() => {
+    function f (g) {
+      requires(spec(g, x => x > 3, (x, y) => y > x));
+      ensures(res => spec(res, x => x > 4, (x, y) => y > x));
+      return g;
+    }
+  });
+
+  verified('f: spec(res, (x) => ((x > 4)), (x, y) => ((y > x)))');
+});
+
+describe('function subtyping with weaker pre', () => {
+
+  code(() => {
+    function f (g) {
+      requires(spec(g, x => x > 3, (x, y) => y > x));
+      ensures(res => spec(res, x => x > 2, (x, y) => y > x));
+      return g;
+    }
+  });
+
+  unverified('f: spec(res, (x) => ((x > 2)), (x, y) => ((y > x)))');
+});
+
+describe('function subtyping with stronger post', () => {
+
+  code(() => {
+    function f (g) {
+      requires(spec(g, x => x > 3, (x, y) => y > x));
+      ensures(res => spec(res, x => x > 3, (x, y) => y > x + 1));
+      return g;
+    }
+  });
+
+  unverified('f: spec(res, (x) => ((x > 3)), (x, y) => ((y > (x + 1))))');
+});
+
+describe('function subtyping with weaker post', () => {
+
+  code(() => {
+    function f (g) {
+      requires(spec(g, x => x > 3, (x, y) => y > x));
+      ensures(res => spec(res, x => x > 3, (x, y) => y >= x));
+      return g;
+    }
+  });
+
+  verified('f: spec(res, (x) => ((x > 3)), (x, y) => ((y >= x)))');
+});
