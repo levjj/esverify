@@ -27,7 +27,8 @@ function code (fn: () => any) {
   });
 }
 
-function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string, debug: boolean = false) {
+function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string, debug: boolean = false):
+         Mocha.ITest {
   const body = async () => {
     /* tslint:disable:no-unused-expression */
     if (debug) {
@@ -49,20 +50,20 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
     }
   };
   if (debug) {
-    it.only(description + ' ' + expected, body);
+    return it.only(description + ' ' + expected, body);
   } else {
-    it(description + ' ' + expected, body);
+    return it(description + ' ' + expected, body);
   }
 }
 
-function skip (description: string) { it.skip(description); }
-function verified (description: string) { helper('verified', description); }
-function unverified (description: string) { helper('unverified', description); }
-function incorrect (description: string) { helper('incorrect', description); }
+function skip (description: string) { return it.skip(description); }
+function verified (description: string): Mocha.ITest { return helper('verified', description); }
+function unverified (description: string): Mocha.ITest { return helper('unverified', description); }
+function incorrect (description: string): Mocha.ITest { return helper('incorrect', description); }
 
-function verifiedDebug (description: string) { helper('verified', description, true); }
-function unverifiedDebug (description: string) { helper('unverified', description, true); }
-function incorrectDebug (description: string) { helper('incorrect',description, true); }
+function verifiedDebug (description: string): Mocha.ITest { return helper('verified', description, true); }
+function unverifiedDebug (description: string): Mocha.ITest { return helper('unverified', description, true); }
+function incorrectDebug (description: string): Mocha.ITest { return helper('incorrect',description, true); }
 
 describe('max()', () => {
 
