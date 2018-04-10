@@ -185,9 +185,13 @@ export class Model {
       } else if (tag === 'jsnum') {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
-        if (typeof v !== 'string') throw this.modelError(s.toString());
-        const neg = v.match(/\(- ([0-9]+)\)/);
-        return { type: 'num', v: neg ? -neg[1] : +v };
+        if (typeof v === 'string') {
+          return { type: 'num', v: parseInt(v, 10) };
+        } else {
+          const m = matchSExpr(v, ['-', { name: 'num' }]);
+          if (m === null) throw this.modelError(`cannot parse ${v}`);
+          return { type: 'num', v: - parseInt(m.num as string, 10) };
+        }
       } else if (tag === 'jsstr') {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
