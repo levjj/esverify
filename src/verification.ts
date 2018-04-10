@@ -1,14 +1,13 @@
+import { Substituter, Syntax, stringifyStmt } from './javascript';
+import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars } from './logic';
+import { Message, MessageException, unexpected } from './message';
+import { Model, valueToJavaScript } from './model';
+import { options } from './options';
+import { SMTInput, SMTOutput, vcToSMT } from './smt';
+
 declare const console: { log: (s: string) => void };
 declare const require: (s: string) => any;
 declare const fetch: (s: string, opts: any) => Promise<any>;
-
-import { P, Vars, FreeVars, Locs, Heap, Heaps, Classes } from './logic';
-import { Model, SMTInput, vcToSMT, smtToModel } from './smt';
-import { Syntax, stringifyStmt, Substituter } from './javascript';
-import { Message, MessageException, unexpected } from './message';
-import { options } from './options';
-
-export type SMTOutput = string;
 
 let checkedLocalZ3Version: boolean = false;
 
@@ -63,7 +62,7 @@ export default class VerificationCondition {
   }
 
   private prepareSMT (): SMTInput {
-    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, this.prop);
+    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.prop);
     if (options.verbose) {
       console.log('SMT Input:');
       console.log('------------');
@@ -73,29 +72,11 @@ export default class VerificationCondition {
     return smt;
   }
 
-  private modelValueToJavaScript (val: Model.Value): string {
-    switch (val.type) {
-      case 'num':
-      case 'bool':
-      case 'str':
-        return JSON.stringify(val.v);
-      case 'null':
-        return 'null';
-      case 'undefined':
-        return 'undefined';
-      case 'fun':
-        return 'function() { }';
-      case 'obj':
-        return '{}';
-      case 'obj-cls':
-        return `new ${val.cls}(${val.args.map(this.modelValueToJavaScript).join(', ')})`;
-    }
-  }
-
   private testCode (model: Model): string {
     const sub: Substituter = new Substituter();
-    Object.keys(model).forEach(varName => {
-      sub.replaceVar(`__free__${varName}`, this.modelValueToJavaScript(model[varName]));
+    this.freeVars.forEach(freeVar => {
+      const expr = valueToJavaScript(model.valueOf(freeVar));
+      sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, expr);
     });
     return `
 function assert(p) { if (!p) throw new Error("assertion failed"); }
@@ -113,7 +94,7 @@ ${this.testBody.map(s => stringifyStmt(sub.visitStatement(s))).join('\n')}`;
       console.log('------------');
     }
     if (out && out.startsWith('sat')) {
-      const m = smtToModel(out);
+      const m = new Model(out);
       const code = this.testCode(m);
       if (!options.quiet && options.verbose) {
         console.log('Test Code:');

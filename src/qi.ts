@@ -1,7 +1,8 @@
-import { Syntax, P, Heap, Heaps, Locs, Vars, Transformer, Substituter, Traverser, Reducer, tru, and, eq,
-         implies, eqProp, copy } from './logic';
+import { Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser,
+         Vars, and, copy, eq, eqProp, implies, tru } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
+
 declare const console: { log: (s: string) => void };
 
 class TriggerEraser extends Transformer {

@@ -1,8 +1,7 @@
-import { flatMap } from './util';
-import { Syntax, P, Classes, Vars, FreeVars, Locs, Heap, Heaps, Visitor, implies } from './logic';
-import { instantiateQuantifiers } from './qi';
-import { MessageException } from './message';
+import { Classes, Heap, Heaps, Locs, P, Syntax, Vars, Visitor, implies } from './logic';
 import { options } from './options';
+import { instantiateQuantifiers } from './qi';
+import { flatMap } from './util';
 
 export type SMTInput = string;
 export type SMTOutput = string;
@@ -246,13 +245,14 @@ function propositionToAssert (prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): SMTInput {
+export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
   return `(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
-(declare-sort Func) ; unspecified function
-(declare-sort Obj) ; unspecified object
+(declare-sort Func) ; function reference
+(declare-sort Obj) ; object reference
+(declare-sort Arr) ; array reference
 
 ; Values in JavaScript
 (declare-datatypes () ((JSVal
@@ -263,10 +263,11 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
   jsundefined
   (jsfun (funv Func))
   (jsobj (objv Obj))
+  (jsobj_Array (arrv Arr))
 ${[...classes].map(({ cls, fields }) =>
   fields.length === 0
-  ? `  jsobj_${cls}\n`
-  : `  (jsobj_${cls} ${fields.map(field => `(${cls}-${field} JSVal)`).join(' ')})\n`
+  ? `    jsobj_${cls}\n`
+  : `    (jsobj_${cls} ${fields.map(field => `(${cls}-${field} JSVal)`).join(' ')})\n`
 ).join('')})))
 
 ; Types in JavaScript
@@ -288,9 +289,10 @@ ${[...classes].map(({ cls, fields }) =>
   (ite (is-jsnull x) "null"
   (ite (is-jsundefined x) "undefined"
   (ite (is-jsfun x) "function () { ... }"
+  (ite (is-jsobj_Array x) "[object Array]"
 ${[...classes].map(({ cls }) =>
   `  (ite (is-jsobj_${cls} x) "[object ${cls}]"`).join('\n')}
-  "[object Object]"${[...classes].map(c => ')').join('')})))))))
+  "[object Object]"${[...classes].map(c => ')').join('')}))))))))
 
 (define-fun _falsy ((x JSVal)) Bool
   (or (is-jsnull x)
@@ -441,39 +443,51 @@ ${[...classes].map(({ cls }) =>
 
 ; Functions
 ${[...Array(10).keys()].map(i => `
-(declare-fun pre${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
-(declare-fun post${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
-(declare-fun app${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
-(declare-fun eff${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
-(declare-fun call${i} (JSVal Heap ${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`).join('')}
+(declare-fun pre${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
+(declare-fun post${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
+(declare-fun app${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
+(declare-fun eff${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
+(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`).join('')}
 
 ; Objects
 (declare-sort ClassName)
 (declare-const c_Object ClassName)
 (declare-const c_Function ClassName)
+(declare-const c_Array ClassName)
 ${[...classes].map(({ cls }) => `(declare-const c_${cls} ClassName)\n`).join('')}
-(assert (distinct c_Object c_Function ${[...classes].map(({ cls }) => 'c_' + cls).join(' ')}))
+(assert (distinct c_Object c_Function c_Array ${[...classes].map(({ cls }) => 'c_' + cls).join(' ')}))
 
 (declare-fun objhas (Obj String) Bool)
 (declare-fun objfield (Obj String) JSVal)
+(declare-fun arrlength (Arr) Int)
+(declare-fun arrelems (Arr Int) JSVal)
 
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (objhas (objv obj) (_tostring prop)))
+      (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
+      (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
+                                (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
 `      (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}"))`).join('\n')}
 ))
 
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
   (ite (is-jsobj obj) (objfield (objv obj) (_tostring prop))
+  (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
+  (ite (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
+                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
+                                 (arrelems (arrv obj) (str.to.int (_tostring prop)))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
 `  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}")) (${cls}-${field} obj)`).join('\n')}
   jsundefined
-${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')}))
+${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')}))))
 
 (define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
-  (or (and (is-jsfun obj) (= cls c_Object))
+  (or (and (is-jsobj obj) (= cls c_Object))
+      (and (is-jsfun obj) (= cls c_Object))
       (and (is-jsfun obj) (= cls c_Function))
-      (and (is-jsobj obj) (= cls c_Object))
+      (and (is-jsobj_Array obj) (= cls c_Object))
+      (and (is-jsobj_Array obj) (= cls c_Array))
 ${[...classes].map(({ cls }) =>
 `      (and (is-jsobj_${cls} obj) (= cls c_Object))
       (and (is-jsobj_${cls} obj) (= cls c_${cls}))`).join('\n')}
@@ -492,146 +506,5 @@ ${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
 ${propositionToAssert(prop)}
 
 (check-sat)
-(get-value (${[...freeVars].map(v => typeof v === 'string' ? `v_${v}` : `(select h_${v.heap} l_${v.name})`)
-                           .join(' ')}))`;
-}
-
-export namespace Model {
-  /* tslint:disable:ter-indent */
-
-  export interface Num { type: 'num'; v: number; }
-  export interface Bool { type: 'bool'; v: boolean; }
-  export interface Str { type: 'str'; v: string; }
-  export interface Null { type: 'null'; }
-  export interface Undefined { type: 'undefined'; }
-  export interface Fun { type: 'fun'; v: string; }
-  export interface Obj { type: 'obj'; v: string; }
-  export interface ObjCls { type: 'obj-cls'; cls: string; args: Array<Value>; }
-  export type Value = Num | Bool | Str | Null | Undefined | Fun | Obj | ObjCls;
-}
-
-export type Model = { [varName: string]: Model.Value };
-
-function modelError (smt: SMTOutput): MessageException {
-  const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
-  return new MessageException({ status: 'error', type: 'unrecognized-model', loc, description: `cannot parse ${smt}` });
-}
-
-type SExpr = string | SExprList;
-interface SExprList extends Array<SExpr> {}
-
-function parseSExpr (input: string): SExpr {
-  let idx = 0;
-
-  function skipWS () {
-    while (input[idx] === ' ' || input[idx] === '\t' || input[idx] === '\n') idx++;
-  }
-
-  function sexpr (): SExpr | null {
-    skipWS();
-    if (input[idx] === '(') {
-      idx++;
-      const list: SExprList = [];
-      for (let next = sexpr(); next !== null; next = sexpr()) {
-        list.push(next);
-      }
-      skipWS();
-      if (input[idx++] !== ')') throw modelError(input);
-      return list;
-    }
-    const m = input.substr(idx).match(/^("[^"]*")|^\w+/);
-    if (m) {
-      idx += m[0].length;
-      return m[0];
-    }
-    return null;
-  }
-
-  const result = sexpr();
-  if (result === null) {
-    throw modelError(input);
-  } else {
-    return result;
-  }
-}
-
-function smtToValue (s: SExpr): Model.Value {
-  if (typeof s === 'string') {
-    if (s === 'jsundefined') {
-      return { type: 'undefined' };
-    } else if (s === 'jsnull') {
-      return { type: 'null' };
-    } else if (s.startsWith('jsobj_')) {
-      return { type: 'obj-cls', cls: s.substr(6), args: [] };
-    } else {
-      throw modelError(s);
-    }
-  } else {
-    if (s.length < 1) throw modelError(s.toString());
-    const tag = s[0];
-    if (typeof tag !== 'string') throw modelError(tag.toString());
-    if (tag === 'jsbool') {
-      if (s.length !== 2) throw modelError(s.toString());
-      const v = s[1];
-      if (typeof v !== 'string') throw modelError(s.toString());
-      return { type: 'bool', v: v === 'true' };
-    } else if (tag === 'jsnum') {
-      if (s.length !== 2) throw modelError(s.toString());
-      const v = s[1];
-      if (typeof v !== 'string') throw modelError(s.toString());
-      const neg = v.match(/\(- ([0-9]+)\)/);
-      return { type: 'num', v: neg ? -neg[1] : +v };
-    } else if (tag === 'jsstr') {
-      if (s.length !== 2) throw modelError(s.toString());
-      const v = s[1];
-      if (typeof v !== 'string') throw modelError(s.toString());
-      return { type: 'str', v: v.substr(1, v.length - 2) };
-    } else if (tag === 'jsfun') {
-      if (s.length !== 2) throw modelError(s.toString());
-      const v = s[1];
-      if (typeof v !== 'string') throw modelError(s.toString());
-      return { type: 'fun', v };
-    } else if (tag === 'jsobj') {
-      if (s.length !== 2) throw modelError(s.toString());
-      const v = s[1];
-      if (typeof v !== 'string') throw modelError(s.toString());
-      return { type: 'obj', v };
-    } else if (tag.startsWith('jsobj_')) {
-      return {
-        type: 'obj-cls',
-        cls: tag.substr(6),
-        args: s.slice(1).map(smtToValue)
-      };
-    } else {
-      throw modelError(tag);
-    }
-  }
-}
-
-export function smtToModel (smt: SMTOutput): Model {
-  // assumes smt starts with "sat", so remove "sat"
-  const smt2 = smt.slice(3, smt.length);
-  // return empty model if there was an error
-  if (smt2.trim().startsWith('(error')) return {};
-
-  const data = parseSExpr(smt2.trim());
-  const model: Model = {};
-  if (typeof data === 'string') throw modelError(data);
-  data.forEach(nameAndValue => {
-    if (typeof nameAndValue === 'string') throw modelError(nameAndValue);
-    if (nameAndValue.length !== 2) throw modelError(smt);
-    const nameExpr: SExpr = nameAndValue[0];
-    let name: string;
-    if (typeof nameExpr === 'string') { // v_x
-      name = nameExpr.substr(2);
-    } else { // (select h_i l_x)
-      if (nameExpr.length !== 3) throw modelError(smt);
-      if (nameExpr[0] !== 'select') throw modelError(smt);
-      const loc = nameExpr[2];
-      if (typeof loc !== 'string') throw modelError(smt);
-      name = loc.substr(2);
-    }
-    model[name] = smtToValue(nameAndValue[1]);
-  });
-  return model;
+(get-model)`;
 }

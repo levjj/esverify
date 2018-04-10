@@ -1,7 +1,5 @@
-declare const console: { log: (s: string) => void, warn: (s: string) => void, error: (s: string) => void };
-
-import { Model } from './smt';
 import { Syntax } from './javascript';
+import { Model } from './model';
 import { options } from './options';
 
 export interface BaseMessage { status: string; loc: Syntax.SourceLocation; description: string; }
@@ -24,6 +22,8 @@ export interface UnexpectedError extends BaseError { type: 'unexpected'; error: 
 export type Message = Verified | Unverified | Unknown | Incorrect | ParseError | Unsupported | UndefinedIdentifier
                     | AlreadyDefinedIdentifier | AssignmentToConst | ReferenceInInvariant | ModelError
                     | UnexpectedError;
+
+declare const console: { log: (s: string) => void, warn: (s: string) => void, error: (s: string) => void };
 
 function formatSimple (msg: Message): string {
   const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;

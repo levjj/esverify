@@ -1,11 +1,11 @@
-import VerificationCondition from './verification';
-import { Syntax, Visitor, stringifyExpr, loopTestingCode, checkPreconditions, isMutable,
-         replaceVar as replaceJSVar, nullLoc } from './javascript';
-import { A, P, Classes, Vars, FreeVars, Locs, Heap, transformSpec, und, tru, fls, truthy, falsy,
-         implies, and, or, eq, not, heapEq, heapStore, removePrefix, replaceVar,
-         replaceResultWithCall, transformClassInvariant } from './logic';
 import { translateExpression } from './assertions';
+import { Syntax, Visitor, checkPreconditions, id, isMutable, loopTestingCode, nullLoc,
+         replaceVar as replaceJSVar, stringifyExpr } from './javascript';
+import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq,
+         heapStore, implies, not, or, removePrefix, replaceResultWithCall, replaceVar,
+         transformClassInvariant, transformSpec, tru, truthy, und } from './logic';
 import { eraseTriggersProp } from './qi';
+import VerificationCondition from './verification';
 
 type BreakCondition = P;
 
@@ -71,42 +71,14 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.freeVars.push(name);
     this.testBody = this.testBody.concat([{
       type: 'VariableDeclaration',
-      id: {
-        type: 'Identifier',
-        name,
-        decl: { type: 'Unresolved' },
-        loc: nullLoc(),
-        refs: [],
-        isWrittenTo: false
-      },
-      init: {
-        type: 'Identifier',
-        name: `__free__${name}`,
-        decl: { type: 'Unresolved' },
-        loc: nullLoc(),
-        refs: [],
-        isWrittenTo: false
-      },
+      id: id(name),
+      init: id(`__free__${name}`),
       kind: 'const',
       loc: nullLoc()
     }, {
       type: 'VariableDeclaration',
-      id: {
-        type: 'Identifier',
-        name: `old_${name}`,
-        decl: { type: 'Unresolved' },
-        loc: nullLoc(),
-        refs: [],
-        isWrittenTo: false
-      },
-      init: {
-        type: 'Identifier',
-        name,
-        decl: { type: 'Unresolved' },
-        loc: nullLoc(),
-        refs: [],
-        isWrittenTo: false
-      },
+      id: id(`old_${name}`),
+      init: id(name),
       kind: 'const',
       loc: nullLoc()
     }]);
@@ -118,43 +90,15 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       type: 'ExpressionStatement',
       expression: {
         type: 'AssignmentExpression',
-        left: {
-          type: 'Identifier',
-          name,
-          decl: { type: 'Unresolved' },
-          loc: nullLoc(),
-          refs: [],
-          isWrittenTo: false
-        },
-        right: {
-          type: 'Identifier',
-          name: `__free__${name}`,
-          decl: { type: 'Unresolved' },
-          loc: nullLoc(),
-          refs: [],
-          isWrittenTo: false
-        },
+        left: id(name),
+        right: id(`__free__${name}`),
         loc: nullLoc()
       },
       loc: nullLoc()
     }, {
       type: 'VariableDeclaration',
-      id: {
-        type: 'Identifier',
-        name: `old_${name}`,
-        decl: { type: 'Unresolved' },
-        loc: nullLoc(),
-        refs: [],
-        isWrittenTo: false
-      },
-      init: {
-        type: 'Identifier',
-        name,
-        decl: { type: 'Unresolved' },
-        loc: nullLoc(),
-        refs: [],
-        isWrittenTo: false
-      },
+      id: id(`old_${name}`),
+      init: id(name),
       kind: 'const',
       loc: nullLoc()
     }]);
@@ -279,6 +223,21 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     return object;
   }
 
+  visitArrayExpression (expr: Syntax.ArrayExpression): A {
+    const object = this.freshVar();
+    this.have({ type: 'InstanceOf', left: object, right: 'Array' });
+
+    const elems: Array<A> = expr.elements.map(e => this.visitExpression(e));
+    const lengthProp: A = { type: 'Literal', value: 'length' };
+    const lengthVal: A = { type: 'Literal', value: elems.length };
+    this.have(eq({ type: 'MemberExpression', object, property: lengthProp }, lengthVal));
+    elems.forEach((property, idx) => {
+      this.have(eq({ type: 'MemberExpression', object, property: { type: 'Literal', value: `${idx}` } },
+                   elems[idx]));
+    });
+    return object;
+  }
+
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): A {
     const test: P = { type: 'InstanceOf', left: this.visitExpression(expr.left), right: expr.right.name };
     const consequent: A = { type: 'Literal', value: true };
@@ -374,14 +333,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     this.testBody = startBody.concat([{
       type: 'VariableDeclaration',
-      id: {
-        type: 'Identifier',
-        name: this.resVar,
-        decl: { type: 'Unresolved' },
-        loc: f.loc,
-        refs: [],
-        isWrittenTo: false
-      },
+      id: id(this.resVar, f.loc),
       init: {
         type: 'CallExpression',
         callee: f.type === 'FunctionExpression' ? f : f.id,

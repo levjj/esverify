@@ -37,7 +37,7 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
     const vc = vcs.find(v => v.description === description);
     expect(vc).to.be.ok;
     const res = await vc.verify();
-    if (res.status === 'error' && res.type === 'unexpected') console.log(res.error);
+    if (res.status === 'error' && debug) console.log(res);
     if (expected === 'verified' || expected === 'unverified') {
       const st = res.status === 'error' && res.type === 'incorrect' ? res.type : res.status;
       expect(st).to.be.eql(expected);
@@ -111,8 +111,8 @@ describe('max() with missing pre', () => {
   it('returns counter-example', async () => {
     const m = await vcs[0].verify();
     if (m.status !== 'unverified') throw new Error();
-    expect(m.model).to.have.property('b');
-    expect(m.model.b).to.eql({ type: 'bool', v: false });
+    expect(m.model.variables()).to.include('b');
+    expect(m.model.valueOf('b')).to.eql({ type: 'bool', v: false });
   });
 });
 
@@ -380,8 +380,8 @@ describe('buggy fibonacci', () => {
   it('returns counter-example', async () => {
     const m = await vcs[2].verify();
     if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model).to.have.property('n');
-    expect(m.model.n).to.eql({ type: 'num', v: 2 });
+    expect(m.model.variables()).to.include('n');
+    expect(m.model.valueOf('n')).to.eql({ type: 'num', v: 2 });
   });
 });
 
@@ -590,16 +590,18 @@ describe('global mutable variable with missing invariant', () => {
     const m = await vcs[0].verify();
     expect(m.description).to.eql('f: (res > 22)');
     if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model).to.have.property('x');
-    expect(m.model.x).to.eql({ type: 'bool', v: true });
+    expect(m.model.variables()).to.include('x');
+    expect(m.model.valueOf({ name: 'x', heap: 3 })).to.eql({ type: 'num', v: 23 });
+    expect(m.model.valueOf({ name: 'x', heap: 4 })).to.eql({ type: 'bool', v: true });
   });
 
   it('returns counter-example with insufficient invariant', async () => {
     const m = await vcs[3].verify();
     expect(m.description).to.eql('g: (res > 22)');
     if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model).to.have.property('y');
-    expect(m.model.y).to.eql({ type: 'num', v: 0 });
+    expect(m.model.variables()).to.include('y');
+    expect(m.model.valueOf({ name: 'y', heap: 3 })).to.eql({ type: 'num', v: 42 });
+    expect(m.model.valueOf({ name: 'y', heap: 4 })).to.eql({ type: 'num', v: 0 });
   });
 });
 
@@ -1132,26 +1134,98 @@ describe('simple object access', () => {
       return a.b;
     }
 
-    function h () {
-      const a = new A(23);
-      assert(a instanceof A);
-      assert(a instanceof Object);
-      assert('b' in a);
-      assert(a.b > 22);
-      assert(a['b'] > 22);
-      const p = 'b';
-      assert(a[p] > 22);
-    }
+    const a = new A(23);
+    assert(a instanceof A);
+    assert(a instanceof Object);
+    assert('b' in a);
+    assert(a.b > 22);
+    assert(a['b'] > 22);
+    const p = 'b';
+    assert(a[p] > 22);
   });
 
   verified('f: a has property "b"');
   verified('f: (res >= 0)');
   verified('g: a has property "b"');
   incorrect('g: (res < 0)');
-  verified('h: class invariant A');
-  verified('h: assert: (a instanceof A)');
-  verified('h: assert: (a instanceof Object)');
-  verified('h: assert: ("b" in a)');
-  verified('h: assert: (a.b > 22)');
-  verified('h: assert: (a[p] > 22)');
+  verified('class invariant A');
+  verified('assert: (a instanceof A)');
+  verified('assert: (a instanceof Object)');
+  verified('assert: ("b" in a)');
+  verified('assert: (a.b > 22)');
+  verified('assert: (a[p] > 22)');
+});
+
+describe('simple arrays', () => {
+
+  code(() => {
+    function f (a: Array<number>) {
+      requires(a instanceof Array);
+      requires(a.length >= 1);
+
+      return a[0];
+    }
+
+    function g (a: Array<number>) {
+      requires(a instanceof Array);
+      requires(a.length >= 1);
+      ensures(res => res > 0);
+
+      return a[0];
+    }
+
+    const a0 = [];
+    assert(a0 instanceof Array);
+    assert(a0 instanceof Object);
+    assert('length' in a0);
+    assert(a0.length === 0);
+
+    const a1 = [23];
+    assert(a1 instanceof Array);
+    assert(a1 instanceof Object);
+    assert('length' in a1);
+    assert(a1.length === 1);
+    assert(0 in a1);
+    assert(a1[0] > 22);
+    const p = 3 - 2 - 1;
+    assert(a1[p] > 22);
+    f(a1);
+
+    const a2 = [23, 42];
+    assert(a2.length === 2);
+    assert(!(2 in a2));
+    f(a2);
+    a2[2];
+  });
+
+  verified('f: a has property 0');
+  verified('g: a has property 0');
+  incorrect('g: (res > 0)');
+
+  it('g: (res > 0) returns counter-example', async () => {
+    const m = await vcs[2].verify();
+    expect(m.description).to.eql('g: (res > 0)');
+    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
+    expect(m.model.variables()).to.include('a');
+    expect(m.model.valueOf('a')).to.eql({ type: 'arr', elems: [{ type: 'str', v: 'number' }] });
+  });
+
+  verified('assert: (a0 instanceof Array)');
+  verified('assert: (a0 instanceof Object)');
+  verified('assert: ("length" in a0)');
+  verified('assert: (a0.length === 0)');
+
+  verified('assert: (a1 instanceof Array)');
+  verified('assert: (a1 instanceof Object)');
+  verified('assert: ("length" in a1)');
+  verified('assert: (a1.length === 1)');
+  verified('assert: (0 in a1)');
+  verified('assert: (a1[0] > 22)');
+  verified('assert: (a1[p] > 22)');
+  verified('precondition f(a1)');
+
+  verified('assert: (a2.length === 2)');
+  verified('assert: !(2 in a2)');
+  verified('precondition f(a2)');
+  incorrect('a2 has property 2');
 });

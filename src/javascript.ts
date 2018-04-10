@@ -1,7 +1,7 @@
 import * as JSyntax from 'estree';
-import { flatMap } from './util';
 import { MessageException, unexpected } from './message';
 import { options } from './options';
+import { flatMap } from './util';
 
 export namespace Syntax {
   /* tslint:disable:ter-indent */
@@ -74,6 +74,9 @@ export namespace Syntax {
                                    callee: Identifier;
                                    args: Array<Expression>;
                                    loc: SourceLocation; }
+  export interface ArrayExpression { type: 'ArrayExpression';
+                                     elements: Array<Expression>;
+                                     loc: SourceLocation; }
   export interface InstanceOfExpression { type: 'InstanceOfExpression';
                                           left: Expression;
                                           right: Identifier;
@@ -111,6 +114,7 @@ export namespace Syntax {
                          | SpecExpression
                          | PureExpression
                          | NewExpression
+                         | ArrayExpression
                          | InstanceOfExpression
                          | InExpression
                          | MemberExpression
@@ -245,16 +249,21 @@ function loc (n: JSyntax.Node): Syntax.SourceLocation {
   return { file: options.filename, start: n.loc.start, end: n.loc.end };
 }
 
-function patternAsIdentifier (node: JSyntax.Pattern): Syntax.Identifier {
-  if (node.type !== 'Identifier') throw unsupported(node);
+export function id (name: string, loc: Syntax.SourceLocation = nullLoc(), isWrittenTo: boolean = false):
+                Syntax.Identifier {
   return {
     type: 'Identifier',
-    name: node.name,
+    name,
     refs: [],
     decl: { type: 'Unresolved' },
-    isWrittenTo: false,
-    loc: loc(node)
+    isWrittenTo,
+    loc
   };
+}
+
+function patternAsIdentifier (node: JSyntax.Pattern): Syntax.Identifier {
+  if (node.type !== 'Identifier') throw unsupported(node);
+  return id(node.name, loc(node));
 }
 
 function unaryOp (unop: JSyntax.UnaryExpression): Syntax.UnaryOperator {
@@ -342,8 +351,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       if (expr.name === 'undefined') {
         return { type: 'Literal', value: undefined, loc: loc(expr) };
       }
-      return { type: 'Identifier', name: expr.name, refs: [],
-               isWrittenTo: false, decl: { type: 'Unresolved' }, loc: loc(expr) };
+      return id(expr.name, loc(expr));
     case 'Literal':
       if (expr.value instanceof RegExp) throw unsupported(expr);
       return {
@@ -352,11 +360,8 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         loc: loc(expr)
       };
     case 'ThisExpression':
-      return { type: 'Identifier', name: 'this', refs: [],
-               isWrittenTo: false, decl: { type: 'Unresolved' }, loc: loc(expr) };
+      return id('this', loc(expr));
     case 'ObjectExpression':
-      throw unsupported(expr);
-    case 'ArrayExpression':
       throw unsupported(expr);
     case 'SequenceExpression':
       return {
@@ -401,8 +406,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
     }
     case 'AssignmentExpression':
       if (expr.left.type !== 'Identifier') throw unsupported(expr.left);
-      const to: Syntax.Identifier = { type: 'Identifier', name: expr.left.name,
-        refs: [], isWrittenTo: true, decl: { type: 'Unresolved' }, loc: loc(expr) };
+      const to = id(expr.left.name, loc(expr), true);
       switch (expr.operator) {
         case '=':
           return {
@@ -426,8 +430,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       }
     case 'UpdateExpression': {
       if (expr.argument.type !== 'Identifier') throw unsupported(expr.argument);
-      const to: Syntax.Identifier = { type: 'Identifier', name: expr.argument.name, refs: [],
-                                      isWrittenTo: true, decl: { type: 'Unresolved' }, loc: loc(expr.argument) };
+      const to = id(expr.argument.name, loc(expr.argument), true);
       const one: JSyntax.SimpleLiteral = { type: 'Literal', value: 1, raw: '1', loc: loc(expr) };
       const oneE: Syntax.Literal = { type: 'Literal', value: 1, loc: loc(expr) };
       if (expr.prefix) {
@@ -489,8 +492,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         }
         return {
           type: 'OldIdentifier',
-          id: { type: 'Identifier', name: arg.name,
-                refs: [], isWrittenTo: false, decl: { type: 'Unresolved' }, loc: loc(expr.arguments[0]) },
+          id: id(arg.name, loc(expr.arguments[0])),
           loc: loc(expr)
         };
       }
@@ -567,6 +569,18 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         }),
         loc: loc(expr)
       };
+    case 'ArrayExpression':
+      return {
+        type: 'ArrayExpression',
+        elements: expr.elements.map(expr => {
+          if (expr.type === 'SpreadElement') {
+            throw unsupported(expr);
+          } else {
+            return expressionAsJavaScript(expr);
+          }
+        }),
+        loc: loc(expr)
+      };
     case 'MemberExpression':
       if (expr.object.type === 'Super') throw unsupported(expr.object);
       let property: Syntax.Expression;
@@ -589,20 +603,9 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       if (expr.async) throw unsupported(expr, 'async not supported');
       checkDistinct(expr.params);
       const params: Array<Syntax.Identifier> = expr.params.map(patternAsIdentifier);
-      let id: Syntax.Identifier | null = null;
-      if (expr.type === 'FunctionExpression' && expr.id) {
-        id = {
-          type: 'Identifier',
-          name: expr.id.name,
-          refs: [],
-          isWrittenTo: false,
-          decl: { type: 'Unresolved' },
-          loc: loc(expr.id)
-        };
-      }
       const fe: Syntax.FunctionExpression = {
         type: 'FunctionExpression',
-        id,
+        id: (expr.type === 'FunctionExpression' && expr.id) ? id(expr.id.name, loc(expr.id)) : null,
         params,
         requires: findPreConditions(body),
         ensures: findPostConditions(body),
@@ -707,11 +710,9 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
       if (stmt.async) throw unsupported(stmt, 'async not supported');
       checkDistinct(stmt.params);
       const params: Array<Syntax.Identifier> = stmt.params.map(patternAsIdentifier);
-      const id: Syntax.Identifier = { type: 'Identifier', name: stmt.id.name,
-        refs: [], isWrittenTo: false, decl: { type: 'Unresolved' }, loc: loc(stmt.id) };
       const fd: Syntax.FunctionDeclaration = {
         type: 'FunctionDeclaration',
-        id,
+        id: id(stmt.id.name, loc(stmt.id)),
         params,
         requires: findPreConditions(body),
         ensures: findPostConditions(body),
@@ -857,6 +858,7 @@ export abstract class Visitor<E,S> {
   abstract visitPureExpression (expr: Syntax.PureExpression): E;
   abstract visitSpecExpression (expr: Syntax.SpecExpression): E;
   abstract visitNewExpression (expr: Syntax.NewExpression): E;
+  abstract visitArrayExpression (expr: Syntax.ArrayExpression): E;
   abstract visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): E;
   abstract visitInExpression (expr: Syntax.InExpression): E;
   abstract visitMemberExpression (expr: Syntax.MemberExpression): E;
@@ -877,6 +879,7 @@ export abstract class Visitor<E,S> {
       case 'SpecExpression': return this.visitSpecExpression(expr);
       case 'PureExpression': return this.visitPureExpression(expr);
       case 'NewExpression': return this.visitNewExpression(expr);
+      case 'ArrayExpression': return this.visitArrayExpression(expr);
       case 'InstanceOfExpression': return this.visitInstanceOfExpression(expr);
       case 'InExpression': return this.visitInExpression(expr);
       case 'MemberExpression': return this.visitMemberExpression(expr);
@@ -1025,11 +1028,6 @@ class NameResolver extends Visitor<void,void> {
   allowOld: boolean = false;
   allowRef: boolean = true;
 
-  stringAsIdentifier (name: string): Syntax.Identifier {
-    const loc = { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
-    return { type: 'Identifier', name, refs: [], decl: { type: 'Unresolved' }, isWrittenTo: false, loc };
-  }
-
   scoped (action: () => void, allowsOld: boolean = this.allowOld, allowsRef: boolean = this.allowRef,
           fn: null | Syntax.Function = this.scope.func) {
     const { scope, allowOld, allowRef } = this;
@@ -1101,13 +1099,13 @@ class NameResolver extends Visitor<void,void> {
     this.visitExpression(expr.callee);
     this.scoped(() => {
       expr.args.forEach((a, argIdx) => {
-        this.scope.defSymbol(this.stringAsIdentifier(a), { type: 'SpecArg', decl: expr, argIdx });
+        this.scope.defSymbol(id(a), { type: 'SpecArg', decl: expr, argIdx });
       });
       this.visitExpression(expr.pre);
     }, false);
     this.scoped(() => {
       expr.args.forEach((a, argIdx) => {
-        this.scope.defSymbol(this.stringAsIdentifier(a), { type: 'SpecArg', decl: expr, argIdx });
+        this.scope.defSymbol(id(a), { type: 'SpecArg', decl: expr, argIdx });
       });
       this.visitPostCondition(expr.post);
     }, true);
@@ -1118,6 +1116,10 @@ class NameResolver extends Visitor<void,void> {
   visitNewExpression (expr: Syntax.NewExpression) {
     this.scope.useSymbol(expr.callee, false, true);
     expr.args.forEach(e => this.visitExpression(e));
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression) {
+    expr.elements.forEach(e => this.visitExpression(e));
   }
 
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression) {
@@ -1205,33 +1207,26 @@ class NameResolver extends Visitor<void,void> {
   visitClassDeclaration (stmt: Syntax.ClassDeclaration) {
     this.scope.defSymbol(stmt.id, { type: 'Class', decl: stmt });
     this.scoped(() => {
-      this.scope.defSymbol(this.stringAsIdentifier('this'), { type: 'This', decl: stmt });
+      this.scope.defSymbol(id('this'), { type: 'This', decl: stmt });
       this.visitExpression(stmt.invariant);
     }, false, false);
   }
 
   builtinClass (name: string) {
-    const id: Syntax.Identifier = {
-      type: 'Identifier',
-      name: name,
-      refs: [],
-      decl: { type: 'Unresolved' },
-      isWrittenTo: false,
-      loc: nullLoc()
-    };
     const decl: Syntax.ClassDeclaration = {
       type: 'ClassDeclaration',
-      id,
+      id: id(name),
       fields: [],
       invariant: { type: 'Literal', value: true, loc: nullLoc() },
       loc: nullLoc()
     };
-    this.scope.defSymbol(id, { type: 'Class', decl });
+    this.scope.defSymbol(decl.id, { type: 'Class', decl });
   }
 
   visitProgram (prog: Syntax.Program) {
     this.builtinClass('Object');
     this.builtinClass('Function');
+    this.builtinClass('Array');
     prog.body.forEach(stmt => this.visitStatement(stmt));
     prog.invariants.forEach(inv => this.visitExpression(inv));
   }
@@ -1340,6 +1335,10 @@ class Stringifier extends Visitor<string,string> {
 
   visitNewExpression (expr: Syntax.NewExpression): string {
     return `new ${expr.callee.name}(${expr.args.map(a => this.visitExpression(a)).join(', ')})`;
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): string {
+    return `[${expr.elements.map(a => this.visitExpression(a)).join(', ')}]`;
   }
 
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): string {
@@ -1591,6 +1590,14 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
     };
   }
 
+  visitArrayExpression (expr: Syntax.ArrayExpression): Syntax.Expression {
+    return {
+      type: 'ArrayExpression',
+      elements: expr.elements.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): Syntax.Expression {
     return {
       type: 'InstanceOfExpression',
@@ -1745,7 +1752,7 @@ export function replaceVar (v: string, subst: string | Syntax.Expression, expr: 
 export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.Statement> {
   return [{
     type: 'FunctionDeclaration',
-    id: { type: 'Identifier', name: 'test', decl: { type: 'Unresolved' }, refs: [], isWrittenTo: false, loc: whl.loc },
+    id: id('test', whl.loc),
     params: [],
     requires: [],
     ensures: [],
@@ -1765,10 +1772,7 @@ export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.State
     expression: {
       type: 'CallExpression',
       args: [],
-      callee: {
-        type: 'Identifier', name: 'test', decl: { type: 'Unresolved' },
-        refs: [], isWrittenTo: false, loc: whl.loc
-      },
+      callee: id('test', whl.loc),
       loc: whl.loc
     },
     loc: whl.loc

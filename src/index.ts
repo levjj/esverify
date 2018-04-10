@@ -1,10 +1,10 @@
 import { parseScript } from 'esprima';
 import * as Syntax from 'estree';
-import { Message, MessageException, unexpected, log } from './message';
 import { programAsJavaScript } from './javascript';
-import VerificationCondition from './verification';
-import { vcgenProgram } from './vcgen';
+import { Message, MessageException, log, unexpected } from './message';
 import { Options, options, setOptions } from './options';
+import { vcgenProgram } from './vcgen';
+import VerificationCondition from './verification';
 
 export function verificationConditions (src: string, opts: Partial<Options> = {}):
                 Message | Array<VerificationCondition> {

@@ -1,5 +1,5 @@
 import { Syntax, Visitor, isMutable } from './javascript';
-import { A, P, Heap, replaceResultWithCall, transformSpec, truthy, not, and, or, heapEq } from './logic';
+import { A, Heap, P, and, heapEq, not, or, replaceResultWithCall, transformSpec, truthy } from './logic';
 
 class PureContextError extends Error {
   constructor () { super('not supported in pure functional context'); }
@@ -91,6 +91,10 @@ class AssertionTranslator extends Visitor<A, void> {
   }
 
   visitNewExpression (expr: Syntax.NewExpression): A {
+    throw new PureContextError();
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): A {
     throw new PureContextError();
   }
 
@@ -214,6 +218,10 @@ class PropositionTranslator extends Visitor<P, void> {
   }
 
   visitNewExpression (expr: Syntax.NewExpression): P {
+    throw new PureContextError();
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): P {
     throw new PureContextError();
   }
 
