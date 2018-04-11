@@ -208,6 +208,10 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     throw new Error('Only possible in assertion context');
   }
 
+  visitEveryExpression (expr: Syntax.EveryExpression): A {
+    throw new Error('Only possible in assertion context');
+  }
+
   visitPureExpression (expr: Syntax.PureExpression): A {
     throw new Error('Only possible in assertion context');
   }
@@ -257,7 +261,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   visitMemberExpression (expr: Syntax.MemberExpression): A {
     const object = this.visitExpression(expr.object);
     const property = this.visitExpression(expr.property);
-    this.have({ type: 'AccessTrigger', heap: this.heap, object: object, fuel: 1 });
+    this.have({ type: 'AccessTrigger', heap: this.heap, object, property, fuel: 1 });
     this.verify(
       { type: 'HasProperty', object, property }, expr.loc,
       `${stringifyExpr(expr.object)} has property ${stringifyExpr(expr.property)}`,

@@ -7,6 +7,7 @@ import VerificationCondition from '../src/verification';
 declare const requires: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
 declare const invariant: (x: boolean) => void;
+declare const every: (a: Array<any>, b: ((x: any) => boolean) | ((x: any, y: any) => boolean)) => boolean;
 declare const assert: (x: boolean) => void;
 declare const old: (x: any) => any;
 declare const pure: () => boolean;
@@ -1236,12 +1237,11 @@ describe('function subtyping with same type', () => {
   code(() => {
     function f (g) {
       requires(spec(g, x => x > 3, (x, y) => y > x));
-      ensures(res => spec(res, x => x > 3, (x, y) => y > x));
-      return g;
+      ensures(spec(g , x => x > 3, (x, y) => y > x));
     }
   });
 
-  verified('f: spec(res, (x) => ((x > 3)), (x, y) => ((y > x)))');
+  verified('f: spec(g, (x) => ((x > 3)), (x, y) => ((y > x)))');
 });
 
 describe('function subtyping with stronger pre', () => {
@@ -1249,12 +1249,11 @@ describe('function subtyping with stronger pre', () => {
   code(() => {
     function f (g) {
       requires(spec(g, x => x > 3, (x, y) => y > x));
-      ensures(res => spec(res, x => x > 4, (x, y) => y > x));
-      return g;
+      ensures(spec(g , x => x > 4, (x, y) => y > x));
     }
   });
 
-  verified('f: spec(res, (x) => ((x > 4)), (x, y) => ((y > x)))');
+  verified('f: spec(g, (x) => ((x > 4)), (x, y) => ((y > x)))');
 });
 
 describe('function subtyping with weaker pre', () => {
@@ -1262,12 +1261,11 @@ describe('function subtyping with weaker pre', () => {
   code(() => {
     function f (g) {
       requires(spec(g, x => x > 3, (x, y) => y > x));
-      ensures(res => spec(res, x => x > 2, (x, y) => y > x));
-      return g;
+      ensures(spec(g , x => x > 2, (x, y) => y > x));
     }
   });
 
-  unverified('f: spec(res, (x) => ((x > 2)), (x, y) => ((y > x)))');
+  unverified('f: spec(g, (x) => ((x > 2)), (x, y) => ((y > x)))');
 });
 
 describe('function subtyping with stronger post', () => {
@@ -1275,12 +1273,11 @@ describe('function subtyping with stronger post', () => {
   code(() => {
     function f (g) {
       requires(spec(g, x => x > 3, (x, y) => y > x));
-      ensures(res => spec(res, x => x > 3, (x, y) => y > x + 1));
-      return g;
+      ensures(spec(g , x => x > 3, (x, y) => y > x + 1));
     }
   });
 
-  unverified('f: spec(res, (x) => ((x > 3)), (x, y) => ((y > (x + 1))))');
+  unverified('f: spec(g, (x) => ((x > 3)), (x, y) => ((y > (x + 1))))');
 });
 
 describe('function subtyping with weaker post', () => {
@@ -1288,10 +1285,103 @@ describe('function subtyping with weaker post', () => {
   code(() => {
     function f (g) {
       requires(spec(g, x => x > 3, (x, y) => y > x));
-      ensures(res => spec(res, x => x > 3, (x, y) => y >= x));
-      return g;
+      ensures(spec(g , x => x > 3, (x, y) => y >= x));
     }
   });
 
-  verified('f: spec(res, (x) => ((x > 3)), (x, y) => ((y >= x)))');
+  verified('f: spec(g, (x) => ((x > 3)), (x, y) => ((y >= x)))');
+});
+
+describe('array invariants', () => {
+
+  code(() => {
+    function f_1 () {
+      ensures(res => every(res, e => e > 23));
+
+      return [42, 69];
+    }
+
+    function f_2 (a: Array<number>) {
+      requires(every(a, e => e > 23));
+      requires(a.length >= 1);
+      ensures(res => res > 12);
+
+      return a[0];
+    }
+
+    function f_3 (a: Array<number>) {
+      requires(every(a, e => e > 23));
+      requires(a.length >= 3);
+      ensures(a[2] > 12);
+
+      a[2];
+    }
+
+    function f_4 () {
+      ensures(res => every(res, (e, i) => e > i));
+
+      return [1, 2, 3];
+    }
+
+    function g_1 () {
+      ensures(res => every(res, e => e > 23));
+
+      return [42, 69, 4];
+    }
+
+    function g_2 (a: Array<number>) {
+      requires(every(a, e => e > 23));
+      requires(a.length >= 1);
+      ensures(res => res > 42);
+
+      return a[0];
+    }
+
+    function g_3 (a: Array<number>) {
+      requires(every(a, e => e > 23));
+      requires(a.length >= 3);
+      ensures(a[2] > 12);
+    }
+
+    function g_4 () {
+      ensures(res => every(res, (e, i) => e > i));
+
+      return [1, 2, 2];
+    }
+  });
+
+  verified('f_1: every(res, e => ((e > 23)))');
+  verified('f_2: a has property 0');
+  verified('f_2: (res > 12)');
+  verified('f_3: a has property 2');
+  verified('f_3: (a[2] > 12)');
+  verified('f_4: every(res, (e, i) => ((e > i)))');
+
+  incorrect('g_1: every(res, e => ((e > 23)))');
+
+  verified('g_2: a has property 0');
+  incorrect('g_2: (res > 42)');
+
+  it('g_2: (res > 42) returns counter-example', async () => {
+    const m = await vcs[8].verify();
+    expect(m.description).to.eql('g_2: (res > 42)');
+    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
+    expect(m.model.variables()).to.include('a');
+    expect(m.model.valueOf('a')).to.eql({ type: 'arr', elems: [{ type: 'num', v: 24 }] });
+  });
+
+  incorrect('g_3: (a[2] > 12)');
+
+  it('g_3: (a[2] > 12) returns counter-example', async () => {
+    const m = await vcs[9].verify();
+    expect(m.description).to.eql('g_3: (a[2] > 12)');
+    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
+    expect(m.model.variables()).to.include('a');
+    expect(m.model.valueOf('a')).to.eql({
+      type: 'arr',
+      elems: [{ type: 'bool', v: true }, { type: 'bool', v: true }, { type: 'bool', v: true }]
+    });
+  });
+
+  incorrect('g_4: every(res, (e, i) => ((e > i)))');
 });

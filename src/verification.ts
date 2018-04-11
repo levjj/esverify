@@ -82,6 +82,7 @@ export default class VerificationCondition {
 function assert(p) { if (!p) throw new Error("assertion failed"); }
 function pure() { return true; /* not tested dynamically */ }
 function spec() { return true; /* not tested dynamically */ }
+function every(a, f) { return a.every(f); }
 
 ${this.testBody.map(s => stringifyStmt(sub.visitStatement(s))).join('\n')}`;
   }

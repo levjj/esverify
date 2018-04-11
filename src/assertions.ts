@@ -1,5 +1,6 @@
 import { Syntax, Visitor, isMutable } from './javascript';
-import { A, Heap, P, and, heapEq, not, or, replaceResultWithCall, transformSpec, truthy } from './logic';
+import { A, Heap, P, and, heapEq, not, or, replaceResultWithCall, transformSpec, transformEveryInvariant,
+         truthy } from './logic';
 
 class PureContextError extends Error {
   constructor () { super('not supported in pure functional context'); }
@@ -83,6 +84,10 @@ class AssertionTranslator extends Visitor<A, void> {
   }
 
   visitSpecExpression (expr: Syntax.SpecExpression): A {
+    throw new PropositionContextError();
+  }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): A {
     throw new PropositionContextError();
   }
 
@@ -211,6 +216,13 @@ class PropositionTranslator extends Visitor<P, void> {
     let s = translateExpression(this.heap + 1, this.heap + 2, expr.post.expression);
     s = replaceResultWithCall(callee, this.heap + 1, expr.args, expr.post.argument, s);
     return transformSpec(callee, expr.args, r, s, this.heap + 1);
+  }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): P {
+    const array: A = this.translateExpression(expr.array);
+    const inv = translateExpression(this.heap + 1, this.heap + 1, expr.expression);
+    const index = expr.indexArgument !== null ? expr.indexArgument.name : null;
+    return transformEveryInvariant(array, expr.argument.name, index, inv, this.heap + 1);
   }
 
   visitPureExpression (expr: Syntax.PureExpression): P {

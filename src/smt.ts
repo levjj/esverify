@@ -213,10 +213,11 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
 
   visitForAllAccess (prop: Syntax.ForAllAccess): SMTInput {
     const { heap, fuel } = prop;
-    const accessP: P = { type: 'AccessTrigger', object: 'this', heap, fuel };
+    const accessP: P = { type: 'AccessTrigger', object: 'this', property: prop.property, heap, fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
     return `(forall ((${this.visitVariable('this')} JSVal) `
+                  + `(${this.visitVariable(prop.property)} JSVal)`
                   + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
   }
 
@@ -226,6 +227,13 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
 
   visitHasProperty (prop: Syntax.HasProperty): SMTInput {
     return `(has ${this.visitExpr(prop.object)} ${this.visitExpr(prop.property)})`;
+  }
+
+  visitInBounds (prop: Syntax.InBounds): SMTInput {
+    const indexExpr = this.visitExpr(prop.index);
+    return `(and (is-jsnum ${indexExpr}) `
+              + `(>= (numv ${indexExpr}) 0) `
+              + `(< (numv ${indexExpr}) (arrlength (arrv ${this.visitExpr(prop.array)}))))`;
   }
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): SMTInput {
@@ -461,6 +469,7 @@ ${[...classes].map(({ cls }) => `(declare-const c_${cls} ClassName)\n`).join('')
 (declare-fun objfield (Obj String) JSVal)
 (declare-fun arrlength (Arr) Int)
 (declare-fun arrelems (Arr Int) JSVal)
+(declare-fun access (JSVal JSVal Heap) Bool)
 
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (objhas (objv obj) (_tostring prop)))
@@ -474,13 +483,16 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
   (ite (is-jsobj obj) (objfield (objv obj) (_tostring prop))
   (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
-  (ite (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
-                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
-                                 (arrelems (arrv obj) (str.to.int (_tostring prop)))
+  (ite (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
+       (arrelems (arrv obj) (numv prop))
+  (ite (and (is-jsobj_Array obj)
+            (>= (str.to.int (_tostring prop)) 0)
+            (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
+       (arrelems (arrv obj) (str.to.int (_tostring prop)))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
 `  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}")) (${cls}-${field} obj)`).join('\n')}
   jsundefined
-${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')}))))
+${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')})))))
 
 (define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
   (or (and (is-jsobj obj) (= cls c_Object))
@@ -492,8 +504,6 @@ ${[...classes].map(({ cls }) =>
 `      (and (is-jsobj_${cls} obj) (= cls c_Object))
       (and (is-jsobj_${cls} obj) (= cls c_${cls}))`).join('\n')}
 ))
-
-(declare-fun access (JSVal Heap) Bool)
 
 ; Declarations
 ${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}

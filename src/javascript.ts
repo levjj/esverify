@@ -10,6 +10,8 @@ export namespace Syntax {
                           | { type: 'Var', decl: VariableDeclaration }
                           | { type: 'Func', decl: Function }
                           | { type: 'SpecArg', decl: SpecExpression, argIdx: number }
+                          | { type: 'EveryArg', decl: EveryExpression }
+                          | { type: 'EveryIdxArg', decl: EveryExpression }
                           | { type: 'PostArg', decl: PostCondition }
                           | { type: 'Param', func: Function; decl: Identifier }
                           | { type: 'This', decl: ClassDeclaration }
@@ -70,6 +72,12 @@ export namespace Syntax {
                                     pre: PreCondition;
                                     post: PostCondition;
                                     loc: SourceLocation; }
+  export interface EveryExpression { type: 'EveryExpression';
+                                     array: Expression;
+                                     argument: Identifier;
+                                     indexArgument: Identifier | null;
+                                     expression: Expression;
+                                     loc: SourceLocation; }
   export interface NewExpression { type: 'NewExpression';
                                    callee: Identifier;
                                    args: Array<Expression>;
@@ -112,6 +120,7 @@ export namespace Syntax {
                          | SequenceExpression
                          | CallExpression
                          | SpecExpression
+                         | EveryExpression
                          | PureExpression
                          | NewExpression
                          | ArrayExpression
@@ -540,6 +549,34 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
           loc: loc(expr)
         };
       }
+      if (expr.callee.type === 'Identifier' &&
+          expr.callee.name === 'every') {
+        if (expr.arguments.length !== 2) {
+          throw unsupported(expr, 'every(arr, inv) has two arguments');
+        }
+        const [callee, arg] = expr.arguments;
+        if (callee.type === 'SpreadElement') {
+          throw unsupported(callee);
+        }
+        if (arg.type !== 'ArrowFunctionExpression') {
+          throw unsupported(arg, 'every(arr, inv) requires inv to be an arrow function');
+        }
+        const inv: JSyntax.ArrowFunctionExpression = arg;
+        if (inv.body.type === 'BlockStatement') {
+          throw unsupported(inv, 'every(arr, inv) requires inv to be an arrow function with an expression as body');
+        }
+        if (inv.params.length < 1 || inv.params.length > 2 || inv.params.some((p, idx) => p.type !== 'Identifier')) {
+          throw unsupported(arg, 'every(arr, inv) requires inv to have one or two parameters');
+        }
+        return {
+          type: 'EveryExpression',
+          array: expressionAsJavaScript(callee),
+          argument: patternAsIdentifier(inv.params[0]),
+          indexArgument: inv.params.length > 1 ? patternAsIdentifier(inv.params[1]) : null,
+          expression: expressionAsJavaScript(inv.body),
+          loc: loc(expr)
+        };
+      }
       if (expr.callee.type === 'Super') throw unsupported(expr.callee);
       if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
       return {
@@ -857,6 +894,7 @@ export abstract class Visitor<E,S> {
   abstract visitCallExpression (expr: Syntax.CallExpression): E;
   abstract visitPureExpression (expr: Syntax.PureExpression): E;
   abstract visitSpecExpression (expr: Syntax.SpecExpression): E;
+  abstract visitEveryExpression (expr: Syntax.EveryExpression): E;
   abstract visitNewExpression (expr: Syntax.NewExpression): E;
   abstract visitArrayExpression (expr: Syntax.ArrayExpression): E;
   abstract visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): E;
@@ -877,6 +915,7 @@ export abstract class Visitor<E,S> {
       case 'SequenceExpression': return this.visitSequenceExpression(expr);
       case 'CallExpression': return this.visitCallExpression(expr);
       case 'SpecExpression': return this.visitSpecExpression(expr);
+      case 'EveryExpression': return this.visitEveryExpression(expr);
       case 'PureExpression': return this.visitPureExpression(expr);
       case 'NewExpression': return this.visitNewExpression(expr);
       case 'ArrayExpression': return this.visitArrayExpression(expr);
@@ -1111,6 +1150,17 @@ class NameResolver extends Visitor<void,void> {
     }, true);
   }
 
+  visitEveryExpression (expr: Syntax.EveryExpression) {
+    this.visitExpression(expr.array);
+    this.scoped(() => {
+      this.scope.defSymbol(expr.argument, { type: 'EveryArg', decl: expr });
+      if (expr.indexArgument !== null) {
+        this.scope.defSymbol(expr.indexArgument, { type: 'EveryIdxArg', decl: expr });
+      }
+      this.visitExpression(expr.expression);
+    }, false);
+  }
+
   visitPureExpression (expr: Syntax.PureExpression) { /* empty */ }
 
   visitNewExpression (expr: Syntax.NewExpression) {
@@ -1327,6 +1377,16 @@ class Stringifier extends Visitor<string,string> {
     return `spec(${this.visitExpression(expr.callee)}, ` +
                 `(${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), ` +
                 `(${expr.args.join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
+  }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): string {
+    if (expr.indexArgument !== null) {
+      return `every(${this.visitExpression(expr.array)}, ` +
+                   `(${expr.argument.name}, ${expr.indexArgument.name}) => (${this.visitExpression(expr.expression)}))`;
+    } else {
+      return `every(${this.visitExpression(expr.array)}, ` +
+                   `${expr.argument.name} => (${this.visitExpression(expr.expression)}))`;
+    }
   }
 
   visitPureExpression (expr: Syntax.PureExpression): string {
@@ -1577,6 +1637,17 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
       args: expr.args,
       pre: this.visitExpression(expr.pre),
       post: this.visitPostCondition(expr.post),
+      loc: expr.loc
+    };
+  }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): Syntax.Expression {
+    return {
+      type: 'EveryExpression',
+      array: this.visitExpression(expr.array),
+      argument: expr.argument,
+      indexArgument: expr.indexArgument,
+      expression: this.visitExpression(expr.expression),
       loc: expr.loc
     };
   }
