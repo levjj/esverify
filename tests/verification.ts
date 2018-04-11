@@ -1,8 +1,10 @@
 import { expect } from 'chai';
 import { verificationConditions } from '../src/index';
 import { log } from '../src/message';
+import { Model, plainToJSVal } from '../src/model';
 import { setOptions } from '../src/options';
 import VerificationCondition from '../src/verification';
+import { FreeVar } from '../src/logic';
 
 declare const requires: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
@@ -28,8 +30,8 @@ function code (fn: () => any) {
   });
 }
 
-function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string, debug: boolean = false):
-         Mocha.ITest {
+function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string,
+                 debug: boolean, expectedModel: Map<FreeVar, any>): Mocha.ITest {
   const body = async () => {
     /* tslint:disable:no-unused-expression */
     if (debug) {
@@ -43,10 +45,22 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
     if (expected === 'verified' || expected === 'unverified') {
       const st = res.status === 'error' && res.type === 'incorrect' ? res.type : res.status;
       expect(st).to.be.eql(expected);
+      if (res.status === 'unverified') {
+        for (const v of expectedModel.keys()) {
+          expect(res.model.variables()).to.include(typeof v === 'string' ? v : v.name);
+          expect(res.model.valueOf(v)).to.eql(plainToJSVal(expectedModel.get(v)));
+        }
+      }
     } else {
       expect(res.status).to.equal('error');
       if (res.status === 'error') {
         expect(res.type).to.equal(expected);
+        if (res.type === 'incorrect') {
+          for (const v of expectedModel.keys()) {
+            expect(res.model.variables()).to.include(typeof v === 'string' ? v : v.name);
+            expect(res.model.valueOf(v)).to.eql(plainToJSVal(expectedModel.get(v)));
+          }
+        }
       }
     }
   };
@@ -58,13 +72,24 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
 }
 
 function skip (description: string) { return it.skip(description); }
-function verified (description: string): Mocha.ITest { return helper('verified', description); }
-function unverified (description: string): Mocha.ITest { return helper('unverified', description); }
-function incorrect (description: string): Mocha.ITest { return helper('incorrect', description); }
-
-function verifiedDebug (description: string): Mocha.ITest { return helper('verified', description, true); }
-function unverifiedDebug (description: string): Mocha.ITest { return helper('unverified', description, true); }
-function incorrectDebug (description: string): Mocha.ITest { return helper('incorrect',description, true); }
+function verified (description: string): Mocha.ITest {
+  return helper('verified', description, false, new Map());
+}
+function unverified (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
+  return helper('unverified', description, false, new Map(expectedVariables));
+}
+function incorrect (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
+  return helper('incorrect', description, false, new Map(expectedVariables));
+}
+function verifiedDebug (description: string): Mocha.ITest {
+  return helper('verified', description, true, new Map());
+}
+function unverifiedDebug (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
+  return helper('unverified', description, true, new Map(expectedVariables));
+}
+function incorrectDebug (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
+  return helper('incorrect', description, true, new Map(expectedVariables));
+}
 
 describe('max()', () => {
 
@@ -108,14 +133,7 @@ describe('max() with missing pre', () => {
     }
   });
 
-  unverified('max: (res >= a)');
-
-  it('returns counter-example', async () => {
-    const m = await vcs[0].verify();
-    if (m.status !== 'unverified') throw new Error();
-    expect(m.model.variables()).to.include('b');
-    expect(m.model.valueOf('b')).to.eql({ type: 'bool', v: false });
-  });
+  unverified('max: (res >= a)', ['b', false]);
 });
 
 describe('counter', () => {
@@ -158,7 +176,7 @@ describe('simple steps', () => {
   });
 
   verified('assert: (i < 1)');
-  incorrect('assert: (i < 2)');
+  incorrect('assert: (i < 2)', [{ name: 'i', heap: 2 }, 3]);
 });
 
 describe('loop', () => {
@@ -191,7 +209,7 @@ describe('loop with missing invariant', () => {
     assert(i === 5);
   });
 
-  unverified('assert: (i === 5)');
+  unverified('assert: (i === 5)', [{ name: 'i', heap: 2 }, true]);
 });
 
 describe('sum', () => {
@@ -253,7 +271,7 @@ describe('assert within function', () => {
     }
   });
 
-  incorrect('f: assert: (n > 3)');
+  incorrect('f: assert: (n > 3)', ['n', 3]);
   verified('f: (res > 3)');
 });
 
@@ -275,7 +293,7 @@ describe('inline global call', () => {
   });
 
   verified('assert: (j === 4)');
-  unverified('assert: (k === 5)'); // only inline one level
+  unverified('assert: (k === 5)', [{ name: 'k', heap: 4 }, 8]); // only inline one level
 });
 
 describe('post conditions global call', () => {
@@ -299,12 +317,13 @@ describe('post conditions global call', () => {
   });
 
   verified('inc: (res > n)');
-  incorrect('inc2: precondition inc(n)');
-  incorrect('inc2: precondition inc(inc(n))');
+  incorrect('inc2: precondition inc(n)', ['n', true]);
+  incorrect('inc2: precondition inc(inc(n))', ['n', true]);
   verified('precondition inc(i)');
   verified('assert: (j >= 4)');
   verified('precondition inc2(i)');
-  unverified('assert: (k >= 5)'); // only inline one level, so post-cond of inc(inc(i)) not available
+  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 6]);
+  // only inline one level, so post-cond of inc(inc(i)) not available
 });
 
 describe('mutable variables', () => {
@@ -378,13 +397,7 @@ describe('buggy fibonacci', () => {
 
   verified('fib: precondition fib((n - 1))');
   verified('fib: precondition fib((n - 2))');
-  incorrect('fib: (res >= n)');
-  it('returns counter-example', async () => {
-    const m = await vcs[2].verify();
-    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model.variables()).to.include('n');
-    expect(m.model.valueOf('n')).to.eql({ type: 'num', v: 2 });
-  });
+  incorrect('fib: (res >= n)', ['n', 2]);
 });
 
 describe('pure functions', () => {
@@ -584,27 +597,9 @@ describe('global mutable variable with missing invariant', () => {
     }
   });
 
-  incorrect('f: (res > 22)');
-  incorrect('g: (res > 22)');
+  incorrect('f: (res > 22)', [{ name: 'x', heap: 3 }, 23], [{ name: 'x', heap: 4 }, true]);
+  incorrect('g: (res > 22)', [{ name: 'y', heap: 3 }, 42], [{ name: 'y', heap: 4 }, 0]);
   verified('h: (res > 22)');
-
-  it('returns counter-example for missing invariant', async () => {
-    const m = await vcs[0].verify();
-    expect(m.description).to.eql('f: (res > 22)');
-    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model.variables()).to.include('x');
-    expect(m.model.valueOf({ name: 'x', heap: 3 })).to.eql({ type: 'num', v: 23 });
-    expect(m.model.valueOf({ name: 'x', heap: 4 })).to.eql({ type: 'bool', v: true });
-  });
-
-  it('returns counter-example with insufficient invariant', async () => {
-    const m = await vcs[3].verify();
-    expect(m.description).to.eql('g: (res > 22)');
-    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model.variables()).to.include('y');
-    expect(m.model.valueOf({ name: 'y', heap: 3 })).to.eql({ type: 'num', v: 42 });
-    expect(m.model.valueOf({ name: 'y', heap: 4 })).to.eql({ type: 'num', v: 0 });
-  });
 });
 
 describe('simple class invariant', () => {
@@ -848,7 +843,6 @@ describe('nested function bug', () => {
   });
 
   incorrect('assert: (f(1)(2) === f(1))');
-
 });
 
 describe('function expressions', () => {
@@ -862,7 +856,6 @@ describe('function expressions', () => {
 
   verified('assert: (x === 3)');
   verified('assert: (y === 4)');
-
 });
 
 describe('functions returning functions', () => {
@@ -1109,7 +1102,7 @@ describe('promise', () => {
   verified('precondition then(p2, (function  (n) {\n  return new Promise((n + 5));\n}))');
 });
 
-describe('simple object access', () => {
+describe('simple class instance access', () => {
 
   code(() => {
     class A {
@@ -1149,7 +1142,7 @@ describe('simple object access', () => {
   verified('f: a has property "b"');
   verified('f: (res >= 0)');
   verified('g: a has property "b"');
-  incorrect('g: (res < 0)');
+  incorrect('g: (res < 0)', ['a', { _cls_: 'A', _args_: [0] }]);
   verified('class invariant A');
   verified('assert: (a instanceof A)');
   verified('assert: (a instanceof Object)');
@@ -1202,15 +1195,7 @@ describe('simple arrays', () => {
 
   verified('f: a has property 0');
   verified('g: a has property 0');
-  incorrect('g: (res > 0)');
-
-  it('g: (res > 0) returns counter-example', async () => {
-    const m = await vcs[2].verify();
-    expect(m.description).to.eql('g: (res > 0)');
-    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model.variables()).to.include('a');
-    expect(m.model.valueOf('a')).to.eql({ type: 'arr', elems: [{ type: 'str', v: 'number' }] });
-  });
+  incorrect('g: (res > 0)', ['a', ['number']]);
 
   verified('assert: (a0 instanceof Array)');
   verified('assert: (a0 instanceof Object)');
@@ -1356,32 +1341,9 @@ describe('array invariants', () => {
   verified('f_3: a has property 2');
   verified('f_3: (a[2] > 12)');
   verified('f_4: every(res, (e, i) => ((e > i)))');
-
   incorrect('g_1: every(res, e => ((e > 23)))');
-
   verified('g_2: a has property 0');
-  incorrect('g_2: (res > 42)');
-
-  it('g_2: (res > 42) returns counter-example', async () => {
-    const m = await vcs[8].verify();
-    expect(m.description).to.eql('g_2: (res > 42)');
-    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model.variables()).to.include('a');
-    expect(m.model.valueOf('a')).to.eql({ type: 'arr', elems: [{ type: 'num', v: 24 }] });
-  });
-
-  incorrect('g_3: (a[2] > 12)');
-
-  it('g_3: (a[2] > 12) returns counter-example', async () => {
-    const m = await vcs[9].verify();
-    expect(m.description).to.eql('g_3: (a[2] > 12)');
-    if (m.status !== 'error' || m.type !== 'incorrect') throw new Error();
-    expect(m.model.variables()).to.include('a');
-    expect(m.model.valueOf('a')).to.eql({
-      type: 'arr',
-      elems: [{ type: 'bool', v: true }, { type: 'bool', v: true }, { type: 'bool', v: true }]
-    });
-  });
-
+  incorrect('g_2: (res > 42)', ['a', [24]]);
+  incorrect('g_3: (a[2] > 12)', ['a', [true, true, true]]);
   incorrect('g_4: every(res, (e, i) => ((e > i)))');
 });

@@ -29,6 +29,28 @@ type ArrLengths = (arr: ArrRef) => number;
 type ArrElems = (arr: ArrRef, idx: number) => LazyValue;
 type HeapMapping = (loc: Loc) => LazyValue;
 
+export function plainToJSVal (val: any): JSVal {
+  if (typeof val === 'number') {
+    return { type: 'num', v: val };
+  } else if (typeof val === 'boolean') {
+    return { type: 'bool', v: val };
+  } else if (typeof val === 'string') {
+    return { type: 'str', v: val };
+  } else if (val === null) {
+    return { type: 'null' };
+  } else if (val === undefined) {
+    return { type: 'undefined' };
+  } else if (typeof val === 'function') {
+    return { type: 'fun', v: val.toString() };
+  } else if (val instanceof Array) {
+    return { type: 'arr', elems: val.map(plainToJSVal) };
+  } else if ('_cls_' in val && '_args_' in val) {
+    return { type: 'obj-cls', cls: val._cls_, args: val._args_.map(plainToJSVal) };
+  } else {
+    throw new Error('unsupported ');
+  }
+}
+
 export function valueToJavaScript (val: JSVal): Syntax.Expression {
   switch (val.type) {
     case 'num':
