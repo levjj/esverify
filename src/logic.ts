@@ -51,6 +51,9 @@ export namespace Syntax {
   export interface MemberExpression { type: 'MemberExpression';
                                       object: Expression;
                                       property: Expression; }
+  export interface ArrayIndexExpression { type: 'ArrayIndexExpression';
+                                          array: Expression; // assumes JSVal(Array)
+                                          index: Expression; } // assumes in-bounds JSVal(num)
   export type Expression = Variable
                          | HeapReference
                          | Literal
@@ -59,7 +62,8 @@ export namespace Syntax {
                          | ConditionalExpression
                          | CallExpression
                          | NewExpression
-                         | MemberExpression;
+                         | MemberExpression
+                         | ArrayIndexExpression;
 
   export interface Truthy { type: 'Truthy';
                             expr: Expression; }
@@ -100,12 +104,18 @@ export namespace Syntax {
                                  heap: HeapExpression;
                                  args: Array<Expression>;
                                  fuel: number; }
-  export interface ForAllAccess { type: 'ForAllAccess';
-                                  heap: Heap;
-                                  prop: Proposition;
-                                  property: Variable;
-                                  instantiations: Array<AccessTrigger>;
-                                  fuel: number; }
+  export interface ForAllAccessObject { type: 'ForAllAccessObject';
+                                        heap: Heap;
+                                        prop: Proposition;
+                                        instantiations: Array<AccessTrigger>;
+                                        fuel: number; }
+  export interface ForAllAccessProperty { type: 'ForAllAccessProperty';
+                                          heap: Heap;
+                                          object: Expression;
+                                          property: Variable;
+                                          prop: Proposition;
+                                          instantiations: Array<AccessTrigger>;
+                                          fuel: number; }
   export interface InstanceOf { type: 'InstanceOf';
                                 left: Expression;
                                 right: ClassName; }
@@ -132,7 +142,8 @@ export namespace Syntax {
                           | Postcondition
                           | ForAllCalls
                           | CallTrigger
-                          | ForAllAccess
+                          | ForAllAccessObject
+                          | ForAllAccessProperty
                           | InstanceOf
                           | HasProperty
                           | InBounds
@@ -268,6 +279,10 @@ function eqExpr (exprA: A, exprB: A): boolean {
       return exprA.type === exprB.type &&
              eqExpr(exprA.object, exprB.object) &&
              eqExpr(exprA.property, exprB.property);
+    case 'ArrayIndexExpression':
+      return exprA.type === exprB.type &&
+             eqExpr(exprA.array, exprB.array) &&
+             eqExpr(exprA.index, exprB.index);
   }
 }
 
@@ -315,9 +330,14 @@ export function eqProp (propA: P, propB: P): boolean {
              propA.existsVars.size === propB.existsVars.size &&
              [...propA.existsVars].every(v => propB.existsVars.has(v)) &&
              eqProp(propA.prop, propB.prop);
-    case 'ForAllAccess':
+    case 'ForAllAccessObject':
       return propA.type === propB.type &&
              eqHeap(propA.heap, propB.heap) &&
+             eqProp(propA.prop, propB.prop);
+    case 'ForAllAccessProperty':
+      return propA.type === propB.type &&
+             eqHeap(propA.heap, propB.heap) &&
+             eqExpr(propA.object, propB.object) &&
              propA.property === propB.property &&
              eqProp(propA.prop, propB.prop);
     case 'InstanceOf':
@@ -357,6 +377,7 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitCallExpression (expr: Syntax.CallExpression): R;
   abstract visitNewExpression (expr: Syntax.NewExpression): R;
   abstract visitMemberExpression (expr: Syntax.MemberExpression): R;
+  abstract visitArrayIndexExpression (expr: Syntax.ArrayIndexExpression): R;
 
   abstract visitTruthy (prop: Syntax.Truthy): S;
   abstract visitAnd (prop: Syntax.And): S;
@@ -370,7 +391,8 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitPostcondition (prop: Syntax.Postcondition): S;
   abstract visitForAllCalls (prop: Syntax.ForAllCalls): S;
   abstract visitCallTrigger (prop: Syntax.CallTrigger): S;
-  abstract visitForAllAccess (prop: Syntax.ForAllAccess): S;
+  abstract visitForAllAccessObject (prop: Syntax.ForAllAccessObject): S;
+  abstract visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): S;
   abstract visitInstanceOf (prop: Syntax.InstanceOf): S;
   abstract visitHasProperty (prop: Syntax.HasProperty): S;
   abstract visitInBounds (prop: Syntax.InBounds): S;
@@ -395,6 +417,7 @@ export abstract class Visitor<L,H,R,S> {
       case 'CallExpression': return this.visitCallExpression(expr);
       case 'NewExpression': return this.visitNewExpression(expr);
       case 'MemberExpression': return this.visitMemberExpression(expr);
+      case 'ArrayIndexExpression': return this.visitArrayIndexExpression(expr);
     }
   }
 
@@ -412,7 +435,8 @@ export abstract class Visitor<L,H,R,S> {
       case 'Postcondition': return this.visitPostcondition(prop);
       case 'ForAllCalls': return this.visitForAllCalls(prop);
       case 'CallTrigger': return this.visitCallTrigger(prop);
-      case 'ForAllAccess': return this.visitForAllAccess(prop);
+      case 'ForAllAccessObject': return this.visitForAllAccessObject(prop);
+      case 'ForAllAccessProperty': return this.visitForAllAccessProperty(prop);
       case 'InstanceOf': return this.visitInstanceOf(prop);
       case 'HasProperty': return this.visitHasProperty(prop);
       case 'InBounds': return this.visitInBounds(prop);
@@ -481,6 +505,10 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
     return this.r(this.visitExpr(expr.object), this.visitExpr(expr.property));
   }
 
+  visitArrayIndexExpression (expr: Syntax.ArrayIndexExpression): R {
+    return this.r(this.visitExpr(expr.array), this.visitExpr(expr.index));
+  }
+
   visitTruthy (prop: Syntax.Truthy): R {
     return this.visitExpr(prop.expr);
   }
@@ -538,15 +566,19 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   }
 
   visitHasProperty (prop: Syntax.HasProperty): R {
-    return this.visitExpr(prop.object);
+    return this.r(this.visitExpr(prop.object), this.visitExpr(prop.property));
   }
 
   visitInBounds (expr: Syntax.InBounds): R {
     return this.r(this.visitExpr(expr.array), this.visitExpr(expr.index));
   }
 
-  visitForAllAccess (prop: Syntax.ForAllAccess): R {
+  visitForAllAccessObject (prop: Syntax.ForAllAccessObject): R {
     return this.visitProp(prop.prop);
+  }
+
+  visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): R {
+    return this.r(this.visitExpr(prop.object), this.visitProp(prop.prop));
   }
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): R {
@@ -654,6 +686,14 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     };
   }
 
+  visitArrayIndexExpression (expr: Syntax.ArrayIndexExpression): A {
+    return {
+      type: 'ArrayIndexExpression',
+      array: this.visitExpr(expr.array),
+      index: this.visitExpr(expr.index)
+    };
+  }
+
   visitTruthy (prop: Syntax.Truthy): P {
     return { type: 'Truthy', expr: this.visitExpr(prop.expr) };
   }
@@ -729,10 +769,21 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     };
   }
 
-  visitForAllAccess (prop: Syntax.ForAllAccess): P {
+  visitForAllAccessObject (prop: Syntax.ForAllAccessObject): P {
     return {
-      type: 'ForAllAccess',
+      type: 'ForAllAccessObject',
       heap: prop.heap,
+      prop: this.visitProp(prop.prop),
+      instantiations: [...prop.instantiations], // shallow copy, do not process
+      fuel: prop.fuel
+    };
+  }
+
+  visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): P {
+    return {
+      type: 'ForAllAccessProperty',
+      heap: prop.heap,
+      object: this.visitExpr(prop.object),
       property: prop.property,
       prop: this.visitProp(prop.prop),
       instantiations: [...prop.instantiations], // shallow copy, do not process
@@ -829,14 +880,26 @@ export class Substituter extends Transformer {
     }
   }
 
-  visitForAllAccess (prop: Syntax.ForAllAccess): P {
+  visitForAllAccessObject (prop: Syntax.ForAllAccessObject): P {
     const origThetaHeap = Object.assign({}, this.thetaHeap);
     const origThetaVar = Object.assign({}, this.thetaVar);
     try {
       delete this.thetaHeap[prop.heap];
       delete this.thetaVar['this'];
+      return super.visitForAllAccessObject(prop);
+    } finally {
+      this.thetaHeap = origThetaHeap;
+      this.thetaVar = origThetaVar;
+    }
+  }
+
+  visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): P {
+    const origThetaHeap = Object.assign({}, this.thetaHeap);
+    const origThetaVar = Object.assign({}, this.thetaVar);
+    try {
+      delete this.thetaHeap[prop.heap];
       delete this.thetaVar[prop.property];
-      return super.visitForAllAccess(prop);
+      return super.visitForAllAccessProperty(prop);
     } finally {
       this.thetaHeap = origThetaHeap;
       this.thetaVar = origThetaVar;
@@ -912,22 +975,23 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
 
 export function transformClassInvariant (className: string, fields: Array<string>, inv: P, heap: Heap): P {
   const instP: P = { type: 'InstanceOf', left: 'this', right: className };
-  return { type: 'ForAllAccess', heap, property: '__prop', prop: implies(instP, inv), instantiations: [], fuel: 0 };
+  return { type: 'ForAllAccessObject', heap, prop: implies(instP, inv), instantiations: [], fuel: 0 };
 }
 
-export function transformEveryInvariant (array: A, property: string, index: string | null, inv: P, heap: Heap): P {
+export function transformEveryInvariant (array: A, elemName: string, index: string | null, inv: P, heap: Heap): P {
   const instP: P = { type: 'InstanceOf', left: array, right: 'Array' };
-  const inBounds: P = { type: 'InBounds', array, index: property };
+  const inBounds: P = { type: 'InBounds', array, index: elemName };
   const sub = new Substituter();
-  sub.replaceVar(property, { type: 'MemberExpression', object: 'this', property });
+  sub.replaceVar(elemName, { type: 'ArrayIndexExpression', array, index: elemName });
   if (index !== null) {
-    sub.replaceVar(index, property);
+    sub.replaceVar(index, elemName);
   }
   const forAllP: P = {
-    type: 'ForAllAccess',
+    type: 'ForAllAccessProperty',
     heap,
-    property,
-    prop: implies(and(eq('this', array), inBounds), sub.visitProp(inv)),
+    object: array,
+    property: elemName,
+    prop: implies(inBounds, sub.visitProp(inv)),
     instantiations: [],
     fuel: 0
   };

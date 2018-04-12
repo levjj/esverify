@@ -114,6 +114,10 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return `(field ${this.visitExpr(expr.object)} ${this.visitExpr(expr.property)})`;
   }
 
+  visitArrayIndexExpression (expr: Syntax.ArrayIndexExpression): SMTInput {
+    return `(arrelems (arrv ${this.visitExpr(expr.array)}) (numv ${this.visitExpr(expr.index)}))`;
+  }
+
   visitTruthy (prop: Syntax.Truthy): SMTInput {
     if (typeof(prop.expr) === 'object' &&
         prop.expr.type === 'ConditionalExpression' &&
@@ -211,13 +215,22 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
             `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
-  visitForAllAccess (prop: Syntax.ForAllAccess): SMTInput {
+  visitForAllAccessObject (prop: Syntax.ForAllAccessObject): SMTInput {
     const { heap, fuel } = prop;
-    const accessP: P = { type: 'AccessTrigger', object: 'this', property: prop.property, heap, fuel };
+    const accessP: P = { type: 'AccessTrigger', object: 'this', property: 'thisProp', heap, fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
     return `(forall ((${this.visitVariable('this')} JSVal) `
-                  + `(${this.visitVariable(prop.property)} JSVal)`
+                  + `(${this.visitVariable('thisProp')} JSVal)`
+                  + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
+  }
+
+  visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): SMTInput {
+    const { heap, fuel } = prop;
+    const accessP: P = { type: 'AccessTrigger', object: prop.object, property: prop.property, heap, fuel };
+    let p = this.visitProp(implies(accessP, prop.prop));
+    const trigger: SMTInput = this.visitProp(accessP);
+    return `(forall ((${this.visitVariable(prop.property)} JSVal)`
                   + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
   }
 
