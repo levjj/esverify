@@ -125,6 +125,9 @@ export namespace Syntax {
   export interface InBounds { type: 'InBounds';
                               array: Expression;
                               index: Expression; }
+  export interface HasProperties { type: 'HasProperties';
+                                   object: Expression;
+                                   properties: Array<string>; }
   export interface AccessTrigger { type: 'AccessTrigger';
                                    object: Expression;
                                    property: Expression;
@@ -146,6 +149,7 @@ export namespace Syntax {
                           | ForAllAccessProperty
                           | InstanceOf
                           | HasProperty
+                          | HasProperties
                           | InBounds
                           | AccessTrigger;
 }
@@ -348,6 +352,11 @@ export function eqProp (propA: P, propB: P): boolean {
       return propA.type === propB.type &&
              eqExpr(propA.object, propB.object) &&
              eqExpr(propA.property, propB.property);
+    case 'HasProperties':
+      return propA.type === propB.type &&
+             eqExpr(propA.object, propB.object) &&
+             propA.properties.length === propB.properties.length &&
+             propA.properties.every((p, idx) => p === propB.properties[idx]);
     case 'InBounds':
       return propA.type === propB.type &&
              eqExpr(propA.array, propB.array) &&
@@ -395,6 +404,7 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): S;
   abstract visitInstanceOf (prop: Syntax.InstanceOf): S;
   abstract visitHasProperty (prop: Syntax.HasProperty): S;
+  abstract visitHasProperties (prop: Syntax.HasProperties): S;
   abstract visitInBounds (prop: Syntax.InBounds): S;
   abstract visitAccessTrigger (prop: Syntax.AccessTrigger): S;
 
@@ -439,6 +449,7 @@ export abstract class Visitor<L,H,R,S> {
       case 'ForAllAccessProperty': return this.visitForAllAccessProperty(prop);
       case 'InstanceOf': return this.visitInstanceOf(prop);
       case 'HasProperty': return this.visitHasProperty(prop);
+      case 'HasProperties': return this.visitHasProperties(prop);
       case 'InBounds': return this.visitInBounds(prop);
       case 'AccessTrigger': return this.visitAccessTrigger(prop);
     }
@@ -567,6 +578,10 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
 
   visitHasProperty (prop: Syntax.HasProperty): R {
     return this.r(this.visitExpr(prop.object), this.visitExpr(prop.property));
+  }
+
+  visitHasProperties (prop: Syntax.HasProperties): R {
+    return this.visitExpr(prop.object);
   }
 
   visitInBounds (expr: Syntax.InBounds): R {
@@ -804,6 +819,14 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       type: 'HasProperty',
       object: this.visitExpr(prop.object),
       property: prop.property
+    };
+  }
+
+  visitHasProperties (prop: Syntax.HasProperties): P {
+    return {
+      type: 'HasProperties',
+      object: this.visitExpr(prop.object),
+      properties: prop.properties
     };
   }
 

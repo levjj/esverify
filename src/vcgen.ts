@@ -228,16 +228,29 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitArrayExpression (expr: Syntax.ArrayExpression): A {
+    const elems: Array<A> = expr.elements.map(e => this.visitExpression(e));
+
     const object = this.freshVar();
     this.have({ type: 'InstanceOf', left: object, right: 'Array' });
-
-    const elems: Array<A> = expr.elements.map(e => this.visitExpression(e));
     const lengthProp: A = { type: 'Literal', value: 'length' };
     const lengthVal: A = { type: 'Literal', value: elems.length };
     this.have(eq({ type: 'MemberExpression', object, property: lengthProp }, lengthVal));
     elems.forEach((property, idx) => {
-      this.have(eq({ type: 'MemberExpression', object, property: { type: 'Literal', value: `${idx}` } },
+      this.have(eq({ type: 'MemberExpression', object, property: { type: 'Literal', value: idx } },
                    elems[idx]));
+    });
+    return object;
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): A {
+    const values: Array<A> = expr.properties.map(({ value }) => this.visitExpression(value));
+
+    const object = this.freshVar();
+    this.have({ type: 'InstanceOf', left: object, right: 'ObjectLiteral' });
+    this.have({ type: 'HasProperties', object, properties: expr.properties.map(({ key }) => key) });
+    expr.properties.forEach(({ key }, idx) => {
+      this.have(eq({ type: 'MemberExpression', object, property: { type: 'Literal', value: key } },
+                   values[idx]));
     });
     return object;
   }

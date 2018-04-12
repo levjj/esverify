@@ -242,6 +242,16 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return `(has ${this.visitExpr(prop.object)} ${this.visitExpr(prop.property)})`;
   }
 
+  visitHasProperties (prop: Syntax.HasProperties): SMTInput {
+    let str: string;
+    if (prop.properties.length === 0) {
+      str = '(as seq.empty (Seq String))';
+    } else {
+      str = prop.properties.map(s => `(seq.unit "${s}")`).reduceRight((prev, curr) => `(seq.++ ${curr} ${prev})`);
+    }
+    return `(= (objproperties (objv ${this.visitExpr(prop.object)})) ${str})`;
+  }
+
   visitInBounds (prop: Syntax.InBounds): SMTInput {
     const indexExpr = this.visitExpr(prop.index);
     return `(and (is-jsnum ${indexExpr}) `
@@ -475,17 +485,18 @@ ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map
 (declare-const c_Object ClassName)
 (declare-const c_Function ClassName)
 (declare-const c_Array ClassName)
+(declare-const c_ObjectLiteral ClassName)
 ${[...classes].map(({ cls }) => `(declare-const c_${cls} ClassName)\n`).join('')}
-(assert (distinct c_Object c_Function c_Array ${[...classes].map(({ cls }) => 'c_' + cls).join(' ')}))
+(assert (distinct c_Object c_ObjectLiteral c_Function c_Array ${[...classes].map(({ cls }) => 'c_' + cls).join(' ')}))
 
-(declare-fun objhas (Obj String) Bool)
+(declare-fun objproperties (Obj) (Seq String))
 (declare-fun objfield (Obj String) JSVal)
 (declare-fun arrlength (Arr) Int)
 (declare-fun arrelems (Arr Int) JSVal)
 ${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
 
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
-  (or (and (is-jsobj obj) (objhas (objv obj) (_tostring prop)))
+  (or (and (is-jsobj obj) (seq.contains (objproperties (objv obj)) (seq.unit (_tostring prop))))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
       (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
@@ -494,7 +505,8 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
 ))
 
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
-  (ite (is-jsobj obj) (objfield (objv obj) (_tostring prop))
+  (ite (and (is-jsobj obj) (seq.contains (objproperties (objv obj)) (seq.unit (_tostring prop))))
+       (objfield (objv obj) (_tostring prop))
   (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
   (ite (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
        (arrelems (arrv obj) (numv prop))
@@ -509,6 +521,7 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')}
 
 (define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
   (or (and (is-jsobj obj) (= cls c_Object))
+      (and (is-jsobj obj) (= cls c_ObjectLiteral))
       (and (is-jsfun obj) (= cls c_Object))
       (and (is-jsfun obj) (= cls c_Function))
       (and (is-jsobj_Array obj) (= cls c_Object))

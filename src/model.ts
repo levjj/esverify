@@ -12,7 +12,7 @@ export namespace JSVal {
   export interface Null { type: 'null'; }
   export interface Undefined { type: 'undefined'; }
   export interface Fun { type: 'fun'; v: string; }
-  export interface Obj { type: 'obj'; v: string; }
+  export interface Obj { type: 'obj'; v: { [key: string]: JSVal }; }
   export interface ObjCls { type: 'obj-cls'; cls: string; args: Array<Value>; }
   export interface Arr { type: 'arr'; elems: Array<Value>; }
   export type Value = Num | Bool | Str | Null | Undefined | Fun | Obj | ObjCls | Arr;
@@ -22,11 +22,14 @@ export type JSVal = JSVal.Value;
 
 interface LazyObjCls { type: 'obj-cls'; cls: string; args: Array<LazyValue>; }
 interface ArrRef { type: 'arr-ref'; name: string; }
+interface ObjRef { type: 'obj-ref'; name: string; }
 interface Loc { type: 'loc'; name: string; }
 type LazyValue = JSVal.Num | JSVal.Bool | JSVal.Str | JSVal.Null | JSVal.Undefined | JSVal.Fun |
-                 JSVal.Obj | LazyObjCls | ArrRef;
+                 JSVal.Obj | LazyObjCls | ArrRef | ObjRef;
 type ArrLengths = (arr: ArrRef) => number;
 type ArrElems = (arr: ArrRef, idx: number) => LazyValue;
+type ObjProperties = (obj: ObjRef) => Set<string>;
+type ObjFields = (obj: ObjRef, prop: string) => LazyValue;
 type HeapMapping = (loc: Loc) => LazyValue;
 
 export function plainToJSVal (val: any): JSVal {
@@ -46,6 +49,10 @@ export function plainToJSVal (val: any): JSVal {
     return { type: 'arr', elems: val.map(plainToJSVal) };
   } else if ('_cls_' in val && '_args_' in val) {
     return { type: 'obj-cls', cls: val._cls_, args: val._args_.map(plainToJSVal) };
+  } else if (typeof val === 'object') {
+    const obj: { [key: string]: JSVal } = {};
+    Object.keys(val).forEach(key => obj[key] = plainToJSVal(val[key]));
+    return { type: 'obj', v: obj };
   } else {
     throw new Error('unsupported ');
   }
@@ -77,7 +84,11 @@ export function valueToJavaScript (val: JSVal): Syntax.Expression {
         loc: nullLoc()
       };
     case 'obj':
-      return { type: 'Literal', value: null, loc: nullLoc() };
+      return {
+        type: 'ObjectExpression',
+        properties: Object.keys(val.v).map(key => ({ key, value: valueToJavaScript(val.v[key]) })),
+        loc: nullLoc()
+      };
     case 'obj-cls':
       return {
         type: 'NewExpression',
@@ -98,6 +109,8 @@ export class Model {
 
   private arrLengths: ArrLengths | null = null;
   private arrElems: ArrElems | null = null;
+  private objProperties: ObjProperties | null = null;
+  private objFields: ObjFields | null = null;
   private heapMappings: { [varname: string]: HeapMapping } = {};
   private vars: { [varname: string]: LazyValue } = {};
   private locs: { [varname: string]: Loc } = {};
@@ -157,6 +170,10 @@ export class Model {
       this.arrLengths = this.parseArrayLengths(m.body);
     } else if (name === 'arrelems') {
       this.arrElems = this.parseArrayElems(m.body);
+    } else if (name === 'objproperties') {
+      this.objProperties = this.parseObjectProperties(m.body);
+    } else if (name === 'objfield') {
+      this.objFields = this.parseObjectFields(m.body);
     } else if (name.startsWith('c_')) {
       return; // skip class names
     } else if (name.startsWith('app') || name.startsWith('pre') || name.startsWith('post') ||
@@ -228,7 +245,7 @@ export class Model {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
         if (typeof v !== 'string') throw this.modelError(s.toString());
-        return { type: 'obj', v };
+        return { type: 'obj-ref', name: v };
       } else if (tag === 'jsobj_Array') {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
@@ -293,6 +310,61 @@ export class Model {
     }
   }
 
+  private parseStringSeq (smt: SExpr): Set<string> {
+    const emptyMatch = matchSExpr(smt, ['as', 'seq.empty', ['Seq', 'String']]);
+    if (emptyMatch) {
+      return new Set();
+    }
+    const concatMatch = matchSExpr(smt, ['seq.++', { expr: 'left' }, { expr: 'right' }]);
+    if (concatMatch) {
+      const left = this.parseStringSeq(concatMatch.left);
+      const right = this.parseStringSeq(concatMatch.right);
+      return new Set([...left, ...right]);
+    }
+    const singleMatch = matchSExpr(smt, ['seq.unit', { name: 'str' }]);
+    if (singleMatch) {
+      const str: string = singleMatch.str as string;
+      if (str.length < 2 || str[0] !== '"' || str[str.length - 1] !== '"') {
+        throw this.modelError('expected string');
+      }
+      return new Set([str.substr(1, str.length - 2)]);
+    } else {
+      throw this.modelError('expected string sequence');
+    }
+  }
+
+  private parseObjectProperties (smt: SExpr): ObjProperties {
+    const iteMatch = matchSExpr(smt,
+      ['ite', ['=', 'x!0', { name: 'obj' }], { expr: 'then' }, { expr: 'els' }]);
+    if (iteMatch) {
+      const then = this.parseObjectProperties(iteMatch.then);
+      const els = this.parseObjectProperties(iteMatch.els);
+      return (objRef: ObjRef) => objRef.name === iteMatch.obj ? then(objRef) : els(objRef);
+    } else {
+      const strings = this.parseStringSeq(smt);
+      return (objRef: ObjRef) => strings;
+    }
+  }
+
+  private parseObjectFields (smt: SExpr): ObjFields {
+    const iteMatch = matchSExpr(smt,
+      ['ite', ['and', ['=', 'x!0', { name: 'obj' }], ['=', 'x!1', { name: 's' }]], { expr: 'then' }, { expr: 'els' }]);
+    if (iteMatch) {
+      const then = this.parseObjectFields(iteMatch.then);
+      const els = this.parseObjectFields(iteMatch.els);
+      const arr = iteMatch.obj as string;
+      const str = iteMatch.s as string;
+      if (str.length < 2 || str[0] !== '"' || str[str.length - 1] !== '"') {
+        throw this.modelError('expected string');
+      }
+      return (objRef: ObjRef, prop: string) =>
+        objRef.name === arr && prop === str.substr(1, str.length - 2) ? then(objRef, prop) : els(objRef, prop);
+    } else {
+      const val: LazyValue = this.parseLazyValue(smt);
+      return (objRef: ObjRef, prop: string) => val;
+    }
+  }
+
   private hydrate (val: LazyValue): JSVal {
     switch (val.type) {
       case 'obj-cls':
@@ -310,6 +382,14 @@ export class Model {
             return this.hydrate(this.arrElems(val, i));
           })
         };
+      case 'obj-ref':
+        if (this.objProperties === null) throw this.modelError('no objproperties');
+        if (this.objFields === null) throw this.modelError('no objfields');
+        const obj: { [key: string]: JSVal } = {};
+        for (const key of this.objProperties(val)) {
+          obj[key] = this.hydrate(this.objFields(val, key));
+        }
+        return { type: 'obj', v: obj };
       default:
         return val;
     }

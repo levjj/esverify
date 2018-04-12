@@ -85,6 +85,9 @@ export namespace Syntax {
   export interface ArrayExpression { type: 'ArrayExpression';
                                      elements: Array<Expression>;
                                      loc: SourceLocation; }
+  export interface ObjectExpression { type: 'ObjectExpression';
+                                      properties: Array<{key: string, value: Expression}>;
+                                      loc: SourceLocation; }
   export interface InstanceOfExpression { type: 'InstanceOfExpression';
                                           left: Expression;
                                           right: Identifier;
@@ -124,6 +127,7 @@ export namespace Syntax {
                          | PureExpression
                          | NewExpression
                          | ArrayExpression
+                         | ObjectExpression
                          | InstanceOfExpression
                          | InExpression
                          | MemberExpression
@@ -354,6 +358,15 @@ function returnExpr (expr: JSyntax.Expression): Array<JSyntax.Statement> {
   }];
 }
 
+function literalAsIdentifier (literal: JSyntax.Literal): Syntax.Identifier {
+  if (literal.value !== null && literal.value !== undefined &&
+      typeof literal.value !== 'string' && typeof literal.value !== 'number' &&
+      typeof literal.value !== 'boolean') {
+    throw unsupported(literal);
+  }
+  return id(String(literal.value), loc(literal));
+}
+
 function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
   switch (expr.type) {
     case 'Identifier':
@@ -370,8 +383,6 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       };
     case 'ThisExpression':
       return id('this', loc(expr));
-    case 'ObjectExpression':
-      throw unsupported(expr);
     case 'SequenceExpression':
       return {
         type: 'SequenceExpression',
@@ -618,6 +629,35 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         }),
         loc: loc(expr)
       };
+    case 'ObjectExpression': {
+      const properties = expr.properties.map(property => {
+        if (property.kind !== 'init') throw unsupported(property, 'getters and setters not supported');
+        if (property.value.type === 'ObjectPattern' ||
+            property.value.type === 'ArrayPattern' ||
+            property.value.type === 'AssignmentPattern' ||
+            property.value.type === 'RestElement') {
+          throw unsupported(property.value);
+        }
+        if (property.key.type === 'Identifier') {
+          return {
+            key: patternAsIdentifier(property.key).name,
+            value: expressionAsJavaScript(property.value)
+          };
+        } else if (property.key.type === 'Literal') {
+          return {
+            key: literalAsIdentifier(property.key).name,
+            value: expressionAsJavaScript(property.value)
+          };
+        } else {
+          throw unsupported(property.key);
+        }
+      });
+      properties.forEach((property, index) => {
+        const duplicateIndex = properties.findIndex(otherProperty => property.key === otherProperty.key);
+        if (duplicateIndex < index) throw unsupported(expr, 'duplicate key in object literal');
+      });
+      return { type: 'ObjectExpression', properties, loc: loc(expr) };
+    }
     case 'MemberExpression':
       if (expr.object.type === 'Super') throw unsupported(expr.object);
       let property: Syntax.Expression;
@@ -897,6 +937,7 @@ export abstract class Visitor<E,S> {
   abstract visitEveryExpression (expr: Syntax.EveryExpression): E;
   abstract visitNewExpression (expr: Syntax.NewExpression): E;
   abstract visitArrayExpression (expr: Syntax.ArrayExpression): E;
+  abstract visitObjectExpression (expr: Syntax.ObjectExpression): E;
   abstract visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): E;
   abstract visitInExpression (expr: Syntax.InExpression): E;
   abstract visitMemberExpression (expr: Syntax.MemberExpression): E;
@@ -919,6 +960,7 @@ export abstract class Visitor<E,S> {
       case 'PureExpression': return this.visitPureExpression(expr);
       case 'NewExpression': return this.visitNewExpression(expr);
       case 'ArrayExpression': return this.visitArrayExpression(expr);
+      case 'ObjectExpression': return this.visitObjectExpression(expr);
       case 'InstanceOfExpression': return this.visitInstanceOfExpression(expr);
       case 'InExpression': return this.visitInExpression(expr);
       case 'MemberExpression': return this.visitMemberExpression(expr);
@@ -1172,6 +1214,10 @@ class NameResolver extends Visitor<void,void> {
     expr.elements.forEach(e => this.visitExpression(e));
   }
 
+  visitObjectExpression (expr: Syntax.ObjectExpression) {
+    expr.properties.forEach(p => this.visitExpression(p.value));
+  }
+
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression) {
     this.visitExpression(expr.left);
     this.scope.useSymbol(expr.right, false, true);
@@ -1399,6 +1445,14 @@ class Stringifier extends Visitor<string,string> {
 
   visitArrayExpression (expr: Syntax.ArrayExpression): string {
     return `[${expr.elements.map(a => this.visitExpression(a)).join(', ')}]`;
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): string {
+    function nameToKey(name: string): string {
+      return /^\w+$/.test(name) ? name : `"${name}"`;
+    }
+    return `{ ${
+      expr.properties.map(({ key, value }) => `${nameToKey(key)}: ${this.visitExpression(value)}`).join(', ')} }`;
   }
 
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): string {
@@ -1665,6 +1719,14 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
     return {
       type: 'ArrayExpression',
       elements: expr.elements.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): Syntax.Expression {
+    return {
+      type: 'ObjectExpression',
+      properties: expr.properties.map(p => ({ key: p.key, value: this.visitExpression(p.value) })),
       loc: expr.loc
     };
   }

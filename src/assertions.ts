@@ -103,6 +103,10 @@ class AssertionTranslator extends Visitor<A, void> {
     throw new PureContextError();
   }
 
+  visitObjectExpression (expr: Syntax.ObjectExpression): A {
+    throw new PureContextError();
+  }
+
   visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): A {
     const test: P = { type: 'InstanceOf', left: this.visitExpression(expr.left), right: expr.right.name };
     const consequent: A = { type: 'Literal', value: true };
@@ -234,6 +238,10 @@ class PropositionTranslator extends Visitor<P, void> {
   }
 
   visitArrayExpression (expr: Syntax.ArrayExpression): P {
+    throw new PureContextError();
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): P {
     throw new PureContextError();
   }
 

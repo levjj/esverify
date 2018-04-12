@@ -322,7 +322,7 @@ describe('post conditions global call', () => {
   verified('precondition inc(i)');
   verified('assert: (j >= 4)');
   verified('precondition inc2(i)');
-  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 6]);
+  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 9]);
   // only inline one level, so post-cond of inc(inc(i)) not available
 });
 
@@ -1195,7 +1195,7 @@ describe('simple arrays', () => {
 
   verified('f: a has property 0');
   verified('g: a has property 0');
-  incorrect('g: (res > 0)', ['a', ['number']]);
+  incorrect('g: (res > 0)', ['a', [false]]);
 
   verified('assert: (a0 instanceof Array)');
   verified('assert: (a0 instanceof Object)');
@@ -1346,4 +1346,32 @@ describe('array invariants', () => {
   incorrect('g_2: (res > 42)', ['a', [24]]);
   incorrect('g_3: (a[2] > 12)', ['a', [true, true, true]]);
   incorrect('g_4: every(res, (e, i) => ((e > i)))');
+});
+
+describe('simple object access', () => {
+
+  code(() => {
+    function f (a) {
+      requires('b' in a);
+      requires(a.b >= 1);
+      ensures(res => res >= 0);
+
+      return a.b;
+    }
+
+    const a = { b: 23 };
+    assert(a instanceof Object);
+    assert('b' in a);
+    assert(a.b > 22);
+    assert(a['b'] > 22);
+    const p = 'b';
+    assert(a[p] > 22);
+  });
+
+  verified('f: a has property "b"');
+  verified('f: (res >= 0)');
+  verified('assert: (a instanceof Object)');
+  verified('assert: ("b" in a)');
+  verified('assert: (a.b > 22)');
+  verified('assert: (a[p] > 22)');
 });
