@@ -455,8 +455,8 @@ ${[...Array(10).keys()].map(i => `
 (declare-fun post${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
 (declare-fun app${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
 (declare-fun eff${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
-(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`).join('')}
-
+${options.qi ? '' : `(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`}
+`).join('')}
 ; Objects
 (declare-sort ClassName)
 (declare-const c_Object ClassName)
@@ -469,7 +469,7 @@ ${[...classes].map(({ cls }) => `(declare-const c_${cls} ClassName)\n`).join('')
 (declare-fun objfield (Obj String) JSVal)
 (declare-fun arrlength (Arr) Int)
 (declare-fun arrelems (Arr Int) JSVal)
-(declare-fun access (JSVal JSVal Heap) Bool)
+${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
 
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (objhas (objv obj) (_tostring prop)))
