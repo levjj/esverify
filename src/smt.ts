@@ -278,20 +278,21 @@ function propositionToAssert (prop: P): SMTInput {
 
 export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
-  return `(set-option :smt.auto-config false) ; disable automatic self configuration
+  return `(set-option :produce-models true)
+(set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
 
-(declare-sort Func) ; function reference
-(declare-sort Obj) ; object reference
-(declare-sort Arr) ; array reference
+(declare-sort Func 0) ; function reference
+(declare-sort Obj 0) ; object reference
+(declare-sort Arr 0) ; array reference
 
 ; Values in JavaScript
 (declare-datatypes () ((JSVal
   (jsnum (numv Int))
   (jsbool (boolv Bool))
   (jsstr (strv String))
-  jsnull
-  jsundefined
+  (jsnull)
+  (jsundefined)
   (jsfun (funv Func))
   (jsobj (objv Obj))
   (jsobj_Array (arrv Arr))
@@ -302,7 +303,7 @@ ${[...classes].map(({ cls, fields }) =>
 ).join('')})))
 
 ; Types in JavaScript
-(declare-datatypes () ((JSType JSNum JSBool JSString JSUndefined JSObj JSFunction)))
+(declare-datatypes () ((JSType (JSNum) (JSBool) (JSString) (JSUndefined) (JSObj) (JSFunction))))
 
 (define-fun _type ((x JSVal)) JSType
   (ite (is-jsnum x) JSNum
@@ -469,7 +470,7 @@ ${[...classes].map(({ cls }) =>
 
 ; Heap
 
-(declare-sort Loc)
+(declare-sort Loc 0)
 (define-sort Heap () (Array Loc JSVal))
 
 ; Functions
@@ -481,13 +482,11 @@ ${[...Array(10).keys()].map(i => `
 ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`}
 `).join('')}
 ; Objects
-(declare-sort ClassName)
-(declare-const c_Object ClassName)
-(declare-const c_Function ClassName)
-(declare-const c_Array ClassName)
-(declare-const c_ObjectLiteral ClassName)
-${[...classes].map(({ cls }) => `(declare-const c_${cls} ClassName)\n`).join('')}
-(assert (distinct c_Object c_ObjectLiteral c_Function c_Array ${[...classes].map(({ cls }) => 'c_' + cls).join(' ')}))
+(declare-datatypes () ((ClassName
+  (c_Object)
+  (c_Function)
+  (c_Array)
+  (c_ObjectLiteral)${[...classes].map(({ cls }) => `\n  (c_${cls})`).join('')})))
 
 (declare-fun objproperties (Obj) (Seq String))
 (declare-fun objfield (Obj String) JSVal)
@@ -532,10 +531,10 @@ ${[...classes].map(({ cls }) =>
 ))
 
 ; Declarations
-${[...heaps].map(h => `(declare-const h_${h} Heap)\n`).join('')}
-${[...locs].map(l => `(declare-const l_${l} Loc)\n`).join('')}
+${[...heaps].map(h => `(declare-fun h_${h} () Heap)\n`).join('')}
+${[...locs].map(l => `(declare-fun l_${l} () Loc)\n`).join('')}
 ${locs.size === 0 ? '' : `(assert (distinct ${[...locs].map(l => 'l_' + l).join(' ')}))`}
-${[...vars].map(v => `(declare-const v_${v} JSVal)\n`).join('')}
+${[...vars].map(v => `(declare-fun v_${v} () JSVal)\n`).join('')}
 
 ; Verification condition
 
