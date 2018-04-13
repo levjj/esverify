@@ -236,7 +236,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     const lengthVal: A = { type: 'Literal', value: elems.length };
     this.have(eq({ type: 'MemberExpression', object, property: lengthProp }, lengthVal));
     elems.forEach((property, idx) => {
-      this.have(eq({ type: 'MemberExpression', object, property: { type: 'Literal', value: idx } },
+      this.have(eq({ type: 'ArrayIndexExpression', array: object, index: { type: 'Literal', value: idx } },
                    elems[idx]));
     });
     return object;
