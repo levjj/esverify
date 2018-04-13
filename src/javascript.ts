@@ -1448,7 +1448,7 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitObjectExpression (expr: Syntax.ObjectExpression): string {
-    function nameToKey(name: string): string {
+    function nameToKey (name: string): string {
       return /^\w+$/.test(name) ? name : `"${name}"`;
     }
     return `{ ${
