@@ -1585,6 +1585,16 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
     return this;
   }
 
+  withoutBindings<A> (cont: () => A, ...bindings: Array<string>): A {
+    const origTheta = Object.assign({}, this.theta);
+    try {
+      bindings.forEach(b => { delete this.theta[b]; });
+      return cont();
+    } finally {
+      this.theta = origTheta;
+    }
+  }
+
   visitIdentifier (expr: Syntax.Identifier): Syntax.Expression {
     if (!(expr.name in this.theta)) return expr;
     const e: string | Syntax.Expression = this.theta[expr.name];
@@ -1677,9 +1687,12 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitPostCondition (expr: Syntax.PostCondition): Syntax.PostCondition {
+    const expression = expr.argument !== null
+      ? this.withoutBindings(() => this.visitExpression(expr.expression), expr.argument.name)
+      : this.visitExpression(expr.expression);
     return {
       argument: expr.argument,
-      expression: this.visitExpression(expr.expression),
+      expression,
       loc: expr.loc
     };
   }
@@ -1689,19 +1702,23 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
       type: 'SpecExpression',
       callee: this.visitExpression(expr.callee),
       args: expr.args,
-      pre: this.visitExpression(expr.pre),
-      post: this.visitPostCondition(expr.post),
+      pre: this.withoutBindings(() => this.visitExpression(expr.pre), ...expr.args),
+      post: this.withoutBindings(() => this.visitPostCondition(expr.post), ...expr.args),
       loc: expr.loc
     };
   }
 
   visitEveryExpression (expr: Syntax.EveryExpression): Syntax.Expression {
+    const array = this.visitExpression(expr.array);
+    const expression = expr.indexArgument !== null
+      ? this.withoutBindings(() => this.visitExpression(expr.expression), expr.argument.name, expr.indexArgument.name)
+      : this.withoutBindings(() => this.visitExpression(expr.expression), expr.argument.name);
     return {
       type: 'EveryExpression',
-      array: this.visitExpression(expr.array),
+      array,
       argument: expr.argument,
       indexArgument: expr.indexArgument,
-      expression: this.visitExpression(expr.expression),
+      expression,
       loc: expr.loc
     };
   }
@@ -1726,7 +1743,7 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   visitObjectExpression (expr: Syntax.ObjectExpression): Syntax.Expression {
     return {
       type: 'ObjectExpression',
-      properties: expr.properties.map(p => ({ key: p.key, value: this.visitExpression(p.value) })),
+      properties: expr.properties.map(({ key, value }) => ({ key, value: this.visitExpression(value) })),
       loc: expr.loc
     };
   }
@@ -1759,19 +1776,23 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): Syntax.Expression {
+    const bindings = expr.id !== null
+      ? [expr.id.name, ...expr.params.map(p => p.name)]
+      : expr.params.map(p => p.name);
     return {
       type: 'FunctionExpression',
       id: expr.id,
       params: expr.params,
-      requires: expr.requires.map(r => this.visitExpression(r)),
-      ensures: expr.ensures.map(e => this.visitPostCondition(e)),
-      body: expr.body,
+      requires: this.withoutBindings(() => expr.requires.map(r => this.visitExpression(r)), ...bindings),
+      ensures: this.withoutBindings(() => expr.ensures.map(e => this.visitPostCondition(e)), ...bindings),
+      body: this.withoutBindings(() => this.visitBlockStatement(expr.body), ...bindings),
       freeVars: expr.freeVars,
       loc: expr.loc
     };
   }
 
   visitVariableDeclaration (stmt: Syntax.VariableDeclaration): Syntax.Statement {
+    delete this.theta[stmt.id.name]; // gets restored at end of next block or function
     return {
       type: 'VariableDeclaration',
       id: stmt.id,
@@ -1782,11 +1803,16 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitBlockStatement (stmt: Syntax.BlockStatement): Syntax.BlockStatement {
-    return {
-      type: 'BlockStatement',
-      body: stmt.body.map(s => this.visitStatement(s)),
-      loc: stmt.loc
-    };
+    const origTheta = Object.assign({}, this.theta);
+    try {
+      return {
+        type: 'BlockStatement',
+        body: stmt.body.map(s => this.visitStatement(s)),
+        loc: stmt.loc
+      };
+    } finally {
+      this.theta = origTheta;
+    }
   }
 
   visitExpressionStatement (stmt: Syntax.ExpressionStatement): Syntax.Statement {
@@ -1841,23 +1867,22 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): Syntax.Statement {
+    delete this.theta[stmt.id.name]; // gets restored at end of next block or function
+    const bindings = stmt.params.map(p => p.name);
     return {
       type: 'FunctionDeclaration',
       id: stmt.id,
       params: stmt.params,
-      requires: stmt.requires.map(r => this.visitExpression(r)),
-      ensures: stmt.ensures.map(e => ({
-        argument: e.argument,
-        expression: this.visitExpression(e.expression),
-        loc: e.loc
-      })),
-      body: this.visitBlockStatement(stmt.body),
+      requires: this.withoutBindings(() => stmt.requires.map(r => this.visitExpression(r)), ...bindings),
+      ensures: this.withoutBindings(() => stmt.ensures.map(e => this.visitPostCondition(e)), ...bindings),
+      body: this.withoutBindings(() => this.visitBlockStatement(stmt.body), ...bindings),
       freeVars: stmt.freeVars,
       loc: stmt.loc
     };
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): Syntax.Statement {
+    delete this.theta[stmt.id.name]; // gets restored at end of next block or function
     return {
       type: 'ClassDeclaration',
       id: stmt.id,
