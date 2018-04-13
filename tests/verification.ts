@@ -318,7 +318,7 @@ describe('post conditions global call', () => {
 
   verified('inc: (res > n)');
   incorrect('inc2: precondition inc(n)', ['n', true]);
-  incorrect('inc2: precondition inc(inc(n))', ['n', true]);
+  verified('inc2: precondition inc(inc(n))');
   verified('precondition inc(i)');
   verified('assert: (j >= 4)');
   verified('precondition inc2(i)');
