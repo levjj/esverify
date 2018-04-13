@@ -196,8 +196,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
 
     // function call effect
     this.have(heapEq(this.heap + 1, { type: 'HeapEffect', callee, heap, args }));
-
-    return { type: 'CallExpression', callee, heap: this.heap++, args };
+    this.heap++;
+    return { type: 'CallExpression', callee, heap, args };
   }
 
   visitOldIdentifier (expr: Syntax.OldIdentifier): A {
@@ -313,7 +313,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     return transformSpec(callee, args, req, ens, heap, toHeap, existsLocs, existsVars, q);
   }
 
-  visitFunctionBody (f: Syntax.Function, callee: string) {
+  visitFunctionBody (f: Syntax.Function, callee: string): P {
 
     // add function name to scope
     this.vars.add(callee);
@@ -332,21 +332,21 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     // add special result variable
     this.resVar = this.freshVar();
 
+    // assume non-rec spec
+    this.have(this.transformDef(f, callee, this.heap + 1));
+
     // assume preconditions
     for (const r of f.requires) {
-      const tr = translateExpression(this.heap, this.heap, r);
-      this.prop = and(this.prop, tr);
+      this.have(translateExpression(this.heap, this.heap, r));
     }
 
-    // assume non-rec spec
-    this.prop = and(this.prop, this.transformDef(f, callee, this.heap + 1));
     const pre = this.prop;
 
     const startHeap = this.heap;
     const startBody = this.testBody;
 
     // internal verification conditions
-    const res = this.visitStatement(f.body);
+    this.visitBlockStatement(f.body);
 
     this.testBody = startBody.concat([{
       type: 'VariableDeclaration',
@@ -374,9 +374,8 @@ class VCGenerator extends Visitor<A, BreakCondition> {
       vc.description = (f.id ? f.id.name : 'func') + ': ' + vc.description;
     });
 
-    // remove preconditions from prop for purpose of inlining
-    this.prop = removePrefix(pre, this.prop);
-    return res;
+    // remove context and preconditions from prop for purpose of inlining
+    return removePrefix(pre, this.prop);
   }
 
   visitVariableDeclaration (stmt: Syntax.VariableDeclaration): BreakCondition {
@@ -511,13 +510,12 @@ class VCGenerator extends Visitor<A, BreakCondition> {
                                     new Set([...this.locs]),
                                     new Set([...this.vars]), this.prop);
     inliner.testBody = this.testBody;
-    inliner.visitFunctionBody(fun, callee);
+    const inlinedP: P = eraseTriggersProp(inliner.visitFunctionBody(fun, callee));
     this.vcs = this.vcs.concat(inliner.vcs);
     const existsLocs = new Set([...inliner.locs].filter(l => !this.locs.has(l)));
     const existsVars = new Set([...inliner.vars].filter(v => {
       return !this.vars.has(v) && !fun.params.some(n => n.name === v);
     }));
-    const inlinedP: P = eraseTriggersProp(inliner.prop);
     const inlinedSpec: P = this.transformDef(fun, callee, this.heap + 1, inliner.heap,
                                              existsLocs, existsVars, inlinedP);
     this.have(inlinedSpec);
