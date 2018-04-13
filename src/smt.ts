@@ -243,12 +243,8 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitHasProperties (prop: Syntax.HasProperties): SMTInput {
-    let str: string;
-    if (prop.properties.length === 0) {
-      str = '(as seq.empty (Seq String))';
-    } else {
-      str = prop.properties.map(s => `(seq.unit "${s}")`).reduceRight((prev, curr) => `(seq.++ ${curr} ${prev})`);
-    }
+    const empty = '((as const (Array String Bool)) false)';
+    const str = prop.properties.reduceRight((prev, curr) => `(store ${prev} "${curr}" true)`, empty);
     return `(= (objproperties (objv ${this.visitExpr(prop.object)})) ${str})`;
   }
 
@@ -488,14 +484,14 @@ ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map
   (c_Array)
   (c_ObjectLiteral)${[...classes].map(({ cls }) => `\n  (c_${cls})`).join('')})))
 
-(declare-fun objproperties (Obj) (Seq String))
+(declare-fun objproperties (Obj) (Array String Bool))
 (declare-fun objfield (Obj String) JSVal)
 (declare-fun arrlength (Arr) Int)
 (declare-fun arrelems (Arr Int) JSVal)
 ${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
 
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
-  (or (and (is-jsobj obj) (seq.contains (objproperties (objv obj)) (seq.unit (_tostring prop))))
+  (or (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
       (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
@@ -504,7 +500,7 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
 ))
 
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
-  (ite (and (is-jsobj obj) (seq.contains (objproperties (objv obj)) (seq.unit (_tostring prop))))
+  (ite (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
        (objfield (objv obj) (_tostring prop))
   (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
   (ite (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))

@@ -28,7 +28,7 @@ type LazyValue = JSVal.Num | JSVal.Bool | JSVal.Str | JSVal.Null | JSVal.Undefin
                  JSVal.Obj | LazyObjCls | ArrRef | ObjRef;
 type ArrLengths = (arr: ArrRef) => number;
 type ArrElems = (arr: ArrRef, idx: number) => LazyValue;
-type ObjProperties = (obj: ObjRef) => Set<string>;
+type ObjProperties = (obj: ObjRef) => string;
 type ObjFields = (obj: ObjRef, prop: string) => LazyValue;
 type HeapMapping = (loc: Loc) => LazyValue;
 
@@ -110,6 +110,7 @@ export class Model {
   private arrLengths: ArrLengths | null = null;
   private arrElems: ArrElems | null = null;
   private objProperties: ObjProperties | null = null;
+  private objPropertyMappings: { [varname: string]: Set<string> } = {};
   private objFields: ObjFields | null = null;
   private heapMappings: { [varname: string]: HeapMapping } = {};
   private vars: { [varname: string]: LazyValue } = {};
@@ -185,7 +186,14 @@ export class Model {
       if (heapMatch !== null) {
         this.heapMappings[heapMatch.name as string] = this.parseHeapMapping(heapMatch.body);
       } else {
-        throw this.modelError(`unexpected key: ${name}`);
+        const propertiesMatch = matchSExpr(data,
+          ['define-fun', { name: 'name' }, [['x!0', 'String']], 'Bool', { expr: 'body' }]);
+        if (propertiesMatch !== null) {
+          const mapping = this.parsePropertyMapping(propertiesMatch.body);
+          this.objPropertyMappings[propertiesMatch.name as string] = mapping === null ? new Set() : mapping;
+        } else {
+          throw this.modelError(`unexpected key: ${name}`);
+        }
       }
     }
   }
@@ -310,29 +318,6 @@ export class Model {
     }
   }
 
-  private parseStringSeq (smt: SExpr): Set<string> {
-    const emptyMatch = matchSExpr(smt, ['as', 'seq.empty', ['Seq', 'String']]);
-    if (emptyMatch) {
-      return new Set();
-    }
-    const concatMatch = matchSExpr(smt, ['seq.++', { expr: 'left' }, { expr: 'right' }]);
-    if (concatMatch) {
-      const left = this.parseStringSeq(concatMatch.left);
-      const right = this.parseStringSeq(concatMatch.right);
-      return new Set([...left, ...right]);
-    }
-    const singleMatch = matchSExpr(smt, ['seq.unit', { name: 'str' }]);
-    if (singleMatch) {
-      const str: string = singleMatch.str as string;
-      if (str.length < 2 || str[0] !== '"' || str[str.length - 1] !== '"') {
-        throw this.modelError('expected string');
-      }
-      return new Set([str.substr(1, str.length - 2)]);
-    } else {
-      throw this.modelError('expected string sequence');
-    }
-  }
-
   private parseObjectProperties (smt: SExpr): ObjProperties {
     const iteMatch = matchSExpr(smt,
       ['ite', ['=', 'x!0', { name: 'obj' }], { expr: 'then' }, { expr: 'els' }]);
@@ -340,9 +325,35 @@ export class Model {
       const then = this.parseObjectProperties(iteMatch.then);
       const els = this.parseObjectProperties(iteMatch.els);
       return (objRef: ObjRef) => objRef.name === iteMatch.obj ? then(objRef) : els(objRef);
+    }
+    const asArrayMatch = matchSExpr(smt, ['_', 'as-array', { name: 'name' }]);
+    if (!asArrayMatch) throw this.modelError('expected (_ as-array $name)');
+    return (objRef: ObjRef) => asArrayMatch.name as string;
+  }
+
+  private parsePropertyMapping (smt: SExpr): Set<string> | null {
+    const iteMatch = matchSExpr(smt,
+      ['ite', ['=', 'x!0', { name: 'prop' }], { expr: 'then' }, { expr: 'els' }]);
+    if (iteMatch) {
+      const then = this.parsePropertyMapping(iteMatch.then);
+      const els = this.parsePropertyMapping(iteMatch.els);
+      const prop = iteMatch.prop as string;
+      if (prop.length < 2 || prop[0] !== '"' || prop[prop.length - 1] !== '"') {
+        throw this.modelError('expected string');
+      }
+      if (then === null) { // if (p = "prop") then false else $x -> $x
+        return els;
+      } else if (els === null) { // if (p = "prop") then $x else false -> ["prop", $x]
+        return new Set([prop.substr(1, prop.length - 2), ...then]);
+      } else { // if (p = "prop") then $x else $y -> ["prop", $x, $y]
+        return new Set([prop.substr(1, prop.length - 2), ...then, ...els]);
+      }
+    } else if (smt === 'true') { // include properties on path
+      return new Set();
+    } else if (smt === 'false') { // do not include properties on path
+      return null;
     } else {
-      const strings = this.parseStringSeq(smt);
-      return (objRef: ObjRef) => strings;
+      throw this.modelError('expected (true)') ;
     }
   }
 
@@ -384,9 +395,12 @@ export class Model {
         };
       case 'obj-ref':
         if (this.objProperties === null) throw this.modelError('no objproperties');
+        if (this.objPropertyMappings === null) throw this.modelError('no objproperties mappings');
         if (this.objFields === null) throw this.modelError('no objfields');
         const obj: { [key: string]: JSVal } = {};
-        for (const key of this.objProperties(val)) {
+        const mapping: Set<string> | undefined = this.objPropertyMappings[this.objProperties(val)];
+        if (mapping === undefined) throw this.modelError(`no mapping for ${this.objProperties(val)}`);
+        for (const key of this.objPropertyMappings[this.objProperties(val)]) {
           obj[key] = this.hydrate(this.objFields(val, key));
         }
         return { type: 'obj', v: obj };

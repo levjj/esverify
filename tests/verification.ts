@@ -1359,6 +1359,14 @@ describe('simple object access', () => {
       return a.b;
     }
 
+    function g (a) {
+      requires('b' in a);
+      requires(a.b >= 1);
+      ensures(res => res < 0);
+
+      return a.b;
+    }
+
     const a = { b: 23 };
     assert(a instanceof Object);
     assert('b' in a);
@@ -1370,6 +1378,8 @@ describe('simple object access', () => {
 
   verified('f: a has property "b"');
   verified('f: (res >= 0)');
+  verified('g: a has property "b"');
+  incorrect('g: (res < 0)', ['a', { b: 1 }]);
   verified('assert: (a instanceof Object)');
   verified('assert: ("b" in a)');
   verified('assert: (a.b > 22)');
