@@ -395,12 +395,11 @@ export class Model {
         };
       case 'obj-ref':
         if (this.objProperties === null) throw this.modelError('no objproperties');
-        if (this.objPropertyMappings === null) throw this.modelError('no objproperties mappings');
         if (this.objFields === null) throw this.modelError('no objfields');
         const obj: { [key: string]: JSVal } = {};
-        const mapping: Set<string> | undefined = this.objPropertyMappings[this.objProperties(val)];
-        if (mapping === undefined) throw this.modelError(`no mapping for ${this.objProperties(val)}`);
-        for (const key of this.objPropertyMappings[this.objProperties(val)]) {
+        const objAlias: string = this.objProperties(val);
+        if (!(objAlias in this.objPropertyMappings)) throw this.modelError(`no mapping for ${this.objProperties(val)}`);
+        for (const key of this.objPropertyMappings[objAlias]) {
           obj[key] = this.hydrate(this.objFields(val, key));
         }
         return { type: 'obj', v: obj };
