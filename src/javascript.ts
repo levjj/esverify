@@ -1520,9 +1520,14 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitIfStatement (stmt: Syntax.IfStatement): string {
-    return this.i(`if (${this.visitExpression(stmt.test)}) ` +
-                  `${this.visitStatements(stmt.consequent.body)} else ` +
-                  `${this.visitStatements(stmt.alternate.body)}\n`);
+    if (stmt.alternate.body.length === 0) {
+      return this.i(`if (${this.visitExpression(stmt.test)}) ` +
+                    `${this.visitStatements(stmt.consequent.body)}\n`);
+    } else {
+      return this.i(`if (${this.visitExpression(stmt.test)}) ` +
+                    `${this.visitStatements(stmt.consequent.body)} else ` +
+                    `${this.visitStatements(stmt.alternate.body)}\n`);
+    }
   }
 
   visitReturnStatement (stmt: Syntax.ReturnStatement): string {
