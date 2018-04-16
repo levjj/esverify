@@ -11,7 +11,7 @@ export namespace JSVal {
   export interface Str { type: 'str'; v: string; }
   export interface Null { type: 'null'; }
   export interface Undefined { type: 'undefined'; }
-  export interface Fun { type: 'fun'; v: string; }
+  export interface Fun { type: 'fun'; body: Syntax.FunctionExpression; }
   export interface Obj { type: 'obj'; v: { [key: string]: JSVal }; }
   export interface ObjCls { type: 'obj-cls'; cls: string; args: Array<Value>; }
   export interface Arr { type: 'arr'; elems: Array<Value>; }
@@ -23,14 +23,16 @@ export type JSVal = JSVal.Value;
 interface LazyObjCls { type: 'obj-cls'; cls: string; args: Array<LazyValue>; }
 interface ArrRef { type: 'arr-ref'; name: string; }
 interface ObjRef { type: 'obj-ref'; name: string; }
+interface FunRef { type: 'fun-ref'; name: string; }
 interface Loc { type: 'loc'; name: string; }
-type LazyValue = JSVal.Num | JSVal.Bool | JSVal.Str | JSVal.Null | JSVal.Undefined | JSVal.Fun |
-                 JSVal.Obj | LazyObjCls | ArrRef | ObjRef;
+type LazyValue = JSVal.Num | JSVal.Bool | JSVal.Str | JSVal.Null | JSVal.Undefined |
+                 JSVal.Obj | LazyObjCls | ArrRef | ObjRef | FunRef;
 type ArrLengths = (arr: ArrRef) => number;
 type ArrElems = (arr: ArrRef, idx: number) => LazyValue;
 type ObjProperties = (obj: ObjRef) => string;
 type ObjFields = (obj: ObjRef, prop: string) => LazyValue;
 type HeapMapping = (loc: Loc) => LazyValue;
+interface LazyFun { type: 'fun'; body: Array<{ cond: Array<JSVal>, ret: LazyValue }>; }
 
 export function plainToJSVal (val: any): JSVal {
   if (typeof val === 'number') {
@@ -43,8 +45,6 @@ export function plainToJSVal (val: any): JSVal {
     return { type: 'null' };
   } else if (val === undefined) {
     return { type: 'undefined' };
-  } else if (typeof val === 'function') {
-    return { type: 'fun', v: val.toString() };
   } else if (val instanceof Array) {
     return { type: 'arr', elems: val.map(plainToJSVal) };
   } else if ('_cls_' in val && '_args_' in val) {
@@ -69,20 +69,7 @@ export function valueToJavaScript (val: JSVal): Syntax.Expression {
     case 'undefined':
       return { type: 'Literal', value: undefined, loc: nullLoc() };
     case 'fun':
-      return {
-        type: 'FunctionExpression',
-        id: null,
-        params: [],
-        requires: [],
-        ensures: [],
-        body: {
-          type: 'BlockStatement',
-          body: [],
-          loc: nullLoc()
-        },
-        freeVars: [],
-        loc: nullLoc()
-      };
+      return val.body;
     case 'obj':
       return {
         type: 'ObjectExpression',
@@ -116,6 +103,8 @@ export class Model {
   private vars: { [varname: string]: LazyValue } = {};
   private locs: { [varname: string]: Loc } = {};
   private heaps: Array<string> = [];
+  private funs: { [funcref: string]: Array<LazyFun> } = {};
+  private funDefaults: Array<LazyValue> = [];
 
   constructor (smt: SMTOutput) {
     // assumes smt starts with "sat", so remove "sat"
@@ -177,8 +166,9 @@ export class Model {
       this.objFields = this.parseObjectFields(m.body);
     } else if (name.startsWith('c_')) {
       return; // skip class names
-    } else if (name.startsWith('app') || name.startsWith('pre') || name.startsWith('post') ||
-               name.startsWith('eff') || name.startsWith('call')) {
+    } else if (name.startsWith('app')) {
+      this.parseFunctions(m.body, parseInt(name.substr(3), 10));
+    } else if (name.startsWith('pre') || name.startsWith('post') || name.startsWith('eff') || name.startsWith('call')) {
       return; // skip functions
     } else {
       const heapMatch = matchSExpr(data,
@@ -205,6 +195,45 @@ export class Model {
       loc: { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       description: `cannot parse smt ${smt}`
     });
+  }
+
+  private tryParseSimpleValue (s: SExpr): JSVal | null {
+    if (typeof s === 'string') {
+      if (s === 'jsundefined') {
+        return { type: 'undefined' };
+      } else if (s === 'jsnull') {
+        return { type: 'null' };
+      } else {
+        return null;
+      }
+    } else {
+      if (s.length < 1) return null;
+      const tag = s[0];
+      if (typeof tag !== 'string') return null;
+      if (tag === 'jsbool') {
+        if (s.length !== 2) return null;
+        const v = s[1];
+        if (typeof v !== 'string') return null;
+        return { type: 'bool', v: v === 'true' };
+      } else if (tag === 'jsnum') {
+        if (s.length !== 2) return null;
+        const v = s[1];
+        if (typeof v === 'string') {
+          return { type: 'num', v: parseInt(v, 10) };
+        } else {
+          const m = matchSExpr(v, ['-', { name: 'num' }]);
+          if (m === null) return null;
+          return { type: 'num', v: - parseInt(m.num as string, 10) };
+        }
+      } else if (tag === 'jsstr') {
+        if (s.length !== 2) return null;
+        const v = s[1];
+        if (typeof v !== 'string') return null;
+        return { type: 'str', v: v.substr(1, v.length - 2) };
+      } else {
+        return null;
+      }
+    }
   }
 
   private parseLazyValue (s: SExpr): LazyValue {
@@ -248,7 +277,7 @@ export class Model {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
         if (typeof v !== 'string') throw this.modelError(s.toString());
-        return { type: 'fun', v };
+        return { type: 'fun-ref', name: v };
       } else if (tag === 'jsobj') {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
@@ -318,6 +347,36 @@ export class Model {
     }
   }
 
+  private parseFunctions (smt: SExpr, numArgs: number): void {
+    // only find direct matches and treat final value explicitly
+    const iteMatch = matchSExpr(smt, ['ite', { group: 'cond' }, { expr: 'then' }, { expr: 'els' }]);
+    if (!iteMatch) {
+      this.funDefaults[numArgs] = this.parseLazyValue(smt);
+      return;
+    }
+    this.parseFunctions(iteMatch.els, numArgs); // process remaining functions first
+    const condList = iteMatch.cond as Array<string>;
+    if (condList.length < 3 || condList[0] !== 'and') throw this.modelError('expected (and ...)');
+    const funcMatch = matchSExpr(condList[1], ['=', 'x!0', ['jsfun', { name: 'func' }]]);
+    if (!funcMatch) return; // skip non-function value mappings
+    const funcName = funcMatch.func as string;
+    const funcBlocks: Array<LazyFun> =
+      funcName in this.funs ? this.funs[funcName] : (this.funs[funcName] = []);
+    const fun: LazyFun =
+      numArgs in funcBlocks ? funcBlocks[numArgs] : (funcBlocks[numArgs] = { type: 'fun', body: [] });
+    const fullCond: Array<JSVal> = [];
+    // ignore 'and', func match and heap cond -> remaining part of cond are arguments
+    for (let idx = 3; idx < condList.length; idx++) {
+      const condMatch = matchSExpr(condList[idx], ['=', `x!${idx - 1}`, { expr: 'val' }]);
+      if (!condMatch) throw this.modelError('expected (= x!idx $val)');
+      const matchVal: JSVal | null = this.tryParseSimpleValue(condMatch.val);
+      if (!matchVal) return;
+      fullCond.push(matchVal);
+    }
+    const then = this.parseLazyValue(iteMatch.then);
+    fun.body.unshift({ cond: fullCond, ret: then });
+  }
+
   private parseObjectProperties (smt: SExpr): ObjProperties {
     const iteMatch = matchSExpr(smt,
       ['ite', ['=', 'x!0', { name: 'obj' }], { expr: 'then' }, { expr: 'els' }]);
@@ -383,6 +442,75 @@ export class Model {
           type: 'obj-cls',
           cls: val.cls,
           args: val.args.map(a => this.hydrate(a))
+        };
+      case 'fun-ref':
+        const body: Array<Syntax.Statement> = [];
+        let numArgs = 0;
+        if (this.funs && val.name in this.funs) {
+          const funcBlocks: Array<LazyFun> = this.funs[val.name];
+          if (Object.keys(funcBlocks).length !== 1) {
+            throw this.modelError('no support for variable argument functions');
+          }
+          numArgs = parseInt(Object.keys(funcBlocks)[0], 10);
+          const fun = funcBlocks[numArgs];
+          let defaultVal = this.funDefaults[numArgs];
+          fun.body.forEach(({ cond, ret }) => {
+            if (cond.length === 0) {
+              defaultVal = ret;
+            } else {
+              body.push({
+                type: 'IfStatement',
+                test: cond
+                  .map((condExpr, argIdx): Syntax.Expression => ({
+                    type: 'BinaryExpression',
+                    operator: '===',
+                    left: id(`x_${argIdx}`),
+                    right: valueToJavaScript(condExpr),
+                    loc: nullLoc()
+                  }))
+                  .reduceRight((prev, curr) => ({
+                    type: 'LogicalExpression',
+                    operator: '&&',
+                    left: curr,
+                    right: prev,
+                    loc: nullLoc()
+                  })),
+                consequent: {
+                  type: 'BlockStatement',
+                  body: [{
+                    type: 'ReturnStatement',
+                    argument: valueToJavaScript(this.hydrate(ret)),
+                    loc: nullLoc()
+                  }],
+                  loc: nullLoc()
+                },
+                alternate: { type: 'BlockStatement', body: [], loc: nullLoc() },
+                loc: nullLoc()
+              });
+            }
+          });
+          body.push({
+            type: 'ReturnStatement',
+            argument: valueToJavaScript(this.hydrate(defaultVal)),
+            loc: nullLoc()
+          });
+        }
+        return {
+          type: 'fun',
+          body: {
+            type: 'FunctionExpression',
+            id: null,
+            params: [...Array(numArgs)].map((_, idx) => id(`x_${idx}`)),
+            requires: [],
+            ensures: [],
+            body: {
+              type: 'BlockStatement',
+              body,
+              loc: nullLoc()
+            },
+            freeVars: [],
+            loc: nullLoc()
+          }
         };
       case 'arr-ref':
         if (this.arrLengths === null) throw this.modelError('no arrlength');

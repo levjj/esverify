@@ -1385,3 +1385,162 @@ describe('simple object access', () => {
   verified('assert: (a.b > 22)');
   verified('assert: (a[p] > 22)');
 });
+
+describe('function counter examples', () => {
+
+  code(() => {
+    function g1 (f) {
+      requires(spec(f, () => true, y => y === 0));
+      ensures(res => res === 1);
+
+      return f();
+    }
+
+    function g2 (f) {
+      requires(spec(f, x => true, (x, y) => true));
+      requires(f(1) === 0);
+      ensures(res => res === 1);
+
+      return f(1);
+    }
+
+    function g3 (f) {
+      requires(spec(f, x => x > 4, (x, y) => y === 23));
+      ensures(res => res < 20);
+
+      return f(5);
+    }
+
+  });
+
+  verified('g1: precondition f()');
+  incorrect('g1: (res === 1)');
+  it('g1: (res === 1) returns counterexample', async () => {
+    const m = await vcs[1].verify();
+    expect(m.description).to.eql('g1: (res === 1)');
+    expect(m.status).to.equal('error');
+    if (m.status !== 'error') throw new Error();
+    expect(m.type).to.equal('incorrect');
+    if (m.type !== 'incorrect') throw new Error();
+    expect(m.model.variables()).to.include('f');
+    const f = m.model.valueOf('f');
+    expect(f.type).to.eql('fun');
+    if (f.type !== 'fun') throw new Error();
+    expect(f.body.id === null);
+    expect(f.body.params).to.have.length(0);
+    expect(f.body.body.body).to.have.length(1);
+    const retStmt = f.body.body.body[0];
+    expect(retStmt.type).to.eql('ReturnStatement');
+    if (retStmt.type !== 'ReturnStatement') throw new Error();
+    const arg = retStmt.argument;
+    expect(arg.type).to.eql('Literal');
+    if (arg.type !== 'Literal') throw new Error();
+    expect(arg.value).to.eql(0);
+  });
+  verified('g2: precondition f(1)');
+  incorrect('g2: (res === 1)');
+  it('g2: (res === 1) returns counterexample', async () => {
+    const m = await vcs[3].verify();
+    expect(m.description).to.eql('g2: (res === 1)');
+    expect(m.status).to.equal('error');
+    if (m.status !== 'error') throw new Error();
+    expect(m.type).to.equal('incorrect');
+    if (m.type !== 'incorrect') throw new Error();
+    expect(m.model.variables()).to.include('f');
+    const f = m.model.valueOf('f');
+    expect(f.type).to.eql('fun');
+    if (f.type !== 'fun') throw new Error();
+    expect(f.body.id === null);
+    expect(f.body.params).to.have.length(1);
+    expect(f.body.params[0].name).to.eql('x_0');
+    expect(f.body.body.body).to.have.length(2);
+
+    const ifStmt = f.body.body.body[0];
+    expect(ifStmt.type).to.eql('IfStatement');
+    if (ifStmt.type !== 'IfStatement') throw new Error();
+    const cond = ifStmt.test;
+    expect(cond.type).to.eql('BinaryExpression');
+    if (cond.type !== 'BinaryExpression') throw new Error();
+    expect(cond.operator).to.eql('===');
+    const condLeft = cond.left;
+    expect(condLeft.type).to.eql('Identifier');
+    if (condLeft.type !== 'Identifier') throw new Error();
+    expect(condLeft.name).to.eql('x_0');
+    const condRight = cond.right;
+    expect(condRight.type).to.eql('Literal');
+    if (condRight.type !== 'Literal') throw new Error();
+    expect(condRight.value).to.eql(1);
+
+    expect(ifStmt.consequent.body).to.have.length(1);
+    const thenStmt = ifStmt.consequent.body[0];
+    expect(thenStmt.type).to.eql('ReturnStatement');
+    if (thenStmt.type !== 'ReturnStatement') throw new Error();
+    const thenArg = thenStmt.argument;
+    expect(thenArg.type).to.eql('Literal');
+    if (thenArg.type !== 'Literal') throw new Error();
+    expect(thenArg.value).to.eql(0);
+
+    expect(ifStmt.alternate.body).to.have.length(0);
+
+    const retStmt = f.body.body.body[1];
+    expect(retStmt.type).to.eql('ReturnStatement');
+    if (retStmt.type !== 'ReturnStatement') throw new Error();
+    const arg = retStmt.argument;
+    expect(arg.type).to.eql('Literal');
+    if (arg.type !== 'Literal') throw new Error();
+    expect(arg.value).to.eql(1);
+  });
+  verified('g3: precondition f(5)');
+  incorrect('g3: (res < 20)');
+  it('g3: (res < 20) returns counterexample', async () => {
+    const m = await vcs[5].verify();
+    expect(m.description).to.eql('g3: (res < 20)');
+    expect(m.status).to.equal('error');
+    if (m.status !== 'error') throw new Error();
+    expect(m.type).to.equal('incorrect');
+    if (m.type !== 'incorrect') throw new Error();
+    expect(m.model.variables()).to.include('f');
+    const f = m.model.valueOf('f');
+    expect(f.type).to.eql('fun');
+    if (f.type !== 'fun') throw new Error();
+    expect(f.body.id === null);
+    expect(f.body.params).to.have.length(1);
+    expect(f.body.params[0].name).to.eql('x_0');
+    expect(f.body.body.body).to.have.length(2);
+
+    const ifStmt = f.body.body.body[0];
+    expect(ifStmt.type).to.eql('IfStatement');
+    if (ifStmt.type !== 'IfStatement') throw new Error();
+    const cond = ifStmt.test;
+    expect(cond.type).to.eql('BinaryExpression');
+    if (cond.type !== 'BinaryExpression') throw new Error();
+    expect(cond.operator).to.eql('===');
+    const condLeft = cond.left;
+    expect(condLeft.type).to.eql('Identifier');
+    if (condLeft.type !== 'Identifier') throw new Error();
+    expect(condLeft.name).to.eql('x_0');
+    const condRight = cond.right;
+    expect(condRight.type).to.eql('Literal');
+    if (condRight.type !== 'Literal') throw new Error();
+    expect(condRight.value).to.eql(5);
+
+    expect(ifStmt.consequent.body).to.have.length(1);
+    const thenStmt = ifStmt.consequent.body[0];
+    expect(thenStmt.type).to.eql('ReturnStatement');
+    if (thenStmt.type !== 'ReturnStatement') throw new Error();
+    const thenArg = thenStmt.argument;
+    expect(thenArg.type).to.eql('Literal');
+    if (thenArg.type !== 'Literal') throw new Error();
+    expect(thenArg.value).to.eql(23);
+
+    expect(ifStmt.alternate.body).to.have.length(0);
+
+    const retStmt = f.body.body.body[1];
+    expect(retStmt.type).to.eql('ReturnStatement');
+    if (retStmt.type !== 'ReturnStatement') throw new Error();
+    const arg = retStmt.argument;
+    expect(arg.type).to.eql('Literal');
+    if (arg.type !== 'Literal') throw new Error();
+    expect(arg.value).to.eql(1);
+  });
+});
