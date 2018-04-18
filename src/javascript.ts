@@ -54,7 +54,7 @@ export namespace Syntax {
                                            alternate: Expression;
                                            loc: SourceLocation; }
   export interface AssignmentExpression { type: 'AssignmentExpression';
-                                          left: Identifier;
+                                          left: Expression;
                                           right: Expression;
                                           loc: SourceLocation; }
   export interface SequenceExpression { type: 'SequenceExpression';
@@ -1157,6 +1157,7 @@ class NameResolver extends Visitor<void,void> {
 
   visitAssignmentExpression (expr: Syntax.AssignmentExpression) {
     this.visitExpression(expr.right);
+    if (expr.left.type !== 'Identifier') throw unsupportedLoc(expr.loc);
     this.scope.useSymbol(expr.left, true);
   }
 
@@ -1395,7 +1396,7 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitAssignmentExpression (expr: Syntax.AssignmentExpression): string {
-    return `${expr.left.name} = ${this.visitExpression(expr.right)}`;
+    return `${this.visitExpression(expr.left)} = ${this.visitExpression(expr.right)}`;
   }
 
   visitSequenceExpression (expr: Syntax.SequenceExpression): string {

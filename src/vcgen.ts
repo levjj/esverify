@@ -163,6 +163,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitAssignmentExpression (expr: Syntax.AssignmentExpression): A {
+    if (expr.left.type !== 'Identifier') throw new Error('unsupported');
     const t = this.visitExpression(expr.right);
     this.have(heapStore(this.heap++, expr.left.name, t));
     return t;
