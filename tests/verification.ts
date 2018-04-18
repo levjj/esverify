@@ -158,10 +158,10 @@ describe('counter', () => {
 
   verified('initially: (typeof(counter) === "number")');
   verified('initially: (counter >= 0)');
-  verified('increment: (counter > old_counter)');
+  verified('increment: (counter > old(counter))');
   verified('increment: (typeof(counter) === "number")');
   verified('increment: (counter >= 0)');
-  verified('decrement: (old_counter > 0) ? (counter < old_counter) : (counter === old_counter)');
+  verified('decrement: (old(counter) > 0) ? (counter < old(counter)) : (counter === old(counter))');
   verified('decrement: (typeof(counter) === "number")');
   verified('decrement: (counter >= 0)');
 });
@@ -1097,9 +1097,9 @@ describe('promise', () => {
   verified('then: precondition fulfill(promise.value)');
   verified('then: class invariant Promise');
   verified('precondition resolve(0)');
-  verified('precondition then(p, (function  (n) {\n  return (n + 2);\n}))');
+  verified('precondition then(p, n => (n + 2))');
   verified('func: class invariant Promise');
-  verified('precondition then(p2, (function  (n) {\n  return new Promise((n + 5));\n}))');
+  verified('precondition then(p2, n => new Promise((n + 5)))');
 });
 
 describe('simple class instance access', () => {

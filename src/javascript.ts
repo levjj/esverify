@@ -348,12 +348,8 @@ function assignUpdate (left: Syntax.Identifier, op: Syntax.BinaryOperator, right
 
 function returnExpr (expr: JSyntax.Expression): Array<JSyntax.Statement> {
   return [{
-    type: 'BlockStatement',
-    body: [{
-      type: 'ReturnStatement',
-      argument: expr,
-      loc: expr.loc
-    }],
+    type: 'ReturnStatement',
+    argument: expr,
     loc: expr.loc
   }];
 }
@@ -1365,7 +1361,7 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitOldIdentifier (expr: Syntax.OldIdentifier): string {
-    return `old_${expr.id.name}`;
+    return `old(${expr.id.name})`;
   }
 
   visitLiteral (expr: Syntax.Literal): string {
@@ -1475,7 +1471,15 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): string {
-    return `(function ${expr.id ? expr.id.name : ''} (${expr.params.map(p => p.name).join(', ')}) ` +
+    if (expr.id === null && expr.body.body.length === 1 && expr.body.body[0].type === 'ReturnStatement') {
+      const retStmt = expr.body.body[0] as Syntax.ReturnStatement;
+      if (expr.params.length === 1) {
+        return `${expr.params[0].name} => ${this.visitExpression(retStmt.argument)}`;
+      } else {
+        return `(${expr.params.map(p => p.name).join(', ')}) => ${this.visitExpression(retStmt.argument)}`;
+      }
+    }
+    return `(function ${expr.id ? expr.id.name + ' ' : ''}(${expr.params.map(p => p.name).join(', ')}) ` +
             `${this.visitStatements(expr.body.body)})`;
   }
 
