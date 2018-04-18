@@ -1,6 +1,7 @@
 import { translateExpression } from './assertions';
-import { Syntax, Visitor, checkPreconditions, id, isMutable, loopTestingCode, nullLoc,
-         replaceVar as replaceJSVar, stringifyExpr } from './javascript';
+import { Syntax, Visitor, id, isMutable, loopTestingCode, nullLoc,
+         replaceVar as replaceJSVar, deferredAssertionTestCode,
+         immediateAssertionTestCode, stringifyExpr } from './javascript';
 import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq,
          heapStore, implies, not, or, removePrefix, replaceResultWithCall, replaceVar,
          transformClassInvariant, transformSpec, tru, truthy, und } from './logic';
@@ -339,6 +340,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     // assume preconditions
     for (const r of f.requires) {
       this.have(translateExpression(this.heap, this.heap, r));
+      this.testBody = this.testBody.concat(deferredAssertionTestCode(r));
     }
 
     const pre = this.prop;
@@ -368,8 +370,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     for (const ens of f.ensures) {
       const ens2 = ens.argument ? replaceJSVar(ens.argument.name, this.resVar, ens.expression) : ens.expression;
       const ti = translateExpression(startHeap, this.heap, ens2);
-      this.verify(ti, ens.loc, stringifyExpr(ens.expression),
-                  [{ type: 'AssertStatement', loc: ens.loc, expression: ens2 }]);
+      this.verify(ti, ens.loc, stringifyExpr(ens.expression), immediateAssertionTestCode(ens2));
     }
     this.vcs.forEach(vc => {
       vc.description = (f.id ? f.id.name : 'func') + ': ' + vc.description;
@@ -456,7 +457,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     for (const inv of stmt.invariants) {
       const t = translateExpression(this.oldHeap, this.heap, inv);
       this.verify(t, inv.loc, 'invariant on entry: ' + stringifyExpr(inv),
-                  [{ type: 'AssertStatement', loc: inv.loc, expression: inv }]);
+                  immediateAssertionTestCode(inv));
     }
 
     // havoc heap
@@ -473,6 +474,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.have(truthy(testEnter));
     for (const inv of stmt.invariants) {
       this.have(translateExpression(startHeap, this.heap, inv)); // TODO old() for previous iteration
+      this.testBody = this.testBody.concat(deferredAssertionTestCode(inv));
     }
 
     // internal verification conditions
@@ -481,9 +483,9 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     // ensure invariants maintained
     for (const inv of stmt.invariants) {
       const ti = translateExpression(startHeap, this.heap, inv);
-      const assertCode: Syntax.Statement = { type: 'AssertStatement', loc: inv.loc, expression: inv };
+      const assertCode = immediateAssertionTestCode(inv);
       this.verify(ti, inv.loc, 'invariant maintained: ' + stringifyExpr(inv),
-                  loopTestingCode(stmt).concat([assertCode]));
+                  loopTestingCode(stmt).concat(assertCode));
     }
 
     // we are going to use the returned verification conditions and break condition
@@ -497,6 +499,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
     this.have(falsy(testExit));
     for (const inv of stmt.invariants) {
       this.have(translateExpression(this.oldHeap, this.heap, inv));
+      this.testBody = this.testBody.concat(deferredAssertionTestCode(inv));
     }
     return and(truthy(testEnter), bcBody);
   }
@@ -523,7 +526,7 @@ class VCGenerator extends Visitor<A, BreakCondition> {
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
-    this.testBody = this.testBody.concat([checkPreconditions(stmt)]);
+    this.testBody = this.testBody.concat(stmt);
     this.visitFunction(stmt, stmt.id.name);
     return fls;
   }

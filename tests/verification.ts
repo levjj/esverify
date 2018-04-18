@@ -1544,3 +1544,26 @@ describe('function counter examples', () => {
     expect(arg.value).to.eql(1);
   });
 });
+
+describe('function spec enforced in test', () => {
+
+  code(() => {
+    function g1 (f) {
+      requires(spec(f, x => x > 4, (x, y) => true));
+      f(4);
+    }
+
+    function g2 (f) {
+      requires(spec(f, x => true, (x, y) => y > 4));
+      const z = f(23);
+      assert(z > 5);
+    }
+
+    g2(() => 3);
+  });
+
+  incorrect('g1: precondition f(4)');
+  verified('g2: precondition f(23)');
+  incorrect('g2: assert: (z > 5)');
+  incorrect('precondition g2(() => 3)');
+});

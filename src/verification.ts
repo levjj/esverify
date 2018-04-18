@@ -1,4 +1,4 @@
-import { Substituter, Syntax, stringifyStmt } from './javascript';
+import { Substituter, Syntax, transformTestCode } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript } from './model';
@@ -78,13 +78,7 @@ export default class VerificationCondition {
       const expr = valueToJavaScript(model.valueOf(freeVar));
       sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, expr);
     });
-    return `
-function assert(p) { if (!p) throw new Error("assertion failed"); }
-function pure() { return true; /* not tested dynamically */ }
-function spec() { return true; /* not tested dynamically */ }
-function every(a, f) { return a.every(f); }
-
-${this.testBody.map(s => stringifyStmt(sub.visitStatement(s))).join('\n')}`;
+    return transformTestCode(this.testBody.map(s => sub.visitStatement(s)));
   }
 
   private process (out: SMTOutput): Message {

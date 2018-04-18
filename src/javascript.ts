@@ -173,6 +173,7 @@ export namespace Syntax {
                                       id: Identifier;
                                       fields: Array<string>;
                                       invariant: Expression;
+                                      checkInvariant: boolean;
                                       loc: SourceLocation; }
 
   export type Statement = VariableDeclaration
@@ -908,6 +909,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
         id: patternAsIdentifier(stmt.id),
         fields: params.map(p => p.name),
         invariant: expressionAsJavaScript(invStmt.argument),
+        checkInvariant: false,
         loc: loc(stmt)
       }];
     }
@@ -1311,6 +1313,7 @@ class NameResolver extends Visitor<void,void> {
       id: id(name),
       fields: [],
       invariant: { type: 'Literal', value: true, loc: nullLoc() },
+      checkInvariant: false,
       loc: nullLoc()
     };
     this.scope.defSymbol(decl.id, { type: 'Class', decl });
@@ -1560,7 +1563,9 @@ class Stringifier extends Visitor<string,string> {
     for (const f of stmt.fields) {
       res += this.i(`this.${f} = ${f};\n`);
     }
-    res += this.i(`assert(this.invariant());\n`);
+    if (stmt.checkInvariant) {
+      res += this.visitStatements(immediateAssertionTestCode(stmt.invariant));
+    }
     this.depth--;
     res += this.i(`}\n`);
     res += this.i(`invariant(${stmt.fields.join(', ')}) {\n`);
@@ -1898,6 +1903,7 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
       id: stmt.id,
       fields: stmt.fields,
       invariant: this.visitExpression(stmt.invariant),
+      checkInvariant: stmt.checkInvariant,
       loc: stmt.loc
     };
   }
@@ -1915,6 +1921,200 @@ export function replaceVar (v: string, subst: string | Syntax.Expression, expr: 
   const sub = new Substituter();
   sub.replaceVar(v, subst);
   return sub.visitExpression(expr);
+}
+
+/**
+ * Given an expression, determines whether it is a valid left-hand side of an assignment.
+ */
+class ValidAssignmentTargetChecker extends Visitor<boolean, void> {
+
+  visitIdentifier (expr: Syntax.Identifier): boolean { return true; }
+
+  visitOldIdentifier (expr: Syntax.OldIdentifier): boolean { return false; }
+
+  visitLiteral (expr: Syntax.Literal): boolean { return false; }
+
+  visitPureExpression (expr: Syntax.PureExpression): boolean { return false; }
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): boolean { return false; }
+
+  visitBinaryExpression (expr: Syntax.BinaryExpression): boolean { return false; }
+
+  visitLogicalExpression (expr: Syntax.LogicalExpression): boolean { return false; }
+
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): boolean { return false; }
+
+  visitAssignmentExpression (expr: Syntax.AssignmentExpression): boolean { return false; }
+
+  visitSequenceExpression (expr: Syntax.SequenceExpression): boolean { return false; }
+
+  visitCallExpression (expr: Syntax.CallExpression): boolean { return false; }
+
+  visitSpecExpression (expr: Syntax.SpecExpression): boolean { return false; }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): boolean { return false; }
+
+  visitNewExpression (expr: Syntax.NewExpression): boolean { return false; }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): boolean { return false; }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): boolean { return false; }
+
+  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): boolean { return false; }
+
+  visitInExpression (expr: Syntax.InExpression): boolean { return false; }
+
+  visitMemberExpression (expr: Syntax.MemberExpression): boolean {
+    return this.visitExpression(expr.object) && expr.property.type === 'Literal';
+  }
+
+  visitFunctionExpression (expr: Syntax.FunctionExpression): boolean { return false; }
+
+  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): void { /* empty */ }
+
+  visitBlockStatement (stmt: Syntax.BlockStatement): void { /* empty */ }
+
+  visitExpressionStatement (stmt: Syntax.ExpressionStatement): void { /* empty */ }
+
+  visitAssertStatement (stmt: Syntax.AssertStatement): void { /* empty */ }
+
+  visitIfStatement (stmt: Syntax.IfStatement): void { /* empty */ }
+
+  visitReturnStatement (stmt: Syntax.ReturnStatement): void { /* empty */ }
+
+  visitWhileStatement (stmt: Syntax.WhileStatement): void { /* empty */ }
+
+  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): void { /* empty */ }
+
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): void { /* empty */ }
+
+  visitClassDeclaration (stmt: Syntax.ClassDeclaration): void { /* empty */ }
+
+  visitProgram (prog: Syntax.Program): void { /* empty */ }
+}
+
+function isValidAssignmentTarget (expr: Syntax.Expression): boolean {
+  const visitor = new ValidAssignmentTargetChecker();
+  return visitor.visitExpression(expr);
+}
+
+/**
+ * Given an expression, collect function specifications that are either top-level or part of
+ * a conjunction. Specs that are part of a disjunction or in a negative position are difficult
+ * to dynamically enforce and are not supported yet.
+ */
+class SimpleSpecCollector extends Visitor<Array<Syntax.SpecExpression>, void> {
+
+  visitIdentifier (expr: Syntax.Identifier): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitOldIdentifier (expr: Syntax.OldIdentifier): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitLiteral (expr: Syntax.Literal): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitPureExpression (expr: Syntax.PureExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitBinaryExpression (expr: Syntax.BinaryExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitLogicalExpression (expr: Syntax.LogicalExpression): Array<Syntax.SpecExpression> {
+    switch (expr.operator) {
+      case '&&': return this.visitExpression(expr.left).concat(this.visitExpression(expr.right));
+      case '||': return [];
+    }
+  }
+
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitAssignmentExpression (expr: Syntax.AssignmentExpression): Array<Syntax.SpecExpression> {
+    return this.visitExpression(expr.right);
+  }
+
+  visitSequenceExpression (expr: Syntax.SequenceExpression): Array<Syntax.SpecExpression> {
+    // only consider last expression
+    return this.visitExpression(expr.expressions[expr.expressions.length - 1]);
+  }
+
+  visitCallExpression (expr: Syntax.CallExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitSpecExpression (expr: Syntax.SpecExpression): Array<Syntax.SpecExpression> {
+    return isValidAssignmentTarget(expr.callee) ? [expr] : [];
+  }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitNewExpression (expr: Syntax.NewExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitInExpression (expr: Syntax.InExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitMemberExpression (expr: Syntax.MemberExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitFunctionExpression (expr: Syntax.FunctionExpression): Array<Syntax.SpecExpression> {
+    return [];
+  }
+
+  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): void { /* empty */ }
+
+  visitBlockStatement (stmt: Syntax.BlockStatement): void { /* empty */ }
+
+  visitExpressionStatement (stmt: Syntax.ExpressionStatement): void { /* empty */ }
+
+  visitAssertStatement (stmt: Syntax.AssertStatement): void { /* empty */ }
+
+  visitIfStatement (stmt: Syntax.IfStatement): void { /* empty */ }
+
+  visitReturnStatement (stmt: Syntax.ReturnStatement): void { /* empty */ }
+
+  visitWhileStatement (stmt: Syntax.WhileStatement): void { /* empty */ }
+
+  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): void { /* empty */ }
+
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): void { /* empty */ }
+
+  visitClassDeclaration (stmt: Syntax.ClassDeclaration): void { /* empty */ }
+
+  visitProgram (prog: Syntax.Program): void { /* empty */ }
+}
+
+export function simpleSpecs (expr: Syntax.Expression): Array<Syntax.SpecExpression> {
+  const visitor = new SimpleSpecCollector();
+  return visitor.visitExpression(expr);
 }
 
 export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.Statement> {
@@ -1947,22 +2147,420 @@ export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.State
   }];
 }
 
-export function checkPreconditions (f: Syntax.FunctionDeclaration): Syntax.FunctionDeclaration {
+function uniqueIdentifier (loc: Syntax.SourceLocation): number {
+  return loc.start.column + loc.start.line * 37 +
+         loc.end.column * 331 + loc.end.line * 5023 + loc.file.length * 48353;
+}
+
+class TestCodeTransformer extends Visitor<Syntax.Expression, Array<Syntax.Statement>> {
+
+  assert (expr: Syntax.Expression, immediate: boolean = true): Array<Syntax.Statement> {
+    const result: Array<Syntax.Statement> = [];
+    const check = this.visitExpression(expr);
+    if (immediate && (check.type !== 'Literal' || check.value !== true)) {
+      result.push({ type: 'AssertStatement', expression: check, loc: expr.loc });
+    }
+    for (const spec of simpleSpecs(expr)) {
+      // Uses an assignment to wrap and update the callee of the provided function spec such that
+      // all subsequent calls enforce the pre- and postcondition.
+      result.push({
+        type: 'ExpressionStatement',
+        expression: {
+          type: 'AssignmentExpression',
+          left: spec.callee,
+          right: {
+            type: 'CallExpression',
+            callee: id('spec'),
+            args: [
+              spec.callee,
+              { type: 'Literal', value: uniqueIdentifier(spec.loc), loc: spec.loc },
+              {
+                type: 'FunctionExpression',
+                id: null,
+                params: spec.args.map(s => id(s)),
+                requires: [],
+                ensures: [],
+                body: {
+                  type: 'BlockStatement',
+                  body: [{
+                    type: 'ReturnStatement',
+                    argument: spec.pre,
+                    loc: spec.pre.loc
+                  }],
+                  loc: spec.pre.loc
+                },
+                freeVars: [],
+                loc: spec.pre.loc
+              }, {
+                type: 'FunctionExpression',
+                id: null,
+                params: spec.args.map(s => id(s)).concat(spec.post.argument === null ? [] : [spec.post.argument]),
+                requires: [],
+                ensures: [],
+                body: {
+                  type: 'BlockStatement',
+                  body: [{
+                    type: 'ReturnStatement',
+                    argument: spec.post.expression,
+                    loc: spec.post.loc
+                  }],
+                  loc: spec.post.loc
+                },
+                freeVars: [],
+                loc: spec.post.loc
+              }
+            ],
+            loc: spec.loc
+          },
+          loc: spec.loc
+        },
+        loc: spec.loc
+      });
+    }
+    return result;
+  }
+
+  unwrapBlockStatement (stmt: Syntax.BlockStatement): Array<Syntax.Statement> {
+    return flatMap(stmt.body, s => this.visitStatement(s));
+  }
+
+  visitIdentifier (expr: Syntax.Identifier): Syntax.Expression { return expr; }
+
+  visitOldIdentifier (expr: Syntax.OldIdentifier): Syntax.Expression {
+    return id(`old_${expr.id.name}`, expr.loc);
+  }
+
+  visitLiteral (expr: Syntax.Literal): Syntax.Expression {
+    return expr;
+  }
+
+  visitPureExpression (expr: Syntax.PureExpression): Syntax.Expression {
+    return { type: 'Literal', value: true, loc: nullLoc() }; // not enforced dynamically yet
+  }
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): Syntax.Expression {
+    return {
+      type: 'UnaryExpression',
+      operator: expr.operator,
+      argument: this.visitExpression(expr.argument),
+      loc: expr.loc
+    };
+  }
+
+  visitBinaryExpression (expr: Syntax.BinaryExpression): Syntax.Expression {
+    return {
+      type: 'BinaryExpression',
+      operator: expr.operator,
+      left: this.visitExpression(expr.left),
+      right: this.visitExpression(expr.right),
+      loc: expr.loc
+    };
+  }
+
+  visitLogicalExpression (expr: Syntax.LogicalExpression): Syntax.Expression {
+    const left = this.visitExpression(expr.left);
+    const right = this.visitExpression(expr.right);
+    const { type, operator, loc } = expr;
+    switch (expr.operator) {
+      case '&&':
+        if (left.type === 'Literal' && left.value === true) {
+          return right;
+        } else if (right.type === 'Literal' && right.value === true) {
+          return left;
+        } else {
+          return { type, operator, left, right, loc };
+        }
+      case '||':
+        if (left.type === 'Literal' && left.value === false) {
+          return right;
+        } else if (right.type === 'Literal' && right.value === false) {
+          return left;
+        } else {
+          return { type, operator, left, right, loc };
+        }
+    }
+  }
+
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): Syntax.Expression {
+    return {
+      type: 'ConditionalExpression',
+      test: this.visitExpression(expr.test),
+      consequent: this.visitExpression(expr.consequent),
+      alternate: this.visitExpression(expr.alternate),
+      loc: expr.loc
+    };
+  }
+
+  visitAssignmentExpression (expr: Syntax.AssignmentExpression): Syntax.Expression {
+    return {
+      type: 'AssignmentExpression',
+      left: expr.left,
+      right: this.visitExpression(expr.right),
+      loc: expr.loc
+    };
+  }
+
+  visitSequenceExpression (expr: Syntax.SequenceExpression): Syntax.Expression {
+    return {
+      type: 'SequenceExpression',
+      expressions: expr.expressions.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+
+  visitCallExpression (expr: Syntax.CallExpression): Syntax.Expression {
+    return {
+      type: 'CallExpression',
+      callee: this.visitExpression(expr.callee),
+      args: expr.args.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+
+  visitSpecExpression (expr: Syntax.SpecExpression): Syntax.Expression {
+    return { type: 'Literal', value: true, loc: nullLoc() };
+    // enforcement code generated in this.assert()
+  }
+
+  visitEveryExpression (expr: Syntax.EveryExpression): Syntax.Expression {
+    return {
+      type: 'CallExpression',
+      callee: {
+        type: 'MemberExpression',
+        object: this.visitExpression(expr.array),
+        property: { type: 'Literal', value: 'every', loc: expr.loc },
+        loc: expr.loc
+      },
+      args: [{
+        type: 'FunctionExpression',
+        id: null,
+        params: expr.indexArgument !== null ? [expr.argument, expr.indexArgument] : [expr.argument],
+        requires: [],
+        ensures: [],
+        body: {
+          type: 'BlockStatement',
+          body: [{
+            type: 'ReturnStatement',
+            argument: this.visitExpression(expr.expression),
+            loc: expr.expression.loc
+          }],
+          loc: expr.expression.loc
+        },
+        freeVars: [],
+        loc: expr.expression.loc
+      }],
+      loc: expr.loc
+    };
+  }
+
+  visitNewExpression (expr: Syntax.NewExpression): Syntax.Expression {
+    return {
+      type: 'NewExpression',
+      callee: expr.callee,
+      args: expr.args.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): Syntax.Expression {
+    return {
+      type: 'ArrayExpression',
+      elements: expr.elements.map(e => this.visitExpression(e)),
+      loc: expr.loc
+    };
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): Syntax.Expression {
+    return {
+      type: 'ObjectExpression',
+      properties: expr.properties.map(({ key, value }) => ({ key, value: this.visitExpression(value) })),
+      loc: expr.loc
+    };
+  }
+
+  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): Syntax.Expression {
+    return {
+      type: 'InstanceOfExpression',
+      left: this.visitExpression(expr.left),
+      right: expr.right,
+      loc: expr.loc
+    };
+  }
+
+  visitInExpression (expr: Syntax.InExpression): Syntax.Expression {
+    return {
+      type: 'InExpression',
+      property: this.visitExpression(expr.property),
+      object: this.visitExpression(expr.object),
+      loc: expr.loc
+    };
+  }
+
+  visitMemberExpression (expr: Syntax.MemberExpression): Syntax.Expression {
+    return {
+      type: 'MemberExpression',
+      object: this.visitExpression(expr.object),
+      property: this.visitExpression(expr.property),
+      loc: expr.loc
+    };
+  }
+
+  visitFunctionExpression (expr: Syntax.FunctionExpression): Syntax.Expression {
   return {
+      type: 'FunctionExpression',
+      id: expr.id,
+      params: expr.params,
+      requires: [],
+      ensures: [],
+      body: {
+        type: 'BlockStatement',
+        body: flatMap(expr.requires, r => this.assert(r)).concat(this.unwrapBlockStatement(expr.body)),
+        loc: expr.loc
+      },
+      freeVars: expr.freeVars,
+      loc: expr.loc
+    };
+  }
+
+  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): Array<Syntax.Statement> {
+    return [{
+      type: 'VariableDeclaration',
+      id: stmt.id,
+      init: this.visitExpression(stmt.init),
+      kind: 'let', // use 'let' instead of 'const' to enable wrapping
+      loc: stmt.loc
+    }];
+  }
+
+  visitBlockStatement (stmt: Syntax.BlockStatement): Array<Syntax.Statement> {
+    return [{
+      type: 'BlockStatement',
+      body: flatMap(stmt.body, s => this.visitStatement(s)),
+      loc: stmt.loc
+    }];
+  }
+
+  visitExpressionStatement (stmt: Syntax.ExpressionStatement): Array<Syntax.Statement> {
+    return [{
+      type: 'ExpressionStatement',
+      expression: this.visitExpression(stmt.expression),
+      loc: stmt.loc
+    }];
+  }
+
+  visitAssertStatement (stmt: Syntax.AssertStatement): Array<Syntax.Statement> {
+    return this.assert(stmt.expression);
+  }
+
+  visitIfStatement (stmt: Syntax.IfStatement): Array<Syntax.Statement> {
+    return [{
+      type: 'IfStatement',
+      test: this.visitExpression(stmt.test),
+      consequent: {
+        type: 'BlockStatement',
+        body: this.unwrapBlockStatement(stmt.consequent),
+        loc: stmt.consequent.loc
+      },
+      alternate: {
+        type: 'BlockStatement',
+        body: this.unwrapBlockStatement(stmt.alternate),
+        loc: stmt.alternate.loc
+      },
+      loc: stmt.loc
+    }];
+  }
+
+  visitReturnStatement (stmt: Syntax.ReturnStatement): Array<Syntax.Statement> {
+    return [{
+      type: 'ReturnStatement',
+      argument: this.visitExpression(stmt.argument),
+      loc: stmt.loc
+    }];
+  }
+
+  visitWhileStatement (stmt: Syntax.WhileStatement): Array<Syntax.Statement> {
+    return [{
+      type: 'WhileStatement',
+      invariants: stmt.invariants.map(inv => this.visitExpression(inv)),
+      test: this.visitExpression(stmt.test),
+      body: {
+        type: 'BlockStatement',
+        body: this.unwrapBlockStatement(stmt.body),
+        loc: stmt.body.loc
+      },
+      loc: stmt.loc
+    }];
+  }
+
+  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): Array<Syntax.Statement> {
+    return [{
+      type: 'DebuggerStatement',
+      loc: stmt.loc
+    }];
+  }
+
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): Array<Syntax.Statement> {
+    return [{
     type: 'FunctionDeclaration',
-    id: f.id,
-    params: f.params,
-    requires: f.requires,
-    ensures: f.ensures,
+      id: stmt.id,
+      params: stmt.params,
+      requires: [],
+      ensures: [],
     body: {
       type: 'BlockStatement',
-      body: f.requires
-        .map((r): Syntax.Statement =>
-          ({ type: 'AssertStatement', expression: r, loc: r.loc }))
-        .concat(f.body.body),
-      loc: f.loc
+        body: flatMap(stmt.requires, r => this.assert(r)).concat(this.unwrapBlockStatement(stmt.body)),
+        loc: stmt.loc
     },
-    freeVars: f.freeVars,
-    loc: f.loc
-  };
+      freeVars: stmt.freeVars,
+      loc: stmt.loc
+    }];
+  }
+
+  visitClassDeclaration (stmt: Syntax.ClassDeclaration): Array<Syntax.Statement> {
+    return [{
+      type: 'ClassDeclaration',
+      id: stmt.id,
+      fields: stmt.fields,
+      invariant: this.visitExpression(stmt.invariant),
+      checkInvariant: true, // assert invariant
+      loc: stmt.loc
+    }];
+  }
+
+  visitProgram (prog: Syntax.Program): Array<Syntax.Statement> {
+    return flatMap(prog.body, s => this.visitStatement(s));
+  }
+}
+
+export function immediateAssertionTestCode (assertion: Syntax.Expression): Array<Syntax.Statement> {
+  const visitor = new TestCodeTransformer();
+  return visitor.assert(assertion, true);
+}
+
+export function deferredAssertionTestCode (assertion: Syntax.Expression): Array<Syntax.Statement> {
+  const visitor = new TestCodeTransformer();
+  return visitor.assert(assertion, false);
+}
+
+export function transformTestCode (body: Array<Syntax.Statement>): string {
+  const visitor = new TestCodeTransformer();
+  return `function assert(p) { if (!p) throw new Error("assertion failed"); }
+function spec(f, id, req, ens) {
+  if (f._mapping) {
+    f._mapping[id] = [req, ens];
+    return f;
+  } else {
+    const mapping = { [id]: [req, ens] };
+    const wrapped = (...args) => {
+      Object.values(mapping).forEach(([req]) => assert(req.apply(null, args)));
+      const y = f.apply(null, args);
+      Object.values(mapping).forEach(([_, ens]) => assert(ens.apply(null, args.concat([y]))));
+      return y;
+    };
+    wrapped._mapping = mapping;
+    return wrapped;
+  }
+}
+
+${flatMap(body, s => visitor.visitStatement(s)).map(s => stringifyStmt(s)).join('\n')}`;
 }
