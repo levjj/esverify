@@ -1567,3 +1567,18 @@ describe('function spec enforced in test', () => {
   incorrect('g2: assert: (z > 5)');
   incorrect('precondition g2(() => 3)');
 });
+
+describe('higher-order function spec enforced in test', () => {
+
+  code(() => {
+    function g (f) {
+      requires(spec(f, () => true, y => spec(y, x => x > 0, (x, z) => true)));
+
+      const y = f();
+      y(0);
+    }
+  });
+
+  verified('g: precondition f()');
+  incorrect('g: precondition y(0)');
+});

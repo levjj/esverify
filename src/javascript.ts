@@ -2161,6 +2161,7 @@ class TestCodeTransformer extends Visitor<Syntax.Expression, Array<Syntax.Statem
       result.push({ type: 'AssertStatement', expression: check, loc: expr.loc });
     }
     for (const spec of simpleSpecs(expr)) {
+      const retName = spec.post.argument === null ? id('_res_') : spec.post.argument;
       // Uses an assignment to wrap and update the callee of the provided function spec such that
       // all subsequent calls enforce the pre- and postcondition.
       result.push({
@@ -2182,11 +2183,15 @@ class TestCodeTransformer extends Visitor<Syntax.Expression, Array<Syntax.Statem
                 ensures: [],
                 body: {
                   type: 'BlockStatement',
-                  body: [{
+                  body: immediateAssertionTestCode(spec.pre).concat({
                     type: 'ReturnStatement',
-                    argument: spec.pre,
+                    argument: {
+                      type: 'ArrayExpression',
+                      elements: spec.args.map(s => id(s)),
+                      loc: spec.pre.loc
+                    },
                     loc: spec.pre.loc
-                  }],
+                  }),
                   loc: spec.pre.loc
                 },
                 freeVars: [],
@@ -2194,16 +2199,16 @@ class TestCodeTransformer extends Visitor<Syntax.Expression, Array<Syntax.Statem
               }, {
                 type: 'FunctionExpression',
                 id: null,
-                params: spec.args.map(s => id(s)).concat(spec.post.argument === null ? [] : [spec.post.argument]),
+                params: spec.args.map(s => id(s)).concat(retName),
                 requires: [],
                 ensures: [],
                 body: {
                   type: 'BlockStatement',
-                  body: [{
+                  body: immediateAssertionTestCode(spec.post.expression).concat({
                     type: 'ReturnStatement',
-                    argument: spec.post.expression,
-                    loc: spec.post.loc
-                  }],
+                    argument: retName,
+                    loc: spec.pre.loc
+                  }),
                   loc: spec.post.loc
                 },
                 freeVars: [],
@@ -2552,10 +2557,10 @@ function spec(f, id, req, ens) {
   } else {
     const mapping = { [id]: [req, ens] };
     const wrapped = (...args) => {
-      Object.values(mapping).forEach(([req]) => assert(req.apply(null, args)));
-      const y = f.apply(null, args);
-      Object.values(mapping).forEach(([_, ens]) => assert(ens.apply(null, args.concat([y]))));
-      return y;
+      return Object.values(mapping).reduceRight((cont, [req, ens]) => (...args2) => {
+        const args3 = req.apply(null, args2);
+        return ens.apply(null, args3.concat(cont.apply(null, args3)));
+      }, f).apply(null, args);
     };
     wrapped._mapping = mapping;
     return wrapped;
