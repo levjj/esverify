@@ -222,6 +222,7 @@ export function heapEq (left: Syntax.HeapExpression, right: Syntax.HeapExpressio
 }
 
 function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
+  if (exprA === exprB) return true;
   if (typeof(exprA) === 'number') {
     return typeof(exprB) === 'number' && exprA === exprB;
   }
@@ -242,6 +243,7 @@ function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): bo
 }
 
 function eqExpr (exprA: A, exprB: A): boolean {
+  if (exprA === exprB) return true;
   if (typeof(exprA) === 'string') {
     return typeof(exprB) === 'string' && exprA === exprB;
   }
@@ -291,6 +293,7 @@ function eqExpr (exprA: A, exprB: A): boolean {
 }
 
 export function eqProp (propA: P, propB: P): boolean {
+  if (propA === propB) return true;
   switch (propA.type) {
     case 'Truthy':
       return propA.type === propB.type &&
