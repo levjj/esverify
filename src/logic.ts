@@ -960,7 +960,7 @@ export function removePrefix (prefix: P, prop: P): P {
 }
 
 export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: Heap, toHeap: Heap = heap + 1,
-                               existsLocs: Locs = new Set(), existsVars: Vars = new Set(), q: P = tru): P {
+                               existsLocs: Locs = new Set(), existsVars: Vars = new Set()): P {
   const numHeaps = Math.max(0, toHeap - heap - 1);
   const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
   const preP: P = { type: 'Precondition', callee, heap, args };

@@ -1,4 +1,4 @@
-import { Substituter, Syntax, transformTestCode } from './javascript';
+import { Substituter, Syntax, nullLoc, stringifyTestCode } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript } from './model';
@@ -76,9 +76,10 @@ export default class VerificationCondition {
     const sub: Substituter = new Substituter();
     this.freeVars.forEach(freeVar => {
       const expr = valueToJavaScript(model.valueOf(freeVar));
-      sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, expr);
+      const und: Syntax.Literal = { type: 'Literal', value: undefined, loc: nullLoc() };
+      sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, und, expr);
     });
-    return transformTestCode(this.testBody.map(s => sub.visitStatement(s)));
+    return stringifyTestCode(this.testBody.map(s => sub.visitStatement(s)));
   }
 
   private process (out: SMTOutput): Message {

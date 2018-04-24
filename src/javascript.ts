@@ -9,9 +9,9 @@ export namespace Syntax {
   export type Declaration = { type: 'Unresolved' }
                           | { type: 'Var', decl: VariableDeclaration }
                           | { type: 'Func', decl: Function }
-                          | { type: 'SpecArg', decl: SpecExpression, argIdx: number }
-                          | { type: 'EveryArg', decl: EveryExpression }
-                          | { type: 'EveryIdxArg', decl: EveryExpression }
+                          | { type: 'SpecArg', decl: SpecAssertion, argIdx: number }
+                          | { type: 'EveryArg', decl: EveryAssertion }
+                          | { type: 'EveryIdxArg', decl: EveryAssertion }
                           | { type: 'PostArg', decl: PostCondition }
                           | { type: 'Param', func: Function; decl: Identifier }
                           | { type: 'This', decl: ClassDeclaration }
@@ -22,27 +22,112 @@ export namespace Syntax {
 
   export type ClassName = string;
 
-  export interface Identifier { type: 'Identifier'; name: string;
-                                decl: Declaration; refs: Array<Identifier>; isWrittenTo: boolean;
+  export interface Identifier { type: 'Identifier';
+                                name: string;
+                                decl: Declaration;
+                                refs: Array<Identifier>;
+                                isWrittenTo: boolean;
                                 loc: SourceLocation; }
   export interface OldIdentifier { type: 'OldIdentifier'; id: Identifier; loc: SourceLocation; }
   export interface Literal { type: 'Literal';
                              value: undefined | null | boolean | number | string;
                              loc: SourceLocation; }
+
   export type UnaryOperator = '-' | '+' | '!' | '~' | 'typeof' | 'void';
+  export interface UnaryTerm { type: 'UnaryTerm';
+                               operator: UnaryOperator;
+                               argument: Term;
+                               loc: SourceLocation; }
+  export type BinaryOperator = '===' | '!==' | '<' | '<=' | '>' | '>='
+                             | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
+                             | '|' | '^' | '&';
+  export interface BinaryTerm { type: 'BinaryTerm';
+                                operator: BinaryOperator;
+                                left: Term;
+                                right: Term;
+                                loc: SourceLocation; }
+  export type LogicalOperator = '||' | '&&';
+  export interface LogicalTerm { type: 'LogicalTerm';
+                                 operator: LogicalOperator;
+                                 left: Term;
+                                 right: Term;
+                                 loc: SourceLocation; }
+  export interface ConditionalTerm { type: 'ConditionalTerm';
+                                     test: Term;
+                                     consequent: Term;
+                                     alternate: Term;
+                                     loc: SourceLocation; }
+  export interface CallTerm { type: 'CallTerm';
+                              callee: Term;
+                              args: Array<Term>;
+                              loc: SourceLocation; }
+  export interface MemberTerm { type: 'MemberTerm';
+                                object: Term;
+                                property: Term;
+                                loc: SourceLocation; }
+
+  export type Term = Identifier
+                   | OldIdentifier
+                   | Literal
+                   | UnaryTerm
+                   | BinaryTerm
+                   | LogicalTerm
+                   | ConditionalTerm
+                   | CallTerm
+                   | MemberTerm;
+
+  export interface PureAssertion { type: 'PureAssertion';
+                                   loc: SourceLocation; }
+  export interface PostCondition { argument: Identifier | null;
+                                   expression: Assertion;
+                                   loc: SourceLocation; }
+  export interface SpecAssertion { type: 'SpecAssertion';
+                                   callee: Term;
+                                   args: Array<string>;
+                                   pre: Assertion;
+                                   post: PostCondition;
+                                   loc: SourceLocation; }
+  export interface EveryAssertion { type: 'EveryAssertion';
+                                    array: Term;
+                                    argument: Identifier;
+                                    indexArgument: Identifier | null;
+                                    expression: Assertion;
+                                    loc: SourceLocation; }
+  export interface InstanceOfAssertion { type: 'InstanceOfAssertion';
+                                         left: Term;
+                                         right: Identifier;
+                                         loc: SourceLocation; }
+  export interface InAssertion { type: 'InAssertion';
+                                 property: Term;
+                                 object: Term;
+                                 loc: SourceLocation; }
+  export interface UnaryAssertion { type: 'UnaryAssertion';
+                                    operator: '!';
+                                    argument: Assertion;
+                                    loc: SourceLocation; }
+  export interface BinaryAssertion { type: 'BinaryAssertion';
+                                     operator: LogicalOperator;
+                                     left: Assertion;
+                                     right: Assertion;
+                                     loc: SourceLocation; }
+  export type Assertion = Term
+                        | PureAssertion
+                        | SpecAssertion
+                        | EveryAssertion
+                        | InstanceOfAssertion
+                        | InAssertion
+                        | UnaryAssertion
+                        | BinaryAssertion;
+
   export interface UnaryExpression { type: 'UnaryExpression';
                                      operator: UnaryOperator;
                                      argument: Expression;
                                      loc: SourceLocation; }
-  export type BinaryOperator = '===' | '!==' | '<' | '<=' | '>' | '>='
-                             | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
-                             | '|' | '^' | '&';
   export interface BinaryExpression { type: 'BinaryExpression';
                                       operator: BinaryOperator;
                                       left: Expression;
                                       right: Expression;
                                       loc: SourceLocation; }
-  export type LogicalOperator = '||' | '&&';
   export interface LogicalExpression { type: 'LogicalExpression';
                                        operator: LogicalOperator;
                                        left: Expression;
@@ -64,20 +149,6 @@ export namespace Syntax {
                                     callee: Expression;
                                     args: Array<Expression>;
                                     loc: SourceLocation; }
-  export interface PureExpression { type: 'PureExpression';
-                                    loc: SourceLocation; }
-  export interface SpecExpression { type: 'SpecExpression';
-                                    callee: Expression;
-                                    args: Array<string>;
-                                    pre: PreCondition;
-                                    post: PostCondition;
-                                    loc: SourceLocation; }
-  export interface EveryExpression { type: 'EveryExpression';
-                                     array: Expression;
-                                     argument: Identifier;
-                                     indexArgument: Identifier | null;
-                                     expression: Expression;
-                                     loc: SourceLocation; }
   export interface NewExpression { type: 'NewExpression';
                                    callee: Identifier;
                                    args: Array<Expression>;
@@ -100,20 +171,16 @@ export namespace Syntax {
                                       object: Expression;
                                       property: Expression;
                                       loc: SourceLocation; }
-  export type PreCondition = Expression;
-  export interface PostCondition { argument: Identifier | null;
-                                   expression: Expression;
-                                   loc: SourceLocation; }
   export interface FunctionExpression { type: 'FunctionExpression';
                                         id: Identifier | null;
                                         params: Array<Identifier>;
-                                        requires: Array<PreCondition>;
+                                        requires: Array<Assertion>;
                                         ensures: Array<PostCondition>;
                                         body: BlockStatement;
                                         freeVars: Array<string>;
                                         loc: SourceLocation; }
+
   export type Expression = Identifier
-                         | OldIdentifier
                          | Literal
                          | UnaryExpression
                          | BinaryExpression
@@ -122,9 +189,6 @@ export namespace Syntax {
                          | AssignmentExpression
                          | SequenceExpression
                          | CallExpression
-                         | SpecExpression
-                         | EveryExpression
-                         | PureExpression
                          | NewExpression
                          | ArrayExpression
                          | ObjectExpression
@@ -132,6 +196,7 @@ export namespace Syntax {
                          | InExpression
                          | MemberExpression
                          | FunctionExpression;
+
   export interface VariableDeclaration { type: 'VariableDeclaration';
                                          id: Identifier;
                                          init: Expression;
@@ -144,7 +209,7 @@ export namespace Syntax {
                                          expression: Expression;
                                          loc: SourceLocation; }
   export interface AssertStatement { type: 'AssertStatement';
-                                     expression: Expression;
+                                     expression: Assertion;
                                      loc: SourceLocation; }
   export interface IfStatement { type: 'IfStatement';
                                  test: Expression;
@@ -155,16 +220,17 @@ export namespace Syntax {
                                      argument: Expression;
                                      loc: SourceLocation; }
   export interface WhileStatement { type: 'WhileStatement';
-                                    invariants: Array<Expression>;
+                                    invariants: Array<Assertion>;
                                     test: Expression;
                                     body: BlockStatement;
+                                    freeVars: Array<string>;
                                     loc: SourceLocation; }
   export interface DebuggerStatement { type: 'DebuggerStatement';
                                        loc: SourceLocation; }
   export interface FunctionDeclaration { type: 'FunctionDeclaration';
                                          id: Identifier;
                                          params: Array<Identifier>;
-                                         requires: Array<PreCondition>;
+                                         requires: Array<Assertion>;
                                          ensures: Array<PostCondition>;
                                          body: BlockStatement;
                                          freeVars: Array<string>;
@@ -172,8 +238,8 @@ export namespace Syntax {
   export interface ClassDeclaration { type: 'ClassDeclaration';
                                       id: Identifier;
                                       fields: Array<string>;
-                                      invariant: Expression;
-                                      checkInvariant: boolean;
+                                      invariant: Assertion;
+                                      methods: Array<FunctionDeclaration>;
                                       loc: SourceLocation; }
 
   export type Statement = VariableDeclaration
@@ -190,8 +256,11 @@ export namespace Syntax {
   export type Function = FunctionExpression | FunctionDeclaration;
 
   export type Program = { body: Array<Statement>,
-                          invariants: Array<Expression> };
+                          invariants: Array<Assertion> };
+
 }
+
+export type TestCode = ReadonlyArray<Syntax.Statement>;
 
 function unsupported (node: JSyntax.Node, description: string = 'unsupported syntax'): MessageException {
   return new MessageException({
@@ -219,12 +288,12 @@ function findPseudoCalls (type: string, stmts: Array<JSyntax.Statement>): Array<
   });
 }
 
-function findPreConditions (stmts: Array<JSyntax.Statement>): Array<Syntax.PreCondition> {
-  return findPseudoCalls('requires', stmts).map(expressionAsJavaScript);
+function findPreConditions (stmts: Array<JSyntax.Statement>): Array<Syntax.Assertion> {
+  return findPseudoCalls('requires', stmts).map(expressionAsAssertion);
 }
 
-function findInvariants (stmts: Array<JSyntax.Statement>): Array<Syntax.Expression> {
-  return findPseudoCalls('invariant', stmts).map(expressionAsJavaScript);
+function findInvariants (stmts: Array<JSyntax.Statement>): Array<Syntax.Assertion> {
+  return findPseudoCalls('invariant', stmts).map(expressionAsAssertion);
 }
 
 function findPostConditions (stmts: Array<JSyntax.Statement>): Array<Syntax.PostCondition> {
@@ -233,9 +302,9 @@ function findPostConditions (stmts: Array<JSyntax.Statement>): Array<Syntax.Post
       if (expr.async || expr.generator) throw unsupported(expr);
       if (expr.body.type === 'BlockStatement') throw unsupported(expr);
       const argument = patternAsIdentifier(expr.params[0]);
-      return { argument, expression: expressionAsJavaScript(expr.body), loc: loc(expr) };
+      return { argument, expression: expressionAsAssertion(expr.body), loc: loc(expr) };
     }
-    return { argument: null, expression: expressionAsJavaScript(expr), loc: loc(expr) };
+    return { argument: null, expression: expressionAsAssertion(expr), loc: loc(expr) };
   });
 }
 
@@ -362,6 +431,231 @@ function literalAsIdentifier (literal: JSyntax.Literal): Syntax.Identifier {
     throw unsupported(literal);
   }
   return id(String(literal.value), loc(literal));
+}
+
+function expressionAsTerm (expr: JSyntax.Expression): Syntax.Term {
+  switch (expr.type) {
+    case 'Identifier':
+      if (expr.name === 'undefined') {
+        return { type: 'Literal', value: undefined, loc: loc(expr) };
+      }
+      return id(expr.name, loc(expr));
+    case 'Literal':
+      if (expr.value instanceof RegExp) throw unsupported(expr);
+      return {
+        type: 'Literal',
+        value: expr.value,
+        loc: loc(expr)
+      };
+    case 'ThisExpression':
+      return id('this', loc(expr));
+    case 'UnaryExpression':
+      return {
+        type: 'UnaryTerm',
+        operator: unaryOp(expr),
+        argument: expressionAsTerm(expr.argument),
+        loc: loc(expr)
+      };
+    case 'BinaryExpression': {
+      return {
+        type: 'BinaryTerm',
+        operator: binaryOp(expr),
+        left: expressionAsTerm(expr.left),
+        right: expressionAsTerm(expr.right),
+        loc: loc(expr)
+      };
+    }
+    case 'LogicalExpression':
+      return {
+        type: 'LogicalTerm',
+        operator: expr.operator,
+        left: expressionAsTerm(expr.left),
+        right: expressionAsTerm(expr.right),
+        loc: loc(expr)
+      };
+    case 'ConditionalExpression':
+      return {
+        type: 'ConditionalTerm',
+        test: expressionAsTerm(expr.test),
+        consequent: expressionAsTerm(expr.consequent),
+        alternate: expressionAsTerm(expr.alternate),
+        loc: loc(expr)
+      };
+    case 'CallExpression':
+      if (expr.callee.type === 'Identifier' &&
+          expr.callee.name === 'old') {
+        if (expr.arguments.length !== 1) {
+          throw unsupported(expr, 'old modifier has exactly one argument');
+        }
+        const arg = expr.arguments[0];
+        if (arg.type !== 'Identifier') {
+          throw unsupported(expr, 'old modifier only supported for identifiers');
+        }
+        return {
+          type: 'OldIdentifier',
+          id: id(arg.name, loc(expr.arguments[0])),
+          loc: loc(expr)
+        };
+      }
+      if (expr.callee.type === 'Super') throw unsupported(expr.callee);
+      if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
+      return {
+        type: 'CallTerm',
+        callee: expressionAsTerm(expr.callee),
+        args: expr.arguments.map(expr => {
+          if (expr.type === 'SpreadElement') {
+            throw unsupported(expr);
+          } else {
+            return expressionAsTerm(expr);
+          }
+        }),
+        loc: loc(expr)
+      };
+    case 'MemberExpression':
+      if (expr.object.type === 'Super') throw unsupported(expr.object);
+      let property: Syntax.Term;
+      if (expr.computed) {
+        property = expressionAsTerm(expr.property);
+      } else {
+        if (expr.property.type !== 'Identifier') throw unsupported(expr.property);
+        property = { type: 'Literal', value: expr.property.name, loc: loc(expr.property) };
+      }
+      return {
+        type: 'MemberTerm',
+        object: expressionAsTerm(expr.object),
+        property,
+        loc: loc(expr)
+      };
+    default:
+      throw unsupported(expr);
+  }
+}
+
+function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
+  switch (expr.type) {
+    case 'UnaryExpression':
+      if (expr.operator === '!') {
+        return {
+          type: 'UnaryAssertion',
+          operator: '!',
+          argument: expressionAsAssertion(expr.argument),
+          loc: loc(expr)
+        };
+      }
+      return expressionAsTerm(expr);
+    case 'BinaryExpression': {
+      if (expr.operator === 'instanceof') {
+        if (expr.right.type !== 'Identifier') {
+          throw unsupported(expr, 'instance check only works for class names');
+        }
+        return {
+          type: 'InstanceOfAssertion',
+          left: expressionAsTerm(expr.left),
+          right: patternAsIdentifier(expr.right),
+          loc: loc(expr)
+        };
+      }
+      if (expr.operator === 'in') {
+        return {
+          type: 'InAssertion',
+          property: expressionAsTerm(expr.left),
+          object: expressionAsTerm(expr.right),
+          loc: loc(expr)
+        };
+      }
+      return expressionAsTerm(expr);
+    }
+    case 'LogicalExpression':
+      return {
+        type: 'BinaryAssertion',
+        operator: expr.operator,
+        left: expressionAsAssertion(expr.left),
+        right: expressionAsAssertion(expr.right),
+        loc: loc(expr)
+      };
+    case 'CallExpression':
+      if (expr.callee.type === 'Identifier' &&
+          expr.callee.name === 'pure') {
+        if (expr.arguments.length !== 0) throw unsupported(expr, 'pure modifier has no arguments');
+        return { type: 'PureAssertion', loc: loc(expr) };
+      }
+      if (expr.callee.type === 'Identifier' &&
+          expr.callee.name === 'spec') {
+        if (expr.arguments.length !== 3) {
+          throw unsupported(expr, 'spec(f,req,ens) has three arguments');
+        }
+        const [callee, arg1, arg2] = expr.arguments;
+        if (callee.type === 'SpreadElement') {
+          throw unsupported(callee);
+        }
+        if (arg1.type !== 'ArrowFunctionExpression') {
+          throw unsupported(arg1, 'spec(f, req, ens) requires req to be an arrow function');
+        }
+        if (arg2.type !== 'ArrowFunctionExpression') {
+          throw unsupported(arg2, 'spec(f, req, ens) requires ens to be an arrow function');
+        }
+        const r: JSyntax.ArrowFunctionExpression = arg1;
+        const s: JSyntax.ArrowFunctionExpression = arg2;
+        if (r.body.type === 'BlockStatement') {
+          throw unsupported(r, 'spec(f, req, ens) requires req to be an arrow function with an expression as body');
+        }
+        if (s.body.type === 'BlockStatement') {
+          throw unsupported(s, 'spec(f, req, ens) requires ens to be an arrow function with an expression as body');
+        }
+        if (r.params.length < s.params.length - 1 ||
+            r.params.length > s.params.length ||
+            !r.params.every((p, idx) => {
+              const otherP = s.params[idx];
+              return p.type === 'Identifier' && otherP.type === 'Identifier' && p.name === otherP.name;
+            })) {
+          throw unsupported(expr, 'spec(f, req, ens) requires req and ens to have same parameters');
+        }
+        let argument: Syntax.Identifier | null = null;
+        if (s.params.length > r.params.length) {
+          argument = patternAsIdentifier(s.params[s.params.length - 1]);
+        }
+        return {
+          type: 'SpecAssertion',
+          callee: expressionAsTerm(callee),
+          args: r.params.map(p => (p as JSyntax.Identifier).name),
+          pre: expressionAsAssertion(r.body),
+          post: { argument, expression: expressionAsAssertion(s.body), loc: loc(s) },
+          loc: loc(expr)
+        };
+      }
+      if (expr.callee.type === 'Identifier' &&
+          expr.callee.name === 'every') {
+        if (expr.arguments.length !== 2) {
+          throw unsupported(expr, 'every(arr, inv) has two arguments');
+        }
+        const [callee, arg] = expr.arguments;
+        if (callee.type === 'SpreadElement') {
+          throw unsupported(callee);
+        }
+        if (arg.type !== 'ArrowFunctionExpression') {
+          throw unsupported(arg, 'every(arr, inv) requires inv to be an arrow function');
+        }
+        const inv: JSyntax.ArrowFunctionExpression = arg;
+        if (inv.body.type === 'BlockStatement') {
+          throw unsupported(inv, 'every(arr, inv) requires inv to be an arrow function with an expression as body');
+        }
+        if (inv.params.length < 1 || inv.params.length > 2 || inv.params.some((p, idx) => p.type !== 'Identifier')) {
+          throw unsupported(arg, 'every(arr, inv) requires inv to have one or two parameters');
+        }
+        return {
+          type: 'EveryAssertion',
+          array: expressionAsTerm(callee),
+          argument: patternAsIdentifier(inv.params[0]),
+          indexArgument: inv.params.length > 1 ? patternAsIdentifier(inv.params[1]) : null,
+          expression: expressionAsAssertion(inv.body),
+          loc: loc(expr)
+        };
+      }
+      return expressionAsTerm(expr);
+
+    default:
+      return expressionAsTerm(expr);
+  }
 }
 
 function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
@@ -493,98 +787,6 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         loc: loc(expr)
       };
     case 'CallExpression':
-      if (expr.callee.type === 'Identifier' &&
-          expr.callee.name === 'pure') {
-        if (expr.arguments.length !== 0) throw unsupported(expr, 'pure modifier has no arguments');
-        return { type: 'PureExpression', loc: loc(expr) };
-      }
-      if (expr.callee.type === 'Identifier' &&
-          expr.callee.name === 'old') {
-        if (expr.arguments.length !== 1) {
-          throw unsupported(expr, 'old modifier has exactly one argument');
-        }
-        const arg = expr.arguments[0];
-        if (arg.type !== 'Identifier') {
-          throw unsupported(expr, 'old modifier only supported for identifiers');
-        }
-        return {
-          type: 'OldIdentifier',
-          id: id(arg.name, loc(expr.arguments[0])),
-          loc: loc(expr)
-        };
-      }
-      if (expr.callee.type === 'Identifier' &&
-          expr.callee.name === 'spec') {
-        if (expr.arguments.length !== 3) {
-          throw unsupported(expr, 'spec(f,req,ens) has three arguments');
-        }
-        const [callee, arg1, arg2] = expr.arguments;
-        if (callee.type === 'SpreadElement') {
-          throw unsupported(callee);
-        }
-        if (arg1.type !== 'ArrowFunctionExpression') {
-          throw unsupported(arg1, 'spec(f, req, ens) requires req to be an arrow function');
-        }
-        if (arg2.type !== 'ArrowFunctionExpression') {
-          throw unsupported(arg2, 'spec(f, req, ens) requires ens to be an arrow function');
-        }
-        const r: JSyntax.ArrowFunctionExpression = arg1;
-        const s: JSyntax.ArrowFunctionExpression = arg2;
-        if (r.body.type === 'BlockStatement') {
-          throw unsupported(r, 'spec(f, req, ens) requires req to be an arrow function with an expression as body');
-        }
-        if (s.body.type === 'BlockStatement') {
-          throw unsupported(s, 'spec(f, req, ens) requires ens to be an arrow function with an expression as body');
-        }
-        if (r.params.length < s.params.length - 1 ||
-            r.params.length > s.params.length ||
-            !r.params.every((p, idx) => {
-              const otherP = s.params[idx];
-              return p.type === 'Identifier' && otherP.type === 'Identifier' && p.name === otherP.name;
-            })) {
-          throw unsupported(expr, 'spec(f, req, ens) requires req and ens to have same parameters');
-        }
-        let argument: Syntax.Identifier | null = null;
-        if (s.params.length > r.params.length) {
-          argument = patternAsIdentifier(s.params[s.params.length - 1]);
-        }
-        return {
-          type: 'SpecExpression',
-          callee: expressionAsJavaScript(callee),
-          args: r.params.map(p => (p as JSyntax.Identifier).name),
-          pre: expressionAsJavaScript(r.body),
-          post: { argument, expression: expressionAsJavaScript(s.body), loc: loc(s) },
-          loc: loc(expr)
-        };
-      }
-      if (expr.callee.type === 'Identifier' &&
-          expr.callee.name === 'every') {
-        if (expr.arguments.length !== 2) {
-          throw unsupported(expr, 'every(arr, inv) has two arguments');
-        }
-        const [callee, arg] = expr.arguments;
-        if (callee.type === 'SpreadElement') {
-          throw unsupported(callee);
-        }
-        if (arg.type !== 'ArrowFunctionExpression') {
-          throw unsupported(arg, 'every(arr, inv) requires inv to be an arrow function');
-        }
-        const inv: JSyntax.ArrowFunctionExpression = arg;
-        if (inv.body.type === 'BlockStatement') {
-          throw unsupported(inv, 'every(arr, inv) requires inv to be an arrow function with an expression as body');
-        }
-        if (inv.params.length < 1 || inv.params.length > 2 || inv.params.some((p, idx) => p.type !== 'Identifier')) {
-          throw unsupported(arg, 'every(arr, inv) requires inv to have one or two parameters');
-        }
-        return {
-          type: 'EveryExpression',
-          array: expressionAsJavaScript(callee),
-          argument: patternAsIdentifier(inv.params[0]),
-          indexArgument: inv.params.length > 1 ? patternAsIdentifier(inv.params[1]) : null,
-          expression: expressionAsJavaScript(inv.body),
-          loc: loc(expr)
-        };
-      }
       if (expr.callee.type === 'Super') throw unsupported(expr.callee);
       if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
       return {
@@ -731,7 +933,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
           stmt.expression.arguments.length === 1) {
         const arg = stmt.expression.arguments[0];
         if (arg.type !== 'SpreadElement') {
-          return [{ type: 'AssertStatement', expression: expressionAsJavaScript(arg), loc: loc(stmt) }];
+          return [{ type: 'AssertStatement', expression: expressionAsAssertion(arg), loc: loc(stmt) }];
         }
       }
       return [{ type: 'ExpressionStatement', expression: expressionAsJavaScript(stmt.expression), loc: loc(stmt) }];
@@ -766,6 +968,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
           body: flatMap(withoutPseudoCalls('invariant', stmts), statementAsJavaScript),
           loc: loc(stmt.body)
         },
+        freeVars: [],
         loc: loc(stmt)
       }];
     case 'DebuggerStatement':
@@ -908,8 +1111,8 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
         type: 'ClassDeclaration',
         id: patternAsIdentifier(stmt.id),
         fields: params.map(p => p.name),
-        invariant: expressionAsJavaScript(invStmt.argument),
-        checkInvariant: false,
+        invariant: expressionAsAssertion(invStmt.argument),
+        methods: [],
         loc: loc(stmt)
       }];
     }
@@ -918,10 +1121,77 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
   }
 }
 
-export abstract class Visitor<E,S> {
+export function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
+  let stmts: Array<JSyntax.Statement> = [];
+  for (const s of program.body) {
+    if (s.type === 'ImportDeclaration' ||
+        s.type === 'ExportAllDeclaration' ||
+        s.type === 'ExportNamedDeclaration' ||
+        s.type === 'ExportDefaultDeclaration' ||
+        s.type === 'ReturnStatement') {
+      throw unsupported(s);
+    }
+    stmts.push(s);
+  }
+  const body = flatMap(withoutPseudoCalls('invariant', stmts), statementAsJavaScript);
+  const prog: Syntax.Program = {
+    body,
+    invariants: findInvariants(stmts)
+  };
+  const resolver = new NameResolver();
+  resolver.visitProgram(prog);
+  return prog;
+}
+
+export abstract class Visitor<T,A,E,S> {
+
+  abstract visitIdentifierTerm (term: Syntax.Identifier): T;
+  abstract visitOldIdentifierTerm (term: Syntax.OldIdentifier): T;
+  abstract visitLiteralTerm (term: Syntax.Literal): T;
+  abstract visitUnaryTerm (term: Syntax.UnaryTerm): T;
+  abstract visitBinaryTerm (term: Syntax.BinaryTerm): T;
+  abstract visitLogicalTerm (term: Syntax.LogicalTerm): T;
+  abstract visitConditionalTerm (term: Syntax.ConditionalTerm): T;
+  abstract visitCallTerm (term: Syntax.CallTerm): T;
+  abstract visitMemberTerm (term: Syntax.MemberTerm): T;
+
+  visitTerm (term: Syntax.Term): T {
+    switch (term.type) {
+      case 'Identifier': return this.visitIdentifierTerm(term);
+      case 'OldIdentifier': return this.visitOldIdentifierTerm(term);
+      case 'Literal': return this.visitLiteralTerm(term);
+      case 'UnaryTerm': return this.visitUnaryTerm(term);
+      case 'BinaryTerm': return this.visitBinaryTerm(term);
+      case 'LogicalTerm': return this.visitLogicalTerm(term);
+      case 'ConditionalTerm': return this.visitConditionalTerm(term);
+      case 'CallTerm': return this.visitCallTerm(term);
+      case 'MemberTerm': return this.visitMemberTerm(term);
+    }
+  }
+
+  abstract visitTermAssertion (assertion: Syntax.Term): A;
+  abstract visitPureAssertion (assertion: Syntax.PureAssertion): A;
+  abstract visitSpecAssertion (assertion: Syntax.SpecAssertion): A;
+  abstract visitEveryAssertion (assertion: Syntax.EveryAssertion): A;
+  abstract visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): A;
+  abstract visitInAssertion (assertion: Syntax.InAssertion): A;
+  abstract visitUnaryAssertion (assertion: Syntax.UnaryAssertion): A;
+  abstract visitBinaryAssertion (assertion: Syntax.BinaryAssertion): A;
+
+  visitAssertion (assertion: Syntax.Assertion): A {
+    switch (assertion.type) {
+      case 'PureAssertion': return this.visitPureAssertion(assertion);
+      case 'SpecAssertion': return this.visitSpecAssertion(assertion);
+      case 'EveryAssertion': return this.visitEveryAssertion(assertion);
+      case 'InstanceOfAssertion': return this.visitInstanceOfAssertion(assertion);
+      case 'InAssertion': return this.visitInAssertion(assertion);
+      case 'UnaryAssertion': return this.visitUnaryAssertion(assertion);
+      case 'BinaryAssertion': return this.visitBinaryAssertion(assertion);
+      default: return this.visitTermAssertion(assertion);
+    }
+  }
 
   abstract visitIdentifier (expr: Syntax.Identifier): E;
-  abstract visitOldIdentifier (expr: Syntax.OldIdentifier): E;
   abstract visitLiteral (expr: Syntax.Literal): E;
   abstract visitUnaryExpression (expr: Syntax.UnaryExpression): E;
   abstract visitBinaryExpression (expr: Syntax.BinaryExpression): E;
@@ -930,9 +1200,6 @@ export abstract class Visitor<E,S> {
   abstract visitAssignmentExpression (expr: Syntax.AssignmentExpression): E;
   abstract visitSequenceExpression (expr: Syntax.SequenceExpression): E;
   abstract visitCallExpression (expr: Syntax.CallExpression): E;
-  abstract visitPureExpression (expr: Syntax.PureExpression): E;
-  abstract visitSpecExpression (expr: Syntax.SpecExpression): E;
-  abstract visitEveryExpression (expr: Syntax.EveryExpression): E;
   abstract visitNewExpression (expr: Syntax.NewExpression): E;
   abstract visitArrayExpression (expr: Syntax.ArrayExpression): E;
   abstract visitObjectExpression (expr: Syntax.ObjectExpression): E;
@@ -944,7 +1211,6 @@ export abstract class Visitor<E,S> {
   visitExpression (expr: Syntax.Expression): E {
     switch (expr.type) {
       case 'Identifier': return this.visitIdentifier(expr);
-      case 'OldIdentifier': return this.visitOldIdentifier(expr);
       case 'Literal': return this.visitLiteral(expr);
       case 'UnaryExpression': return this.visitUnaryExpression(expr);
       case 'BinaryExpression': return this.visitBinaryExpression(expr);
@@ -953,9 +1219,6 @@ export abstract class Visitor<E,S> {
       case 'AssignmentExpression': return this.visitAssignmentExpression(expr);
       case 'SequenceExpression': return this.visitSequenceExpression(expr);
       case 'CallExpression': return this.visitCallExpression(expr);
-      case 'SpecExpression': return this.visitSpecExpression(expr);
-      case 'EveryExpression': return this.visitEveryExpression(expr);
-      case 'PureExpression': return this.visitPureExpression(expr);
       case 'NewExpression': return this.visitNewExpression(expr);
       case 'ArrayExpression': return this.visitArrayExpression(expr);
       case 'ObjectExpression': return this.visitObjectExpression(expr);
@@ -993,7 +1256,6 @@ export abstract class Visitor<E,S> {
   }
 
   abstract visitProgram (prog: Syntax.Program): S;
-
 }
 
 function unsupportedLoc (loc: Syntax.SourceLocation, description: string = '') {
@@ -1021,17 +1283,18 @@ function refInInvariant (loc: Syntax.SourceLocation) {
   return new MessageException({ status: 'error', type: 'reference-in-invariant', loc, description: '' });
 }
 
-function isWrittenTo (decl: Syntax.Declaration): boolean {
+export function isMutable (idOrDecl: Syntax.Identifier | Syntax.Declaration): boolean {
+  const decl = idOrDecl.type === 'Identifier' ? idOrDecl.decl : idOrDecl;
   return decl.type === 'Var' && decl.decl.kind === 'let';
 }
 
 class Scope {
-  func: Syntax.Function | null;
+  funcOrLoop: Syntax.Function | Syntax.WhileStatement | null;
   ids: { [varname: string]: Syntax.Declaration } = {};
   parent: Scope | null;
-  constructor (parent: Scope | null = null, fn: Syntax.Function | null = null) {
+  constructor (parent: Scope | null = null, fw: Syntax.Function | Syntax.WhileStatement | null = null) {
     this.parent = parent;
-    this.func = fn;
+    this.funcOrLoop = fw;
   }
 
   lookupDef (sym: Syntax.Identifier) {
@@ -1051,8 +1314,8 @@ class Scope {
       decl = this.ids[sym.name];
     } else if (this.parent) {
       decl = this.parent.lookupUse(sym, clz);
-      if (this.func && !this.func.freeVars.includes(sym.name) && isWrittenTo(decl)) {
-        this.func.freeVars.push(sym.name); // a free variable
+      if (this.funcOrLoop && !this.funcOrLoop.freeVars.includes(sym.name) && isMutable(decl)) {
+        this.funcOrLoop.freeVars.push(sym.name); // a free variable
       }
     }
     if (!decl || decl.type === 'Unresolved') {
@@ -1101,14 +1364,14 @@ class Scope {
   }
 }
 
-class NameResolver extends Visitor<void,void> {
+class NameResolver extends Visitor<void, void, void, void> {
 
   scope: Scope = new Scope();
   allowOld: boolean = false;
   allowRef: boolean = true;
 
   scoped (action: () => void, allowsOld: boolean = this.allowOld, allowsRef: boolean = this.allowRef,
-          fn: null | Syntax.Function = this.scope.func) {
+          fn: Syntax.Function | Syntax.WhileStatement | null = this.scope.funcOrLoop) {
     const { scope, allowOld, allowRef } = this;
     try {
       this.scope = new Scope(scope, fn);
@@ -1122,13 +1385,109 @@ class NameResolver extends Visitor<void,void> {
     }
   }
 
-  visitIdentifier (expr: Syntax.Identifier) {
-    this.scope.useSymbol(expr, false, false, this.allowRef);
+  visitIdentifierTerm (term: Syntax.Identifier) {
+    this.scope.useSymbol(term, false, false, this.allowRef);
   }
 
-  visitOldIdentifier (expr: Syntax.OldIdentifier) {
-    if (!this.allowOld) throw unsupportedLoc(expr.loc, 'old() not allowed in this context');
-    this.scope.useSymbol(expr.id);
+  visitOldIdentifierTerm (term: Syntax.OldIdentifier) {
+    if (!this.allowOld) throw unsupportedLoc(term.loc, 'old() not allowed in this context');
+    this.scope.useSymbol(term.id);
+  }
+
+  visitLiteralTerm (term: Syntax.Literal) { /* empty */ }
+
+  visitUnaryTerm (term: Syntax.UnaryTerm) {
+    this.visitTerm(term.argument);
+  }
+
+  visitBinaryTerm (term: Syntax.BinaryTerm) {
+    this.visitTerm(term.left);
+    this.visitTerm(term.right);
+  }
+
+  visitLogicalTerm (term: Syntax.LogicalTerm) {
+    this.visitTerm(term.left);
+    this.visitTerm(term.right);
+  }
+
+  visitConditionalTerm (term: Syntax.ConditionalTerm) {
+    this.visitTerm(term.test);
+    this.visitTerm(term.consequent);
+    this.visitTerm(term.alternate);
+  }
+
+  visitCallTerm (term: Syntax.CallTerm) {
+    term.args.forEach(e => this.visitTerm(e));
+    this.visitTerm(term.callee);
+  }
+
+  visitMemberTerm (term: Syntax.MemberTerm) {
+    this.visitTerm(term.object);
+    this.visitTerm(term.property);
+  }
+
+  visitTermAssertion (term: Syntax.Term) {
+    this.visitTerm(term);
+  }
+
+  visitPureAssertion (assertion: Syntax.PureAssertion) { /* empty */ }
+
+  visitPostCondition (post: Syntax.PostCondition) {
+    if (post.argument) {
+      // scoped at the surrounding context (spec or function body)
+      this.scope.defSymbol(post.argument, { type: 'PostArg', decl: post });
+    }
+    this.visitAssertion(post.expression);
+  }
+
+  visitSpecAssertion (assertion: Syntax.SpecAssertion) {
+    this.visitTerm(assertion.callee);
+    this.scoped(() => {
+      assertion.args.forEach((a, argIdx) => {
+        this.scope.defSymbol(id(a), { type: 'SpecArg', decl: assertion, argIdx });
+      });
+      this.visitAssertion(assertion.pre);
+    }, false);
+    this.scoped(() => {
+      assertion.args.forEach((a, argIdx) => {
+        this.scope.defSymbol(id(a), { type: 'SpecArg', decl: assertion, argIdx });
+      });
+      this.visitPostCondition(assertion.post);
+    }, true);
+  }
+
+  visitEveryAssertion (assertion: Syntax.EveryAssertion) {
+    this.visitTerm(assertion.array);
+    this.scoped(() => {
+      this.scope.defSymbol(assertion.argument, { type: 'EveryArg', decl: assertion });
+      if (assertion.indexArgument !== null) {
+        this.scope.defSymbol(assertion.indexArgument, { type: 'EveryIdxArg', decl: assertion });
+      }
+      this.visitAssertion(assertion.expression);
+    }, false);
+  }
+
+  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion) {
+    this.visitTerm(assertion.left);
+    this.scope.useSymbol(assertion.right, false, true);
+  }
+
+  visitInAssertion (assertion: Syntax.InAssertion) {
+    this.visitTerm(assertion.property);
+    this.visitTerm(assertion.object);
+  }
+
+  visitUnaryAssertion (assertion: Syntax.UnaryAssertion) {
+    this.visitAssertion(assertion.argument);
+  }
+
+  visitBinaryAssertion (assertion: Syntax.BinaryAssertion) {
+    this.visitAssertion(assertion.left);
+    this.visitAssertion(assertion.right);
+  }
+
+  visitIdentifier (expr: Syntax.Identifier) {
+    this.scope.useSymbol(expr, false, false, this.allowRef);
   }
 
   visitLiteral (expr: Syntax.Literal) { /* empty */ }
@@ -1168,42 +1527,6 @@ class NameResolver extends Visitor<void,void> {
     this.visitExpression(expr.callee);
   }
 
-  visitPostCondition (expr: Syntax.PostCondition) {
-    if (expr.argument) {
-      this.scope.defSymbol(expr.argument, { type: 'PostArg', decl: expr });
-    }
-    this.visitExpression(expr.expression);
-  }
-
-  visitSpecExpression (expr: Syntax.SpecExpression) {
-    this.visitExpression(expr.callee);
-    this.scoped(() => {
-      expr.args.forEach((a, argIdx) => {
-        this.scope.defSymbol(id(a), { type: 'SpecArg', decl: expr, argIdx });
-      });
-      this.visitExpression(expr.pre);
-    }, false);
-    this.scoped(() => {
-      expr.args.forEach((a, argIdx) => {
-        this.scope.defSymbol(id(a), { type: 'SpecArg', decl: expr, argIdx });
-      });
-      this.visitPostCondition(expr.post);
-    }, true);
-  }
-
-  visitEveryExpression (expr: Syntax.EveryExpression) {
-    this.visitExpression(expr.array);
-    this.scoped(() => {
-      this.scope.defSymbol(expr.argument, { type: 'EveryArg', decl: expr });
-      if (expr.indexArgument !== null) {
-        this.scope.defSymbol(expr.indexArgument, { type: 'EveryIdxArg', decl: expr });
-      }
-      this.visitExpression(expr.expression);
-    }, false);
-  }
-
-  visitPureExpression (expr: Syntax.PureExpression) { /* empty */ }
-
   visitNewExpression (expr: Syntax.NewExpression) {
     this.scope.useSymbol(expr.callee, false, true);
     expr.args.forEach(e => this.visitExpression(e));
@@ -1236,7 +1559,7 @@ class NameResolver extends Visitor<void,void> {
     this.scoped(() => {
       if (expr.id) this.scope.defSymbol(expr.id, { type: 'Func', decl: expr });
       expr.params.forEach(p => this.scope.defSymbol(p, { type: 'Param', func: expr, decl: p }));
-      expr.requires.forEach(r => this.visitExpression(r));
+      expr.requires.forEach(r => this.visitAssertion(r));
       expr.ensures.forEach(s => {
         this.scoped(() => this.visitPostCondition(s), true);
       });
@@ -1260,7 +1583,7 @@ class NameResolver extends Visitor<void,void> {
   }
 
   visitAssertStatement (stmt: Syntax.AssertStatement) {
-    this.visitExpression(stmt.expression);
+    this.visitAssertion(stmt.expression);
   }
 
   visitIfStatement (stmt: Syntax.IfStatement) {
@@ -1278,11 +1601,11 @@ class NameResolver extends Visitor<void,void> {
   }
 
   visitWhileStatement (stmt: Syntax.WhileStatement) {
-    this.visitExpression(stmt.test);
     this.scoped(() => {
-      stmt.invariants.forEach(i => this.visitExpression(i));
+      this.visitExpression(stmt.test);
+      stmt.invariants.forEach(i => this.visitAssertion(i));
       stmt.body.body.forEach(s => this.visitStatement(s));
-    });
+    }, false, true, stmt);
   }
 
   visitDebuggerStatement (stmt: Syntax.DebuggerStatement) { /* empty */ }
@@ -1291,7 +1614,7 @@ class NameResolver extends Visitor<void,void> {
     this.scope.defSymbol(stmt.id, { type: 'Func', decl: stmt });
     this.scoped(() => {
       stmt.params.forEach(p => this.scope.defSymbol(p, { type: 'Param', func: stmt, decl: p }));
-      stmt.requires.forEach(r => this.visitExpression(r));
+      stmt.requires.forEach(r => this.visitAssertion(r));
       stmt.ensures.forEach(s => {
         this.scoped(() => this.visitPostCondition(s), true);
       });
@@ -1303,8 +1626,14 @@ class NameResolver extends Visitor<void,void> {
     this.scope.defSymbol(stmt.id, { type: 'Class', decl: stmt });
     this.scoped(() => {
       this.scope.defSymbol(id('this'), { type: 'This', decl: stmt });
-      this.visitExpression(stmt.invariant);
+      this.visitAssertion(stmt.invariant);
     }, false, false);
+    stmt.methods.forEach(method => {
+      this.scoped(() => {
+        this.scope.defSymbol(id('this'), { type: 'This', decl: stmt });
+        this.visitFunctionDeclaration(method);
+      });
+    });
   }
 
   builtinClass (name: string) {
@@ -1313,7 +1642,7 @@ class NameResolver extends Visitor<void,void> {
       id: id(name),
       fields: [],
       invariant: { type: 'Literal', value: true, loc: nullLoc() },
-      checkInvariant: false,
+      methods: [],
       loc: nullLoc()
     };
     this.scope.defSymbol(decl.id, { type: 'Class', decl });
@@ -1324,47 +1653,134 @@ class NameResolver extends Visitor<void,void> {
     this.builtinClass('Function');
     this.builtinClass('Array');
     prog.body.forEach(stmt => this.visitStatement(stmt));
-    prog.invariants.forEach(inv => this.visitExpression(inv));
+    prog.invariants.forEach(inv => this.visitAssertion(inv));
   }
 }
 
-export function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
-  let stmts: Array<JSyntax.Statement> = [];
-  for (const s of program.body) {
-    if (s.type === 'ImportDeclaration' ||
-        s.type === 'ExportAllDeclaration' ||
-        s.type === 'ExportNamedDeclaration' ||
-        s.type === 'ExportDefaultDeclaration' ||
-        s.type === 'ReturnStatement') {
-      throw unsupported(s);
-    }
-    stmts.push(s);
-  }
-  const body = flatMap(withoutPseudoCalls('invariant', stmts), statementAsJavaScript);
-  const prog: Syntax.Program = {
-    body,
-    invariants: findInvariants(stmts)
-  };
-  const resolver = new NameResolver();
-  resolver.visitProgram(prog);
-  return prog;
-}
-
-export function isMutable (id: Syntax.Identifier): boolean {
-  if (id.decl.type === 'Unresolved') throw undefinedId(id.loc);
-  return isWrittenTo(id.decl);
-}
-
-class Stringifier extends Visitor<string,string> {
+class Stringifier extends Visitor<string, string, string, string> {
 
   depth: number = 0;
 
-  visitIdentifier (expr: Syntax.Identifier): string {
-    return expr.name;
+  formatBlock (stmts: Array<Syntax.Statement | string>): string {
+    let res = '{\n';
+    this.indent(() => {
+      for (const s of stmts) {
+        res += typeof s === 'string' ? this.i(s) : this.visitStatement(s);
+      }
+    });
+    return res + this.i('}');
   }
 
-  visitOldIdentifier (expr: Syntax.OldIdentifier): string {
-    return `old(${expr.id.name})`;
+  visitIdentifierTerm (term: Syntax.Identifier): string {
+    return term.name;
+  }
+
+  visitOldIdentifierTerm (term: Syntax.OldIdentifier): string {
+    return `old(${term.id.name})`;
+  }
+
+  visitLiteralTerm (term: Syntax.Literal): string {
+    return term.value === undefined ? 'undefined' : JSON.stringify(term.value);
+  }
+
+  visitUnaryTerm (term: Syntax.UnaryTerm): string {
+    switch (term.operator) {
+      case 'typeof':
+      case 'void':
+        return `${term.operator}(${this.visitTerm(term.argument)})`;
+      default:
+        return `${term.operator}${this.visitTerm(term.argument)}`;
+    }
+  }
+
+  visitBinaryTerm (term: Syntax.BinaryTerm): string {
+    return `(${this.visitTerm(term.left)} ${term.operator} ${this.visitTerm(term.right)})`;
+  }
+
+  visitLogicalTerm (term: Syntax.LogicalTerm): string {
+    return `(${this.visitTerm(term.left)} ${term.operator} ${this.visitTerm(term.right)})`;
+  }
+
+  visitConditionalTerm (term: Syntax.ConditionalTerm): string {
+    return `(${this.visitTerm(term.test)} ? ${this.visitTerm(term.consequent)} ` +
+                                         `: ${this.visitTerm(term.alternate)})`;
+  }
+
+  visitCallTerm (term: Syntax.CallTerm): string {
+    return `${this.visitTerm(term.callee)}(${term.args.map(a => this.visitTerm(a)).join(', ')})`;
+  }
+
+  visitMemberTerm (term: Syntax.MemberTerm): string {
+    if (term.property.type === 'Literal' &&
+        typeof term.property.value === 'string' &&
+        /^[a-zA-Z_]+$/.test(term.property.value)) {
+      return `${this.visitTerm(term.object)}.${term.property.value}`;
+    } else {
+      return `${this.visitTerm(term.object)}[${this.visitTerm(term.property)}]`;
+    }
+  }
+
+  visitTermAssertion (assertion: Syntax.Term): string {
+    return this.visitTerm(assertion);
+  }
+
+  visitPostCondition (post: Syntax.PostCondition): string {
+    if (post.argument) {
+      return `${this.visitTerm(post.argument)} => ${this.visitAssertion(post.expression)}`;
+    }
+    return this.visitAssertion(post.expression);
+  }
+
+  visitParams (params: Array<string>): string {
+    if (params.length === 1) return params[0];
+    return `(${params.join(', ')})`;
+  }
+
+  visitSpecAssertion (assertion: Syntax.SpecAssertion): string {
+    if (assertion.post.argument) {
+      return `spec(${this.visitTerm(assertion.callee)}, ` +
+                  `${this.visitParams(assertion.args)} => ${this.visitAssertion(assertion.pre)}, ` +
+                  `${this.visitParams([...assertion.args, assertion.post.argument.name])} => ` +
+                     `${this.visitAssertion(assertion.post.expression)})`;
+    }
+    return `spec(${this.visitTerm(assertion.callee)}, ` +
+                `${this.visitParams(assertion.args)} => ${this.visitAssertion(assertion.pre)}, ` +
+                `${this.visitParams(assertion.args)} => ${this.visitAssertion(assertion.post.expression)})`;
+  }
+
+  visitEveryAssertion (assertion: Syntax.EveryAssertion): string {
+    if (assertion.indexArgument !== null) {
+      return `every(${this.visitTerm(assertion.array)}, ` +
+                   `(${assertion.argument.name}, ${assertion.indexArgument.name}) => ` +
+                   `${this.visitAssertion(assertion.expression)})`;
+    } else {
+      return `every(${this.visitTerm(assertion.array)}, ` +
+                   `${assertion.argument.name} => ${this.visitAssertion(assertion.expression)})`;
+    }
+  }
+
+  visitPureAssertion (assertion: Syntax.PureAssertion): string {
+    return `pure()`;
+  }
+
+  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): string {
+    return `(${this.visitTerm(assertion.left)} instanceof ${assertion.right.name})`;
+  }
+
+  visitInAssertion (assertion: Syntax.InAssertion): string {
+    return `(${this.visitTerm(assertion.property)} in ${this.visitTerm(assertion.object)})`;
+  }
+
+  visitUnaryAssertion (assertion: Syntax.UnaryAssertion) {
+    return `!${this.visitAssertion(assertion.argument)}`;
+  }
+
+  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): string {
+    return `(${this.visitAssertion(assertion.left)} ${assertion.operator} ${this.visitAssertion(assertion.right)})`;
+  }
+
+  visitIdentifier (expr: Syntax.Identifier): string {
+    return expr.name;
   }
 
   visitLiteral (expr: Syntax.Literal): string {
@@ -1386,12 +1802,12 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitLogicalExpression (expr: Syntax.LogicalExpression): string {
-    return `${this.visitExpression(expr.left)} ${expr.operator} ${this.visitExpression(expr.right)}`;
+    return `(${this.visitExpression(expr.left)} ${expr.operator} ${this.visitExpression(expr.right)})`;
   }
 
   visitConditionalExpression (expr: Syntax.ConditionalExpression): string {
-    return `${this.visitExpression(expr.test)} ? ${this.visitExpression(expr.consequent)} ` +
-                                              `: ${this.visitExpression(expr.alternate)}`;
+    return `(${this.visitExpression(expr.test)} ? ${this.visitExpression(expr.consequent)} ` +
+                                               `: ${this.visitExpression(expr.alternate)})`;
   }
 
   visitAssignmentExpression (expr: Syntax.AssignmentExpression): string {
@@ -1399,44 +1815,11 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitSequenceExpression (expr: Syntax.SequenceExpression): string {
-    return `${expr.expressions.map(e => this.visitExpression(e)).join(', ')}`;
+    return `(${expr.expressions.map(e => this.visitExpression(e)).join(', ')})`;
   }
 
   visitCallExpression (expr: Syntax.CallExpression): string {
     return `${this.visitExpression(expr.callee)}(${expr.args.map(a => this.visitExpression(a)).join(', ')})`;
-  }
-
-  visitPostCondition (expr: Syntax.PostCondition): string {
-    if (expr.argument) {
-      return `${this.visitExpression(expr.argument)} => ${this.visitExpression(expr.expression)}`;
-    }
-    return this.visitExpression(expr.expression);
-  }
-
-  visitSpecExpression (expr: Syntax.SpecExpression): string {
-    if (expr.post.argument) {
-      return `spec(${this.visitExpression(expr.callee)}, ` +
-                  `(${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), ` +
-                  `(${[...expr.args, expr.post.argument.name].join(', ')}) => ` +
-                     `(${this.visitExpression(expr.post.expression)}))`;
-    }
-    return `spec(${this.visitExpression(expr.callee)}, ` +
-                `(${expr.args.join(', ')}) => (${this.visitExpression(expr.pre)}), ` +
-                `(${expr.args.join(', ')}) => (${this.visitExpression(expr.post.expression)}))`;
-  }
-
-  visitEveryExpression (expr: Syntax.EveryExpression): string {
-    if (expr.indexArgument !== null) {
-      return `every(${this.visitExpression(expr.array)}, ` +
-                   `(${expr.argument.name}, ${expr.indexArgument.name}) => (${this.visitExpression(expr.expression)}))`;
-    } else {
-      return `every(${this.visitExpression(expr.array)}, ` +
-                   `${expr.argument.name} => (${this.visitExpression(expr.expression)}))`;
-    }
-  }
-
-  visitPureExpression (expr: Syntax.PureExpression): string {
-    return `pure()`;
   }
 
   visitNewExpression (expr: Syntax.NewExpression): string {
@@ -1474,16 +1857,17 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): string {
-    if (expr.id === null && expr.body.body.length === 1 && expr.body.body[0].type === 'ReturnStatement') {
+    if (expr.id === null && expr.body.body.length === 1 && expr.body.body[0].type === 'ReturnStatement' &&
+        expr.requires.length === 0 && expr.ensures.length === 0) {
       const retStmt = expr.body.body[0] as Syntax.ReturnStatement;
-      if (expr.params.length === 1) {
-        return `${expr.params[0].name} => ${this.visitExpression(retStmt.argument)}`;
-      } else {
-        return `(${expr.params.map(p => p.name).join(', ')}) => ${this.visitExpression(retStmt.argument)}`;
-      }
+      return `${this.visitParams(expr.params.map(p => p.name))} => ${this.visitExpression(retStmt.argument)}`;
     }
+    const body: Array<string | Syntax.Statement> = ([] as Array<string | Syntax.Statement>)
+      .concat(expr.requires.map(req => `requires(${this.visitAssertion(req)});`))
+      .concat(expr.ensures.map(ens => `ensures(${this.visitPostCondition(ens)});`))
+      .concat(expr.body.body);
     return `(function ${expr.id ? expr.id.name + ' ' : ''}(${expr.params.map(p => p.name).join(', ')}) ` +
-            `${this.visitStatements(expr.body.body)})`;
+            `${this.formatBlock(body)})`;
   }
 
   indent (f: () => void) {
@@ -1505,18 +1889,8 @@ class Stringifier extends Visitor<string,string> {
     return this.i(`${stmt.kind} ${stmt.id.name} = ${this.visitExpression(stmt.init)};\n`);
   }
 
-  visitStatements (stmts: Array<Syntax.Statement>): string {
-    let res = '{\n';
-    this.indent(() => {
-      for (const s of stmts) {
-        res += this.visitStatement(s);
-      }
-    });
-    return res + this.i('}');
-  }
-
   visitBlockStatement (stmt: Syntax.BlockStatement): string {
-    return this.i(this.visitStatements(stmt.body)) + '\n';
+    return this.i(this.formatBlock(stmt.body)) + '\n';
   }
 
   visitExpressionStatement (stmt: Syntax.ExpressionStatement): string {
@@ -1524,17 +1898,17 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitAssertStatement (stmt: Syntax.AssertStatement): string {
-    return this.i(`assert(${this.visitExpression(stmt.expression)});\n`);
+    return this.i(`assert(${this.visitAssertion(stmt.expression)});\n`);
   }
 
   visitIfStatement (stmt: Syntax.IfStatement): string {
     if (stmt.alternate.body.length === 0) {
       return this.i(`if (${this.visitExpression(stmt.test)}) ` +
-                    `${this.visitStatements(stmt.consequent.body)}\n`);
+                    `${this.formatBlock(stmt.consequent.body)}\n`);
     } else {
       return this.i(`if (${this.visitExpression(stmt.test)}) ` +
-                    `${this.visitStatements(stmt.consequent.body)} else ` +
-                    `${this.visitStatements(stmt.alternate.body)}\n`);
+                    `${this.formatBlock(stmt.consequent.body)} else ` +
+                    `${this.formatBlock(stmt.alternate.body)}\n`);
     }
   }
 
@@ -1543,7 +1917,7 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitWhileStatement (stmt: Syntax.WhileStatement): string {
-    return this.i(`while (${this.visitExpression(stmt.test)}) ${this.visitStatements(stmt.body.body)}\n`);
+    return this.i(`while (${this.visitExpression(stmt.test)}) ${this.formatBlock(stmt.body.body)}\n`);
   }
 
   visitDebuggerStatement (stmt: Syntax.DebuggerStatement): string {
@@ -1551,8 +1925,12 @@ class Stringifier extends Visitor<string,string> {
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): string {
+    const body: Array<string | Syntax.Statement> = ([] as Array<string | Syntax.Statement>)
+      .concat(stmt.requires.map(req => `requires(${this.visitAssertion(req)});`))
+      .concat(stmt.ensures.map(ens => `ensures(${this.visitPostCondition(ens)});`))
+      .concat(stmt.body.body);
     return this.i(`function ${stmt.id.name} (${stmt.params.map(p => p.name).join(', ')}) ` +
-                  `${this.visitStatements(stmt.body.body)}\n`);
+                  `${this.formatBlock(body)}\n`);
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): string {
@@ -1563,16 +1941,23 @@ class Stringifier extends Visitor<string,string> {
     for (const f of stmt.fields) {
       res += this.i(`this.${f} = ${f};\n`);
     }
-    if (stmt.checkInvariant) {
-      res += this.visitStatements(immediateAssertionTestCode(stmt.invariant));
+    this.depth--;
+    res += this.i(`}\n`);
+    if (stmt.invariant.type !== 'Literal' || stmt.invariant.value !== true) {
+      res += this.i(`invariant(${stmt.fields.join(', ')}) {\n`);
+      this.depth++;
+      res += this.i(`return ${this.visitAssertion(stmt.invariant)};\n`);
+      this.depth--;
+      res += this.i(`}\n`);
     }
-    this.depth--;
-    res += this.i(`}\n`);
-    res += this.i(`invariant(${stmt.fields.join(', ')}) {\n`);
-    this.depth++;
-    res += this.i(`return ${this.visitExpression(stmt.invariant)};\n`);
-    this.depth--;
-    res += this.i(`}\n`);
+    stmt.methods.forEach(method => {
+      const body: Array<string | Syntax.Statement> = ([] as Array<string | Syntax.Statement>)
+        .concat(method.requires.map(req => `requires(${this.visitAssertion(req)});`))
+        .concat(method.ensures.map(ens => `ensures(${this.visitPostCondition(ens)});`))
+        .concat(method.body.body);
+      res += this.i(`${method.id.name} (${method.params.map(p => p.name).join(', ')}) ` +
+                    `${this.formatBlock(body)}\n`);
+    });
     this.depth--;
     res += this.i(`}\n`);
     return res;
@@ -1583,56 +1968,223 @@ class Stringifier extends Visitor<string,string> {
   }
 }
 
-export function stringifyExpr (expr: Syntax.Expression): string {
+export function stringifyAssertion (assertion: Syntax.Assertion): string {
+  return (new Stringifier()).visitAssertion(assertion);
+}
+
+export function stringifyExpression (expr: Syntax.Expression): string {
   return (new Stringifier()).visitExpression(expr);
 }
 
-export function stringifyStmt (stmt: Syntax.Statement): string {
-  return (new Stringifier()).visitStatement(stmt);
+export function stringifyTestCode (body: Array<Syntax.Statement>): string {
+  const stringifier = new Stringifier();
+  return `function assert(p) { if (!p) throw new Error("assertion failed"); }
+function spec(f, id, req, ens) {
+  if (f._mapping) {
+    f._mapping[id] = [req, ens];
+    return f;
+  } else {
+    const mapping = { [id]: [req, ens] };
+    const wrapped = (...args) => {
+      return Object.values(mapping).reduceRight((cont, [req, ens]) => (...args2) => {
+        const args3 = req.apply(null, args2);
+        return ens.apply(null, args3.concat(cont.apply(null, args3)));
+      }, f).apply(null, args);
+    };
+    wrapped._mapping = mapping;
+    return wrapped;
+  }
 }
 
-export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
+${body.map(s => stringifier.visitStatement(s)).join('\n')}`;
+}
 
-  theta: { [vname: string]: string | Syntax.Expression } = {};
+/**
+ * Substitutes variables in assertions/expressions with terms/expressions.
+ */
+export class Substituter extends Visitor<Syntax.Term, Syntax.Assertion, Syntax.Expression, Syntax.Statement> {
 
-  replaceVar (orig: string, expr: string | Syntax.Expression): Substituter {
-    this.theta[orig] = expr;
+  thetaA: { [vname: string]: Syntax.Term } = {};
+  thetaE: { [vname: string]: Syntax.Expression } = {};
+
+  replaceVar (orig: string, term: Syntax.Term, expr: Syntax.Expression): Substituter {
+    this.thetaA[orig] = term;
+    this.thetaE[orig] = expr;
     return this;
   }
 
   withoutBindings<A> (cont: () => A, ...bindings: Array<string>): A {
-    const origTheta = Object.assign({}, this.theta);
+    const origThetaA = Object.assign({}, this.thetaA);
+    const origThetaE = Object.assign({}, this.thetaE);
     try {
-      bindings.forEach(b => { delete this.theta[b]; });
+      bindings.forEach(b => { delete this.thetaA[b]; delete this.thetaE[b]; });
       return cont();
     } finally {
-      this.theta = origTheta;
+      this.thetaA = origThetaA;
+      this.thetaE = origThetaE;
     }
   }
 
-  visitIdentifier (expr: Syntax.Identifier): Syntax.Expression {
-    if (!(expr.name in this.theta)) return expr;
-    const e: string | Syntax.Expression = this.theta[expr.name];
-    if (typeof(e) !== 'string') return e;
+  visitIdentifierTerm (term: Syntax.Identifier): Syntax.Term {
+    return term.name in this.thetaA ? this.thetaA[term.name] : term;
+  }
+
+  visitOldIdentifierTerm (term: Syntax.OldIdentifier): Syntax.Term {
+    const newId = this.visitIdentifier(term.id);
+    if (newId.type !== 'Identifier') throw new Error('cannot substitute term below old()');
     return {
-      type: 'Identifier',
-      name: e,
-      decl: expr.decl,
-      isWrittenTo: false,
-      refs: [],
-      loc: expr.loc
+      type: 'OldIdentifier',
+      id: newId,
+      loc: term.loc
     };
   }
 
-  visitOldIdentifier (expr: Syntax.OldIdentifier): Syntax.Expression {
-    return expr;
+  visitLiteralTerm (term: Syntax.Literal): Syntax.Term {
+    return term;
+  }
+
+  visitUnaryTerm (term: Syntax.UnaryTerm): Syntax.Term {
+    return {
+      type: 'UnaryTerm',
+      operator: term.operator,
+      argument: this.visitTerm(term.argument),
+      loc: term.loc
+    };
+  }
+
+  visitBinaryTerm (term: Syntax.BinaryTerm): Syntax.Term {
+    return {
+      type: 'BinaryTerm',
+      operator: term.operator,
+      left: this.visitTerm(term.left),
+      right: this.visitTerm(term.right),
+      loc: term.loc
+    };
+  }
+
+  visitLogicalTerm (term: Syntax.LogicalTerm): Syntax.Term {
+    return {
+      type: 'LogicalTerm',
+      operator: term.operator,
+      left: this.visitTerm(term.left),
+      right: this.visitTerm(term.right),
+      loc: term.loc
+    };
+  }
+
+  visitConditionalTerm (term: Syntax.ConditionalTerm): Syntax.Term {
+    return {
+      type: 'ConditionalTerm',
+      test: this.visitTerm(term.test),
+      consequent: this.visitTerm(term.consequent),
+      alternate: this.visitTerm(term.alternate),
+      loc: term.loc
+    };
+  }
+
+  visitCallTerm (term: Syntax.CallTerm): Syntax.Term {
+    return {
+      type: 'CallTerm',
+      callee: this.visitTerm(term.callee),
+      args: term.args.map(e => this.visitTerm(e)),
+      loc: term.loc
+    };
+  }
+
+  visitMemberTerm (term: Syntax.MemberTerm): Syntax.Term {
+    return {
+      type: 'MemberTerm',
+      object: this.visitTerm(term.object),
+      property: this.visitTerm(term.property),
+      loc: term.loc
+    };
+  }
+
+  visitTermAssertion (assertion: Syntax.Term): Syntax.Assertion {
+    return this.visitTerm(assertion);
+  }
+
+  visitPureAssertion (assertion: Syntax.PureAssertion): Syntax.Assertion {
+    return assertion;
+  }
+
+  visitPostCondition (post: Syntax.PostCondition): Syntax.PostCondition {
+    return {
+      argument: post.argument,
+      expression: post.argument !== null
+        ? this.withoutBindings(() => this.visitAssertion(post.expression), post.argument.name)
+        : this.visitAssertion(post.expression),
+      loc: post.loc
+    };
+  }
+
+  visitSpecAssertion (assertion: Syntax.SpecAssertion): Syntax.Assertion {
+    return {
+      type: 'SpecAssertion',
+      callee: this.visitTerm(assertion.callee),
+      args: assertion.args,
+      pre: this.withoutBindings(() => this.visitAssertion(assertion.pre), ...assertion.args),
+      post: this.withoutBindings(() => this.visitPostCondition(assertion.post), ...assertion.args),
+      loc: assertion.loc
+    };
+  }
+
+  visitEveryAssertion (assertion: Syntax.EveryAssertion): Syntax.Assertion {
+    return {
+      type: 'EveryAssertion',
+      array: this.visitTerm(assertion.array),
+      argument: assertion.argument,
+      indexArgument: assertion.indexArgument,
+      expression: assertion.indexArgument !== null
+        ? this.withoutBindings(() => this.visitAssertion(assertion.expression),
+                               assertion.argument.name, assertion.indexArgument.name)
+        : this.withoutBindings(() => this.visitAssertion(assertion.expression), assertion.argument.name),
+      loc: assertion.loc
+    };
+  }
+
+  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): Syntax.Assertion {
+    return {
+      type: 'InstanceOfAssertion',
+      left: this.visitTerm(assertion.left),
+      right: assertion.right,
+      loc: assertion.loc
+    };
+  }
+
+  visitInAssertion (assertion: Syntax.InAssertion): Syntax.Assertion {
+    return {
+      type: 'InAssertion',
+      property: this.visitTerm(assertion.property),
+      object: this.visitTerm(assertion.object),
+      loc: assertion.loc
+    };
+  }
+
+  visitUnaryAssertion (assertion: Syntax.UnaryAssertion): Syntax.Assertion {
+    return {
+      type: 'UnaryAssertion',
+      operator: assertion.operator,
+      argument: this.visitAssertion(assertion.argument),
+      loc: assertion.loc
+    };
+  }
+
+  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): Syntax.Assertion {
+    return {
+      type: 'BinaryAssertion',
+      operator: assertion.operator,
+      left: this.visitAssertion(assertion.left),
+      right: this.visitAssertion(assertion.right),
+      loc: assertion.loc
+    };
+  }
+
+  visitIdentifier (expr: Syntax.Identifier): Syntax.Expression {
+    return expr.name in this.thetaE ? this.thetaE[expr.name] : expr;
   }
 
   visitLiteral (expr: Syntax.Literal): Syntax.Expression {
-    return expr;
-  }
-
-  visitPureExpression (expr: Syntax.PureExpression): Syntax.Expression {
     return expr;
   }
 
@@ -1701,43 +2253,6 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
     };
   }
 
-  visitPostCondition (expr: Syntax.PostCondition): Syntax.PostCondition {
-    const expression = expr.argument !== null
-      ? this.withoutBindings(() => this.visitExpression(expr.expression), expr.argument.name)
-      : this.visitExpression(expr.expression);
-    return {
-      argument: expr.argument,
-      expression,
-      loc: expr.loc
-    };
-  }
-
-  visitSpecExpression (expr: Syntax.SpecExpression): Syntax.Expression {
-    return {
-      type: 'SpecExpression',
-      callee: this.visitExpression(expr.callee),
-      args: expr.args,
-      pre: this.withoutBindings(() => this.visitExpression(expr.pre), ...expr.args),
-      post: this.withoutBindings(() => this.visitPostCondition(expr.post), ...expr.args),
-      loc: expr.loc
-    };
-  }
-
-  visitEveryExpression (expr: Syntax.EveryExpression): Syntax.Expression {
-    const array = this.visitExpression(expr.array);
-    const expression = expr.indexArgument !== null
-      ? this.withoutBindings(() => this.visitExpression(expr.expression), expr.argument.name, expr.indexArgument.name)
-      : this.withoutBindings(() => this.visitExpression(expr.expression), expr.argument.name);
-    return {
-      type: 'EveryExpression',
-      array,
-      argument: expr.argument,
-      indexArgument: expr.indexArgument,
-      expression,
-      loc: expr.loc
-    };
-  }
-
   visitNewExpression (expr: Syntax.NewExpression): Syntax.Expression {
     return {
       type: 'NewExpression',
@@ -1798,8 +2313,10 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
       type: 'FunctionExpression',
       id: expr.id,
       params: expr.params,
-      requires: this.withoutBindings(() => expr.requires.map(r => this.visitExpression(r)), ...bindings),
-      ensures: this.withoutBindings(() => expr.ensures.map(e => this.visitPostCondition(e)), ...bindings),
+      requires: expr.requires.map(req =>
+        this.withoutBindings(() => this.visitAssertion(req), ...bindings)),
+      ensures: expr.ensures.map(ens =>
+        this.withoutBindings(() => this.visitPostCondition(ens), ...bindings)),
       body: this.withoutBindings(() => this.visitBlockStatement(expr.body), ...bindings),
       freeVars: expr.freeVars,
       loc: expr.loc
@@ -1807,7 +2324,8 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitVariableDeclaration (stmt: Syntax.VariableDeclaration): Syntax.Statement {
-    delete this.theta[stmt.id.name]; // gets restored at end of next block or function
+    delete this.thetaA[stmt.id.name]; // gets restored at end of next block or function
+    delete this.thetaE[stmt.id.name]; // gets restored at end of next block or function
     return {
       type: 'VariableDeclaration',
       id: stmt.id,
@@ -1818,16 +2336,11 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitBlockStatement (stmt: Syntax.BlockStatement): Syntax.BlockStatement {
-    const origTheta = Object.assign({}, this.theta);
-    try {
-      return {
-        type: 'BlockStatement',
-        body: stmt.body.map(s => this.visitStatement(s)),
-        loc: stmt.loc
-      };
-    } finally {
-      this.theta = origTheta;
-    }
+    return {
+      type: 'BlockStatement',
+      body: this.withoutBindings(() => stmt.body.map(s => this.visitStatement(s))),
+      loc: stmt.loc
+    };
   }
 
   visitExpressionStatement (stmt: Syntax.ExpressionStatement): Syntax.Statement {
@@ -1841,7 +2354,7 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   visitAssertStatement (stmt: Syntax.AssertStatement): Syntax.Statement {
     return {
       type: 'AssertStatement',
-      expression: this.visitExpression(stmt.expression),
+      expression: this.visitAssertion(stmt.expression),
       loc: stmt.loc
     };
   }
@@ -1867,9 +2380,10 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   visitWhileStatement (stmt: Syntax.WhileStatement): Syntax.Statement {
     return {
       type: 'WhileStatement',
-      invariants: stmt.invariants.map(inv => this.visitExpression(inv)),
+      invariants: stmt.invariants.map(inv => this.visitAssertion(inv)),
       test: this.visitExpression(stmt.test),
       body: this.visitBlockStatement(stmt.body),
+      freeVars: stmt.freeVars,
       loc: stmt.loc
     };
   }
@@ -1881,15 +2395,18 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
     };
   }
 
-  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): Syntax.Statement {
-    delete this.theta[stmt.id.name]; // gets restored at end of next block or function
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): Syntax.FunctionDeclaration {
+    delete this.thetaA[stmt.id.name]; // gets restored at end of next block or function
+    delete this.thetaE[stmt.id.name]; // gets restored at end of next block or function
     const bindings = stmt.params.map(p => p.name);
     return {
       type: 'FunctionDeclaration',
       id: stmt.id,
       params: stmt.params,
-      requires: this.withoutBindings(() => stmt.requires.map(r => this.visitExpression(r)), ...bindings),
-      ensures: this.withoutBindings(() => stmt.ensures.map(e => this.visitPostCondition(e)), ...bindings),
+      requires: stmt.requires.map(req =>
+        this.withoutBindings(() => this.visitAssertion(req), ...bindings)),
+      ensures: stmt.ensures.map(ens =>
+        this.withoutBindings(() => this.visitPostCondition(ens), ...bindings)),
       body: this.withoutBindings(() => this.visitBlockStatement(stmt.body), ...bindings),
       freeVars: stmt.freeVars,
       loc: stmt.loc
@@ -1897,13 +2414,14 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): Syntax.Statement {
-    delete this.theta[stmt.id.name]; // gets restored at end of next block or function
+    delete this.thetaA[stmt.id.name]; // gets restored at end of next block or function
+    delete this.thetaE[stmt.id.name]; // gets restored at end of next block or function
     return {
       type: 'ClassDeclaration',
       id: stmt.id,
       fields: stmt.fields,
-      invariant: this.visitExpression(stmt.invariant),
-      checkInvariant: stmt.checkInvariant,
+      invariant: this.visitAssertion(stmt.invariant),
+      methods: stmt.methods.map(method => this.withoutBindings(() => this.visitFunctionDeclaration(method))),
       loc: stmt.loc
     };
   }
@@ -1917,58 +2435,99 @@ export class Substituter extends Visitor<Syntax.Expression, Syntax.Statement> {
   }
 }
 
-export function replaceVar (v: string, subst: string | Syntax.Expression, expr: Syntax.Expression): Syntax.Expression {
+export function replaceVarAssertion (varName: string, substA: Syntax.Term, substE: Syntax.Expression,
+                                     assertion: Syntax.Assertion): Syntax.Assertion {
   const sub = new Substituter();
-  sub.replaceVar(v, subst);
+  sub.replaceVar(varName, substA, substE);
+  return sub.visitAssertion(assertion);
+}
+
+export function replaceVarExpr (varName: string, substA: Syntax.Term, substE: Syntax.Expression,
+                                expr: Syntax.Expression): Syntax.Expression {
+  const sub = new Substituter();
+  sub.replaceVar(varName, substA, substE);
   return sub.visitExpression(expr);
 }
 
+export function replaceVarStmt (varName: string, substA: Syntax.Term, substE: Syntax.Expression,
+                                stmt: Syntax.Statement): Syntax.Statement {
+  const sub = new Substituter();
+  sub.replaceVar(varName, substA, substE);
+  return sub.visitStatement(stmt);
+}
+
 /**
- * Given an expression, determines whether it is a valid left-hand side of an assignment.
+ * Given a term, determines whether it is a valid left-hand side of an assignment.
  */
-class ValidAssignmentTargetChecker extends Visitor<boolean, void> {
+class ValidAssignmentTargetChecker extends Visitor<boolean, void, void, void> {
 
-  visitIdentifier (expr: Syntax.Identifier): boolean { return true; }
+  visitIdentifierTerm (term: Syntax.Identifier): boolean { return true; }
 
-  visitOldIdentifier (expr: Syntax.OldIdentifier): boolean { return false; }
+  visitOldIdentifierTerm (term: Syntax.OldIdentifier): boolean { return false; }
 
-  visitLiteral (expr: Syntax.Literal): boolean { return false; }
+  visitLiteralTerm (term: Syntax.Literal): boolean { return false; }
 
-  visitPureExpression (expr: Syntax.PureExpression): boolean { return false; }
+  visitUnaryTerm (term: Syntax.UnaryTerm): boolean { return false; }
 
-  visitUnaryExpression (expr: Syntax.UnaryExpression): boolean { return false; }
+  visitBinaryTerm (term: Syntax.BinaryTerm): boolean { return false; }
 
-  visitBinaryExpression (expr: Syntax.BinaryExpression): boolean { return false; }
+  visitLogicalTerm (term: Syntax.LogicalTerm): boolean { return false; }
 
-  visitLogicalExpression (expr: Syntax.LogicalExpression): boolean { return false; }
+  visitConditionalTerm (term: Syntax.ConditionalTerm): boolean { return false; }
 
-  visitConditionalExpression (expr: Syntax.ConditionalExpression): boolean { return false; }
+  visitCallTerm (term: Syntax.CallTerm): boolean { return false; }
 
-  visitAssignmentExpression (expr: Syntax.AssignmentExpression): boolean { return false; }
-
-  visitSequenceExpression (expr: Syntax.SequenceExpression): boolean { return false; }
-
-  visitCallExpression (expr: Syntax.CallExpression): boolean { return false; }
-
-  visitSpecExpression (expr: Syntax.SpecExpression): boolean { return false; }
-
-  visitEveryExpression (expr: Syntax.EveryExpression): boolean { return false; }
-
-  visitNewExpression (expr: Syntax.NewExpression): boolean { return false; }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): boolean { return false; }
-
-  visitObjectExpression (expr: Syntax.ObjectExpression): boolean { return false; }
-
-  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): boolean { return false; }
-
-  visitInExpression (expr: Syntax.InExpression): boolean { return false; }
-
-  visitMemberExpression (expr: Syntax.MemberExpression): boolean {
-    return this.visitExpression(expr.object) && expr.property.type === 'Literal';
+  visitMemberTerm (term: Syntax.MemberTerm): boolean {
+    return this.visitTerm(term.object) && term.property.type === 'Literal';
   }
 
-  visitFunctionExpression (expr: Syntax.FunctionExpression): boolean { return false; }
+  visitTermAssertion (assertion: Syntax.Term): void { /* empty */ }
+
+  visitPureAssertion (assertion: Syntax.PureAssertion): void { /* empty */ }
+
+  visitSpecAssertion (assertion: Syntax.SpecAssertion): void { /* empty */ }
+
+  visitEveryAssertion (assertion: Syntax.EveryAssertion): void { /* empty */ }
+
+  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): void { /* empty */ }
+
+  visitInAssertion (assertion: Syntax.InAssertion): void { /* empty */ }
+
+  visitUnaryAssertion (assertion: Syntax.UnaryAssertion): void { /* empty */ }
+
+  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): void { /* empty */ }
+
+  visitIdentifier (expr: Syntax.Identifier): void { /* empty */ }
+
+  visitLiteral (expr: Syntax.Literal): void { /* empty */ }
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): void { /* empty */ }
+
+  visitBinaryExpression (expr: Syntax.BinaryExpression): void { /* empty */ }
+
+  visitLogicalExpression (expr: Syntax.LogicalExpression): void { /* empty */ }
+
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): void { /* empty */ }
+
+  visitAssignmentExpression (expr: Syntax.AssignmentExpression): void { /* empty */ }
+
+  visitSequenceExpression (expr: Syntax.SequenceExpression): void { /* empty */ }
+
+  visitCallExpression (expr: Syntax.CallExpression): void { /* empty */ }
+
+  visitNewExpression (expr: Syntax.NewExpression): void { /* empty */ }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): void { /* empty */ }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): void { /* empty */ }
+
+  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): void { /* empty */ }
+
+  visitInExpression (expr: Syntax.InExpression): void { /* empty */ }
+
+  visitMemberExpression (expr: Syntax.MemberExpression): void { /* empty */ }
+
+  visitFunctionExpression (expr: Syntax.FunctionExpression): void { /* empty */ }
 
   visitVariableDeclaration (stmt: Syntax.VariableDeclaration): void { /* empty */ }
 
@@ -1993,579 +2552,20 @@ class ValidAssignmentTargetChecker extends Visitor<boolean, void> {
   visitProgram (prog: Syntax.Program): void { /* empty */ }
 }
 
-function isValidAssignmentTarget (expr: Syntax.Expression): boolean {
+export function isValidAssignmentTarget (term: Syntax.Term): boolean {
   const visitor = new ValidAssignmentTargetChecker();
-  return visitor.visitExpression(expr);
+  return visitor.visitTerm(term);
 }
 
-/**
- * Given an expression, collect function specifications that are either top-level or part of
- * a conjunction. Specs that are part of a disjunction or in a negative position are difficult
- * to dynamically enforce and are not supported yet.
- */
-class SimpleSpecCollector extends Visitor<Array<Syntax.SpecExpression>, void> {
-
-  visitIdentifier (expr: Syntax.Identifier): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitOldIdentifier (expr: Syntax.OldIdentifier): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitLiteral (expr: Syntax.Literal): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitPureExpression (expr: Syntax.PureExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitUnaryExpression (expr: Syntax.UnaryExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitBinaryExpression (expr: Syntax.BinaryExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitLogicalExpression (expr: Syntax.LogicalExpression): Array<Syntax.SpecExpression> {
-    switch (expr.operator) {
-      case '&&': return this.visitExpression(expr.left).concat(this.visitExpression(expr.right));
-      case '||': return [];
-    }
-  }
-
-  visitConditionalExpression (expr: Syntax.ConditionalExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitAssignmentExpression (expr: Syntax.AssignmentExpression): Array<Syntax.SpecExpression> {
-    return this.visitExpression(expr.right);
-  }
-
-  visitSequenceExpression (expr: Syntax.SequenceExpression): Array<Syntax.SpecExpression> {
-    // only consider last expression
-    return this.visitExpression(expr.expressions[expr.expressions.length - 1]);
-  }
-
-  visitCallExpression (expr: Syntax.CallExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitSpecExpression (expr: Syntax.SpecExpression): Array<Syntax.SpecExpression> {
-    return isValidAssignmentTarget(expr.callee) ? [expr] : [];
-  }
-
-  visitEveryExpression (expr: Syntax.EveryExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitNewExpression (expr: Syntax.NewExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitObjectExpression (expr: Syntax.ObjectExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitInExpression (expr: Syntax.InExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitMemberExpression (expr: Syntax.MemberExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitFunctionExpression (expr: Syntax.FunctionExpression): Array<Syntax.SpecExpression> {
-    return [];
-  }
-
-  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): void { /* empty */ }
-
-  visitBlockStatement (stmt: Syntax.BlockStatement): void { /* empty */ }
-
-  visitExpressionStatement (stmt: Syntax.ExpressionStatement): void { /* empty */ }
-
-  visitAssertStatement (stmt: Syntax.AssertStatement): void { /* empty */ }
-
-  visitIfStatement (stmt: Syntax.IfStatement): void { /* empty */ }
-
-  visitReturnStatement (stmt: Syntax.ReturnStatement): void { /* empty */ }
-
-  visitWhileStatement (stmt: Syntax.WhileStatement): void { /* empty */ }
-
-  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): void { /* empty */ }
-
-  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): void { /* empty */ }
-
-  visitClassDeclaration (stmt: Syntax.ClassDeclaration): void { /* empty */ }
-
-  visitProgram (prog: Syntax.Program): void { /* empty */ }
-}
-
-export function simpleSpecs (expr: Syntax.Expression): Array<Syntax.SpecExpression> {
-  const visitor = new SimpleSpecCollector();
-  return visitor.visitExpression(expr);
-}
-
-export function loopTestingCode (whl: Syntax.WhileStatement): Array<Syntax.Statement> {
-  return [{
-    type: 'FunctionDeclaration',
-    id: id('test', whl.loc),
-    params: [],
-    requires: [],
-    ensures: [],
-    body: {
-      type: 'BlockStatement',
-      body: whl.invariants
-      .map((inv): Syntax.Statement =>
-        ({ type: 'AssertStatement', expression: inv, loc: inv.loc }))
-      .concat(whl.body.body),
-      loc: whl.loc
-    },
-    freeVars: [],
-    loc: whl.loc
-  },
-  {
-    type: 'ExpressionStatement',
-    expression: {
-      type: 'CallExpression',
-      args: [],
-      callee: id('test', whl.loc),
-      loc: whl.loc
-    },
-    loc: whl.loc
-  }];
-}
-
-function uniqueIdentifier (loc: Syntax.SourceLocation): number {
+export function uniqueIdentifier (loc: Syntax.SourceLocation): number {
   return loc.start.column + loc.start.line * 37 +
          loc.end.column * 331 + loc.end.line * 5023 + loc.file.length * 48353;
 }
 
-class TestCodeTransformer extends Visitor<Syntax.Expression, Array<Syntax.Statement>> {
-
-  assert (expr: Syntax.Expression, immediate: boolean = true): Array<Syntax.Statement> {
-    const result: Array<Syntax.Statement> = [];
-    const check = this.visitExpression(expr);
-    if (immediate && (check.type !== 'Literal' || check.value !== true)) {
-      result.push({ type: 'AssertStatement', expression: check, loc: expr.loc });
-    }
-    for (const spec of simpleSpecs(expr)) {
-      const retName = spec.post.argument === null ? id('_res_') : spec.post.argument;
-      // Uses an assignment to wrap and update the callee of the provided function spec such that
-      // all subsequent calls enforce the pre- and postcondition.
-      result.push({
-        type: 'ExpressionStatement',
-        expression: {
-          type: 'AssignmentExpression',
-          left: spec.callee,
-          right: {
-            type: 'CallExpression',
-            callee: id('spec'),
-            args: [
-              spec.callee,
-              { type: 'Literal', value: uniqueIdentifier(spec.loc), loc: spec.loc },
-              {
-                type: 'FunctionExpression',
-                id: null,
-                params: spec.args.map(s => id(s)),
-                requires: [],
-                ensures: [],
-                body: {
-                  type: 'BlockStatement',
-                  body: immediateAssertionTestCode(spec.pre).concat({
-                    type: 'ReturnStatement',
-                    argument: {
-                      type: 'ArrayExpression',
-                      elements: spec.args.map(s => id(s)),
-                      loc: spec.pre.loc
-                    },
-                    loc: spec.pre.loc
-                  }),
-                  loc: spec.pre.loc
-                },
-                freeVars: [],
-                loc: spec.pre.loc
-              }, {
-                type: 'FunctionExpression',
-                id: null,
-                params: spec.args.map(s => id(s)).concat(retName),
-                requires: [],
-                ensures: [],
-                body: {
-                  type: 'BlockStatement',
-                  body: immediateAssertionTestCode(spec.post.expression).concat({
-                    type: 'ReturnStatement',
-                    argument: retName,
-                    loc: spec.pre.loc
-                  }),
-                  loc: spec.post.loc
-                },
-                freeVars: [],
-                loc: spec.post.loc
-              }
-            ],
-            loc: spec.loc
-          },
-          loc: spec.loc
-        },
-        loc: spec.loc
-      });
-    }
-    return result;
+export function removeTestCodePrefix (prefix: TestCode, code: TestCode): TestCode {
+  let prefixLength = 0;
+  while (prefix.length > prefixLength && code.length > prefixLength && prefix[prefixLength] === code[prefixLength]) {
+    prefixLength++;
   }
-
-  unwrapBlockStatement (stmt: Syntax.BlockStatement): Array<Syntax.Statement> {
-    return flatMap(stmt.body, s => this.visitStatement(s));
-  }
-
-  visitIdentifier (expr: Syntax.Identifier): Syntax.Expression { return expr; }
-
-  visitOldIdentifier (expr: Syntax.OldIdentifier): Syntax.Expression {
-    return id(`old_${expr.id.name}`, expr.loc);
-  }
-
-  visitLiteral (expr: Syntax.Literal): Syntax.Expression {
-    return expr;
-  }
-
-  visitPureExpression (expr: Syntax.PureExpression): Syntax.Expression {
-    return { type: 'Literal', value: true, loc: nullLoc() }; // not enforced dynamically yet
-  }
-
-  visitUnaryExpression (expr: Syntax.UnaryExpression): Syntax.Expression {
-    return {
-      type: 'UnaryExpression',
-      operator: expr.operator,
-      argument: this.visitExpression(expr.argument),
-      loc: expr.loc
-    };
-  }
-
-  visitBinaryExpression (expr: Syntax.BinaryExpression): Syntax.Expression {
-    return {
-      type: 'BinaryExpression',
-      operator: expr.operator,
-      left: this.visitExpression(expr.left),
-      right: this.visitExpression(expr.right),
-      loc: expr.loc
-    };
-  }
-
-  visitLogicalExpression (expr: Syntax.LogicalExpression): Syntax.Expression {
-    const left = this.visitExpression(expr.left);
-    const right = this.visitExpression(expr.right);
-    const { type, operator, loc } = expr;
-    switch (expr.operator) {
-      case '&&':
-        if (left.type === 'Literal' && left.value === true) {
-          return right;
-        } else if (right.type === 'Literal' && right.value === true) {
-          return left;
-        } else {
-          return { type, operator, left, right, loc };
-        }
-      case '||':
-        if (left.type === 'Literal' && left.value === false) {
-          return right;
-        } else if (right.type === 'Literal' && right.value === false) {
-          return left;
-        } else {
-          return { type, operator, left, right, loc };
-        }
-    }
-  }
-
-  visitConditionalExpression (expr: Syntax.ConditionalExpression): Syntax.Expression {
-    return {
-      type: 'ConditionalExpression',
-      test: this.visitExpression(expr.test),
-      consequent: this.visitExpression(expr.consequent),
-      alternate: this.visitExpression(expr.alternate),
-      loc: expr.loc
-    };
-  }
-
-  visitAssignmentExpression (expr: Syntax.AssignmentExpression): Syntax.Expression {
-    return {
-      type: 'AssignmentExpression',
-      left: expr.left,
-      right: this.visitExpression(expr.right),
-      loc: expr.loc
-    };
-  }
-
-  visitSequenceExpression (expr: Syntax.SequenceExpression): Syntax.Expression {
-    return {
-      type: 'SequenceExpression',
-      expressions: expr.expressions.map(e => this.visitExpression(e)),
-      loc: expr.loc
-    };
-  }
-
-  visitCallExpression (expr: Syntax.CallExpression): Syntax.Expression {
-    return {
-      type: 'CallExpression',
-      callee: this.visitExpression(expr.callee),
-      args: expr.args.map(e => this.visitExpression(e)),
-      loc: expr.loc
-    };
-  }
-
-  visitSpecExpression (expr: Syntax.SpecExpression): Syntax.Expression {
-    return { type: 'Literal', value: true, loc: nullLoc() };
-    // enforcement code generated in this.assert()
-  }
-
-  visitEveryExpression (expr: Syntax.EveryExpression): Syntax.Expression {
-    return {
-      type: 'CallExpression',
-      callee: {
-        type: 'MemberExpression',
-        object: this.visitExpression(expr.array),
-        property: { type: 'Literal', value: 'every', loc: expr.loc },
-        loc: expr.loc
-      },
-      args: [{
-        type: 'FunctionExpression',
-        id: null,
-        params: expr.indexArgument !== null ? [expr.argument, expr.indexArgument] : [expr.argument],
-        requires: [],
-        ensures: [],
-        body: {
-          type: 'BlockStatement',
-          body: [{
-            type: 'ReturnStatement',
-            argument: this.visitExpression(expr.expression),
-            loc: expr.expression.loc
-          }],
-          loc: expr.expression.loc
-        },
-        freeVars: [],
-        loc: expr.expression.loc
-      }],
-      loc: expr.loc
-    };
-  }
-
-  visitNewExpression (expr: Syntax.NewExpression): Syntax.Expression {
-    return {
-      type: 'NewExpression',
-      callee: expr.callee,
-      args: expr.args.map(e => this.visitExpression(e)),
-      loc: expr.loc
-    };
-  }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): Syntax.Expression {
-    return {
-      type: 'ArrayExpression',
-      elements: expr.elements.map(e => this.visitExpression(e)),
-      loc: expr.loc
-    };
-  }
-
-  visitObjectExpression (expr: Syntax.ObjectExpression): Syntax.Expression {
-    return {
-      type: 'ObjectExpression',
-      properties: expr.properties.map(({ key, value }) => ({ key, value: this.visitExpression(value) })),
-      loc: expr.loc
-    };
-  }
-
-  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): Syntax.Expression {
-    return {
-      type: 'InstanceOfExpression',
-      left: this.visitExpression(expr.left),
-      right: expr.right,
-      loc: expr.loc
-    };
-  }
-
-  visitInExpression (expr: Syntax.InExpression): Syntax.Expression {
-    return {
-      type: 'InExpression',
-      property: this.visitExpression(expr.property),
-      object: this.visitExpression(expr.object),
-      loc: expr.loc
-    };
-  }
-
-  visitMemberExpression (expr: Syntax.MemberExpression): Syntax.Expression {
-    return {
-      type: 'MemberExpression',
-      object: this.visitExpression(expr.object),
-      property: this.visitExpression(expr.property),
-      loc: expr.loc
-    };
-  }
-
-  visitFunctionExpression (expr: Syntax.FunctionExpression): Syntax.Expression {
-  return {
-      type: 'FunctionExpression',
-      id: expr.id,
-      params: expr.params,
-      requires: [],
-      ensures: [],
-      body: {
-        type: 'BlockStatement',
-        body: flatMap(expr.requires, r => this.assert(r)).concat(this.unwrapBlockStatement(expr.body)),
-        loc: expr.loc
-      },
-      freeVars: expr.freeVars,
-      loc: expr.loc
-    };
-  }
-
-  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): Array<Syntax.Statement> {
-    return [{
-      type: 'VariableDeclaration',
-      id: stmt.id,
-      init: this.visitExpression(stmt.init),
-      kind: 'let', // use 'let' instead of 'const' to enable wrapping
-      loc: stmt.loc
-    }];
-  }
-
-  visitBlockStatement (stmt: Syntax.BlockStatement): Array<Syntax.Statement> {
-    return [{
-      type: 'BlockStatement',
-      body: flatMap(stmt.body, s => this.visitStatement(s)),
-      loc: stmt.loc
-    }];
-  }
-
-  visitExpressionStatement (stmt: Syntax.ExpressionStatement): Array<Syntax.Statement> {
-    return [{
-      type: 'ExpressionStatement',
-      expression: this.visitExpression(stmt.expression),
-      loc: stmt.loc
-    }];
-  }
-
-  visitAssertStatement (stmt: Syntax.AssertStatement): Array<Syntax.Statement> {
-    return this.assert(stmt.expression);
-  }
-
-  visitIfStatement (stmt: Syntax.IfStatement): Array<Syntax.Statement> {
-    return [{
-      type: 'IfStatement',
-      test: this.visitExpression(stmt.test),
-      consequent: {
-        type: 'BlockStatement',
-        body: this.unwrapBlockStatement(stmt.consequent),
-        loc: stmt.consequent.loc
-      },
-      alternate: {
-        type: 'BlockStatement',
-        body: this.unwrapBlockStatement(stmt.alternate),
-        loc: stmt.alternate.loc
-      },
-      loc: stmt.loc
-    }];
-  }
-
-  visitReturnStatement (stmt: Syntax.ReturnStatement): Array<Syntax.Statement> {
-    return [{
-      type: 'ReturnStatement',
-      argument: this.visitExpression(stmt.argument),
-      loc: stmt.loc
-    }];
-  }
-
-  visitWhileStatement (stmt: Syntax.WhileStatement): Array<Syntax.Statement> {
-    return [{
-      type: 'WhileStatement',
-      invariants: stmt.invariants.map(inv => this.visitExpression(inv)),
-      test: this.visitExpression(stmt.test),
-      body: {
-        type: 'BlockStatement',
-        body: this.unwrapBlockStatement(stmt.body),
-        loc: stmt.body.loc
-      },
-      loc: stmt.loc
-    }];
-  }
-
-  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): Array<Syntax.Statement> {
-    return [{
-      type: 'DebuggerStatement',
-      loc: stmt.loc
-    }];
-  }
-
-  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): Array<Syntax.Statement> {
-    return [{
-    type: 'FunctionDeclaration',
-      id: stmt.id,
-      params: stmt.params,
-      requires: [],
-      ensures: [],
-    body: {
-      type: 'BlockStatement',
-        body: flatMap(stmt.requires, r => this.assert(r)).concat(this.unwrapBlockStatement(stmt.body)),
-        loc: stmt.loc
-    },
-      freeVars: stmt.freeVars,
-      loc: stmt.loc
-    }];
-  }
-
-  visitClassDeclaration (stmt: Syntax.ClassDeclaration): Array<Syntax.Statement> {
-    return [{
-      type: 'ClassDeclaration',
-      id: stmt.id,
-      fields: stmt.fields,
-      invariant: this.visitExpression(stmt.invariant),
-      checkInvariant: true, // assert invariant
-      loc: stmt.loc
-    }];
-  }
-
-  visitProgram (prog: Syntax.Program): Array<Syntax.Statement> {
-    return flatMap(prog.body, s => this.visitStatement(s));
-  }
-}
-
-export function immediateAssertionTestCode (assertion: Syntax.Expression): Array<Syntax.Statement> {
-  const visitor = new TestCodeTransformer();
-  return visitor.assert(assertion, true);
-}
-
-export function deferredAssertionTestCode (assertion: Syntax.Expression): Array<Syntax.Statement> {
-  const visitor = new TestCodeTransformer();
-  return visitor.assert(assertion, false);
-}
-
-export function transformTestCode (body: Array<Syntax.Statement>): string {
-  const visitor = new TestCodeTransformer();
-  return `function assert(p) { if (!p) throw new Error("assertion failed"); }
-function spec(f, id, req, ens) {
-  if (f._mapping) {
-    f._mapping[id] = [req, ens];
-    return f;
-  } else {
-    const mapping = { [id]: [req, ens] };
-    const wrapped = (...args) => {
-      return Object.values(mapping).reduceRight((cont, [req, ens]) => (...args2) => {
-        const args3 = req.apply(null, args2);
-        return ens.apply(null, args3.concat(cont.apply(null, args3)));
-      }, f).apply(null, args);
-    };
-    wrapped._mapping = mapping;
-    return wrapped;
-  }
-}
-
-${flatMap(body, s => visitor.visitStatement(s)).map(s => stringifyStmt(s)).join('\n')}`;
+  return code.slice(prefixLength);
 }

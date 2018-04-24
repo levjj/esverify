@@ -1,8 +1,8 @@
 export type SExpr = string | SExprList;
 export interface SExprList extends Array<SExpr> {}
 
-export function flatMap<A,B> (a: Array<A>, f: (a: A) => Array<B>): Array<B> {
-  return a.map(f).reduce((a,b) => a.concat(b), []);
+export function flatMap<A,B> (a: ReadonlyArray<A>, f: (a: A) => ReadonlyArray<B>): Array<B> {
+  return a.map(f).reduce((a: Array<B>, b: ReadonlyArray<B>): Array<B> => a.concat(b), []);
 }
 
 export function parseSExpr (input: string): SExpr {

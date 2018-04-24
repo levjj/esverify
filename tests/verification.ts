@@ -161,7 +161,7 @@ describe('counter', () => {
   verified('increment: (counter > old(counter))');
   verified('increment: (typeof(counter) === "number")');
   verified('increment: (counter >= 0)');
-  verified('decrement: (old(counter) > 0) ? (counter < old(counter)) : (counter === old(counter))');
+  verified('decrement: ((old(counter) > 0) ? (counter < old(counter)) : (counter === old(counter)))');
   verified('decrement: (typeof(counter) === "number")');
   verified('decrement: (counter >= 0)');
 });
@@ -209,7 +209,7 @@ describe('loop with missing invariant', () => {
     assert(i === 5);
   });
 
-  unverified('assert: (i === 5)', [{ name: 'i', heap: 2 }, false]);
+  incorrect('assert: (i === 5)', [{ name: 'i', heap: 2 }, false]);
 });
 
 describe('sum', () => {
@@ -698,7 +698,7 @@ describe('mapLen internal', () => {
   verified('map: class invariant List');
   verified('map: precondition len(res)');
   verified('map: pure()');
-  verified('map: (res === null) || (res instanceof List)');
+  verified('map: ((res === null) || (res instanceof List))');
   verified('map: (len(lst) === len(res))');
 });
 
@@ -763,7 +763,7 @@ describe('mapLen external', () => {
   verified('map: precondition map(lst.tail, f)');
   verified('map: class invariant List');
   verified('map: pure()');
-  verified('map: (res === null) || (res instanceof List)');
+  verified('map: ((res === null) || (res instanceof List))');
   verified('len: lst has property "tail"');
   verified('len: precondition len(lst.tail)');
   verified('len: pure()');
@@ -826,7 +826,7 @@ describe('map invariant', () => {
   verified('map: precondition map(f, lst.tail, newEach)');
   verified('map: class invariant List');
   verified('map: pure()');
-  verified('map: (res === null) || (res instanceof List) && (res.each === newEach)');
+  verified('map: ((res === null) || ((res instanceof List) && (res.each === newEach)))');
 });
 
 describe('nested function bug', () => {
@@ -874,8 +874,8 @@ describe('functions returning functions', () => {
     }
   });
 
-  verified('twice: spec(res, (x) => ((typeof(x) === "number")), ' +
-                            '(x, y) => ((typeof(y) === "number") && (y > (x + 1))))');
+  verified('twice: spec(res, x => (typeof(x) === "number"), ' +
+                           '(x, y) => ((typeof(y) === "number") && (y > (x + 1))))');
 });
 
 describe('function bug', () => {
@@ -887,7 +887,7 @@ describe('function bug', () => {
     }
   });
 
-  verified('f: !spec(f, (y) => (true), (y) => ((y !== x)))');
+  verified('f: !spec(f, y => true, y => (y !== x))');
 });
 
 describe('merge sort', () => {
@@ -1022,13 +1022,13 @@ describe('merge sort', () => {
   verified('merge: precondition merge(left, right.tail)');
   verified('merge: class invariant IntList');
   verified('merge: precondition isSorted(res)');
-  verified('merge: (res === null) || (res instanceof IntList)');
+  verified('merge: ((res === null) || (res instanceof IntList))');
   verified('merge: isSorted(res)');
-  verified('merge: ((left === null) && (right === null) === (res === null))');
-  verified('merge: !(left !== null) && (right === null) || (right.head >= left.head) || ' +
-                  '(res !== null) && (res.head === left.head)');
-  verified('merge: !(right !== null) && (left === null) || (right.head < left.head) || ' +
-                  '(res !== null) && (res.head === right.head)');
+  verified('merge: (((left === null) && (right === null)) === (res === null))');
+  verified('merge: (!((left !== null) && ((right === null) || (right.head >= left.head))) || ' +
+                    '((res !== null) && (res.head === left.head)))');
+  verified('merge: (!((right !== null) && ((left === null) || (right.head < left.head))) || ' +
+                    '((res !== null) && (res.head === right.head)))');
   verified('merge: pure()');
   verified('sort: list has property "tail"');
   verified('sort: precondition isSorted(list)');
@@ -1039,7 +1039,7 @@ describe('merge sort', () => {
   verified('sort: part has property "right"');
   verified('sort: precondition sort(part.right)');
   verified('sort: precondition merge(sort(part.left), sort(part.right))');
-  verified('sort: (res === null) || (res instanceof IntList)');
+  verified('sort: ((res === null) || (res instanceof IntList))');
   verified('sort: isSorted(res)');
   verified('sort: pure()');
 });
@@ -1226,7 +1226,7 @@ describe('function subtyping with same type', () => {
     }
   });
 
-  verified('f: spec(g, (x) => ((x > 3)), (x, y) => ((y > x)))');
+  verified('f: spec(g, x => (x > 3), (x, y) => (y > x))');
 });
 
 describe('function subtyping with stronger pre', () => {
@@ -1238,7 +1238,7 @@ describe('function subtyping with stronger pre', () => {
     }
   });
 
-  verified('f: spec(g, (x) => ((x > 4)), (x, y) => ((y > x)))');
+  verified('f: spec(g, x => (x > 4), (x, y) => (y > x))');
 });
 
 describe('function subtyping with weaker pre', () => {
@@ -1250,7 +1250,7 @@ describe('function subtyping with weaker pre', () => {
     }
   });
 
-  unverified('f: spec(g, (x) => ((x > 2)), (x, y) => ((y > x)))');
+  unverified('f: spec(g, x => (x > 2), (x, y) => (y > x))');
 });
 
 describe('function subtyping with stronger post', () => {
@@ -1262,7 +1262,7 @@ describe('function subtyping with stronger post', () => {
     }
   });
 
-  unverified('f: spec(g, (x) => ((x > 3)), (x, y) => ((y > (x + 1))))');
+  unverified('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))');
 });
 
 describe('function subtyping with weaker post', () => {
@@ -1274,7 +1274,7 @@ describe('function subtyping with weaker post', () => {
     }
   });
 
-  verified('f: spec(g, (x) => ((x > 3)), (x, y) => ((y >= x)))');
+  verified('f: spec(g, x => (x > 3), (x, y) => (y >= x))');
 });
 
 describe('array invariants', () => {
@@ -1335,17 +1335,17 @@ describe('array invariants', () => {
     }
   });
 
-  verified('f_1: every(res, e => ((e > 23)))');
+  verified('f_1: every(res, e => (e > 23))');
   verified('f_2: a has property 0');
   verified('f_2: (res > 12)');
   verified('f_3: a has property 2');
   verified('f_3: (a[2] > 12)');
-  verified('f_4: every(res, (e, i) => ((e > i)))');
-  incorrect('g_1: every(res, e => ((e > 23)))');
+  verified('f_4: every(res, (e, i) => (e > i))');
+  incorrect('g_1: every(res, e => (e > 23))');
   verified('g_2: a has property 0');
   incorrect('g_2: (res > 42)', ['a', [24]]);
   incorrect('g_3: (a[2] > 12)', ['a', [true, true, true]]);
-  incorrect('g_4: every(res, (e, i) => ((e > i)))');
+  incorrect('g_4: every(res, (e, i) => (e > i))');
 });
 
 describe('simple object access', () => {
