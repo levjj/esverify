@@ -62,7 +62,7 @@ export default class VerificationCondition {
   }
 
   private prepareSMT (): SMTInput {
-    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.prop);
+    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, this.prop);
     if (options.verbose) {
       console.log('SMT Input:');
       console.log('------------');

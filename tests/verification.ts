@@ -1250,7 +1250,7 @@ describe('function subtyping with weaker pre', () => {
     }
   });
 
-  unverified('f: spec(g, x => (x > 2), (x, y) => (y > x))');
+  incorrect('f: spec(g, x => (x > 2), (x, y) => (y > x))', ['x', 3]);
 });
 
 describe('function subtyping with stronger post', () => {
@@ -1262,7 +1262,7 @@ describe('function subtyping with stronger post', () => {
     }
   });
 
-  unverified('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))');
+  incorrect('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))', ['x', 5908]);
 });
 
 describe('function subtyping with weaker post', () => {
@@ -1488,7 +1488,7 @@ describe('function counter examples', () => {
     const arg = retStmt.argument;
     expect(arg.type).to.eql('Literal');
     if (arg.type !== 'Literal') throw new Error();
-    expect(arg.value).to.eql(1);
+    expect(arg.value).to.eql(0);
   });
   verified('g3: precondition f(5)');
   incorrect('g3: (res < 20)');
@@ -1581,4 +1581,16 @@ describe('higher-order function spec enforced in test', () => {
 
   verified('g: precondition f()');
   incorrect('g: precondition y(0)');
+});
+
+describe('asserting function spec generates call', () => {
+
+  code(() => {
+    function f (x) {
+      requires(x > 2);
+    }
+    assert(spec(f, x => x > 1, (x, y) => true));
+  });
+
+  incorrect('assert: spec(f, x => (x > 1), (x, y) => true)', ['x', 2]);
 });

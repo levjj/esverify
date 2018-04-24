@@ -1,4 +1,4 @@
-import { Classes, Heap, Heaps, Locs, P, Syntax, Vars, Visitor, implies } from './logic';
+import { Classes, Heap, Heaps, Locs, P, Syntax, Vars, Visitor, implies, FreeVars } from './logic';
 import { options } from './options';
 import { instantiateQuantifiers } from './qi';
 import { flatMap } from './util';
@@ -272,8 +272,8 @@ function propositionToAssert (prop: P): SMTInput {
   return `(assert ${propositionToSMT(prop)})\n`;
 }
 
-export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, p: P): SMTInput {
-  const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, p) : p;
+export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): SMTInput {
+  const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, freeVars, p) : p;
   return `(set-option :produce-models true)
 (set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation

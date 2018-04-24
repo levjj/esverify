@@ -138,12 +138,16 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     return id(`_tmp_${uniqueIdentifier(loc)}`, loc);
   }
 
+  smtPlaceholder (name: string) {
+    return id(`__free__${name}`);
+  }
+
   freeVar (name: string) {
     this.freeVars.push(name);
     this.testBody = this.testBody.concat([{
       type: 'VariableDeclaration',
       id: id(name),
-      init: id(`__free__${name}`),
+      init: this.smtPlaceholder(name),
       kind: 'let',
       loc: nullLoc()
     }, {
@@ -162,7 +166,7 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
       expression: {
         type: 'AssignmentExpression',
         left: id(name),
-        right: id(`__free__${name}`),
+        right: this.smtPlaceholder(name),
         loc: nullLoc()
       },
       loc: nullLoc()
@@ -374,6 +378,25 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
         },
         loc: assertion.loc
       });
+      if (this.assertionPolarity) {
+        if (specP.type !== 'And' || specP.clauses.length !== 2) {
+          throw new Error('expected spec to translate to [fnCheck, forAll]');
+        }
+        const forAllP: P = specP.clauses[1];
+        if (forAllP.type !== 'ForAllCalls') {
+          throw new Error('expected spec to translate to [fnCheck, forAll]');
+        }
+        const callExpr: Syntax.CallExpression = {
+          type: 'CallExpression',
+          callee: calleeE,
+          args: [],
+          loc: assertion.loc
+        };
+        forAllP.liftCallback = (renamedArgs: Array<string>) => {
+          callExpr.args = renamedArgs.map(arg => this.smtPlaceholder(arg));
+        };
+        specT.push({ type: 'ExpressionStatement', expression: callExpr, loc: assertion.loc });
+      }
     }
     return [specP, specE, specT];
   }

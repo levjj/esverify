@@ -1,5 +1,5 @@
 import { Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser,
-         Vars, and, copy, eq, eqProp, implies, tru } from './logic';
+         Vars, FreeVars, and, copy, eq, eqProp, implies, tru } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
 
@@ -95,6 +95,13 @@ abstract class QuantifierTransformer extends Transformer {
 
 class QuantifierLifter extends QuantifierTransformer {
 
+  freeVars: FreeVars;
+
+  constructor (heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars) {
+    super(heaps, locs, vars);
+    this.freeVars = freeVars;
+  }
+
   visitForAllCalls (prop: Syntax.ForAllCalls): P {
     if (this.position) return copy(prop);
     if (prop.existsHeaps.size + prop.existsLocs.size + prop.existsVars.size > 0) {
@@ -102,7 +109,14 @@ class QuantifierLifter extends QuantifierTransformer {
     }
     const trigger: P = { type: 'CallTrigger', callee: prop.callee, heap: prop.heap, args: prop.args, fuel: prop.fuel };
     const sub = this.liftExistantials(prop);
-    prop.args.forEach(a => sub.replaceVar(a, this.freshVar(a)));
+    const renamedVars: Array<Syntax.Variable> = [];
+    prop.args.forEach(a => {
+      const renamedVar = this.freshVar(a);
+      renamedVars.push(renamedVar);
+      this.freeVars.push(renamedVar);
+      sub.replaceVar(a, renamedVar);
+    });
+    prop.liftCallback(renamedVars);
     return this.visitProp(sub.visitProp(implies(trigger, prop.prop)));
   }
 
@@ -363,9 +377,9 @@ class QuantifierEraser extends Transformer {
   }
 }
 
-export function instantiateQuantifiers (heaps: Heaps, locs: Locs, vars: Vars, p: P): P {
+export function instantiateQuantifiers (heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): P {
   const initialFuel = new TriggerFueler();
-  const lifter = new QuantifierLifter(heaps, locs, vars);
+  const lifter = new QuantifierLifter(heaps, locs, vars, freeVars);
   const instantiator = new QuantifierInstantiator(heaps, locs, vars);
   let prop = initialFuel.process(lifter.visitProp(p));
   let num = -1;

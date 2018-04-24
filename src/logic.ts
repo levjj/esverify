@@ -98,7 +98,8 @@ export namespace Syntax {
                                  existsVars: Vars;
                                  prop: Proposition;
                                  instantiations: Array<CallTrigger>;
-                                 fuel: number; }
+                                 fuel: number;
+                                 liftCallback: (renamedArgs: Array<Variable>) => void; }
   export interface CallTrigger { type: 'CallTrigger';
                                  callee: Expression;
                                  heap: HeapExpression;
@@ -773,7 +774,8 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       existsVars: new Set([...prop.existsVars]),
       prop: this.visitProp(prop.prop),
       instantiations: [...prop.instantiations], // shallow copy, do not process
-      fuel: prop.fuel
+      fuel: prop.fuel,
+      liftCallback: prop.liftCallback
     };
   }
 
@@ -984,7 +986,8 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
     existsVars,
     prop,
     instantiations: [],
-    fuel: 0
+    fuel: 0,
+    liftCallback: () => undefined
   };
   const fnCheck: A = {
     type: 'BinaryExpression',
