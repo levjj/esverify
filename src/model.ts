@@ -125,7 +125,7 @@ export class Model {
   public valueOf (name: FreeVar): JSVal {
     if (typeof name === 'string') {
       const val = this.vars[name];
-      if (!val) throw this.modelError(`no such var ${name}`);
+      if (!val) return { type: 'undefined' };
       return this.hydrate(val);
     } else {
       const loc = this.locs[name.name];
