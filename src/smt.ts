@@ -1,4 +1,4 @@
-import { Classes, Heap, Heaps, Locs, P, Syntax, Vars, Visitor, implies, FreeVars } from './logic';
+import { Classes, FreeVars, Heap, Heaps, Locs, P, Syntax, Vars, Visitor, implies } from './logic';
 import { options } from './options';
 import { instantiateQuantifiers } from './qi';
 import { flatMap } from './util';

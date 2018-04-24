@@ -1,12 +1,13 @@
-import { Syntax, TestCode, Visitor, id, isMutable, nullLoc,
-         replaceVarAssertion as replaceJSVarAssertion, stringifyAssertion, stringifyExpression, uniqueIdentifier,
-         isValidAssignmentTarget, removeTestCodePrefix } from './javascript';
-import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq,
-         heapStore, implies, not, or, removePrefix, replaceResultWithCall, replaceVar,
-         transformClassInvariant, transformEveryInvariant, transformSpec, tru, truthy, und } from './logic';
+import { stringifyAssertion, stringifyExpression } from './codegen';
+import { Syntax, TestCode, Visitor, id, isValidAssignmentTarget, nullLoc, removeTestCodePrefix,
+         replaceVarAssertion as replaceJSVarAssertion, uniqueIdentifier } from './javascript';
+import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq, heapStore, implies, not, or,
+         removePrefix, replaceResultWithCall, replaceVar, transformClassInvariant, transformEveryInvariant,
+         transformSpec, tru, truthy, und } from './logic';
 import { eraseTriggersProp } from './qi';
-import VerificationCondition from './verification';
+import { isMutable } from './scopes';
 import { flatMap } from './util';
+import VerificationCondition from './verification';
 
 type BreakCondition = P;
 

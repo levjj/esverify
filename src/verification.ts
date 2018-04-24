@@ -1,4 +1,5 @@
-import { Substituter, Syntax, nullLoc, stringifyTestCode } from './javascript';
+import { stringifyTestCode } from './codegen';
+import { Substituter, Syntax, nullLoc } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript } from './model';

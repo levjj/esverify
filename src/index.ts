@@ -1,8 +1,9 @@
 import { parseScript } from 'esprima';
 import * as Syntax from 'estree';
-import { programAsJavaScript } from './javascript';
 import { Message, MessageException, log, unexpected } from './message';
 import { Options, options, setOptions } from './options';
+import { programAsJavaScript } from './parser';
+import { resolveNames } from './scopes';
 import { vcgenProgram } from './vcgen';
 import VerificationCondition from './verification';
 
@@ -20,6 +21,7 @@ export function verificationConditions (src: string, opts: Partial<Options> = {}
   }
   try {
     const prog = programAsJavaScript(node);
+    resolveNames(prog);
     const vcs = vcgenProgram(prog);
     return vcs;
   } catch (e) {

@@ -1,5 +1,5 @@
-import { Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser,
-         Vars, FreeVars, and, copy, eq, eqProp, implies, tru } from './logic';
+import { FreeVars, Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser, Vars, and, copy,
+         eq, eqProp, implies, tru } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
 
