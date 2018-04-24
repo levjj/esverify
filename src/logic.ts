@@ -975,7 +975,7 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
   } else {
     s = and(ens, heapEq(heap, { type: 'HeapEffect', callee, heap, args }));
   }
-  const prop = and(implies(req, preP), implies(postP, s));
+  const prop = and(implies(req, preP), implies(and(req, postP), s));
   const forAll: P = {
     type: 'ForAllCalls',
     callee,
