@@ -696,7 +696,7 @@ export class Substituter extends Visitor<Syntax.Term, Syntax.Assertion, Syntax.E
     };
   }
 
-  visitFunctionExpression (expr: Syntax.FunctionExpression): Syntax.Expression {
+  visitFunctionExpression (expr: Syntax.FunctionExpression): Syntax.FunctionExpression {
     const bindings = expr.id !== null
       ? [expr.id.name, ...expr.params.map(p => p.name)]
       : expr.params.map(p => p.name);
@@ -840,11 +840,29 @@ export function replaceVarExpr (varName: string, substA: Syntax.Term, substE: Sy
   return sub.visitExpression(expr);
 }
 
+export function replaceVarFunction (varName: string, substA: Syntax.Term, substE: Syntax.Expression,
+                                    f: Syntax.Function): Syntax.Function {
+  const sub = new Substituter();
+  sub.replaceVar(varName, substA, substE);
+  switch (f.type) {
+    case 'FunctionDeclaration': return sub.visitFunctionDeclaration(f);
+    case 'FunctionExpression': return sub.visitFunctionExpression(f);
+    case 'MethodDeclaration': return sub.visitMethodDeclaration(f);
+  }
+}
+
 export function replaceVarStmt (varName: string, substA: Syntax.Term, substE: Syntax.Expression,
                                 stmt: Syntax.Statement): Syntax.Statement {
   const sub = new Substituter();
   sub.replaceVar(varName, substA, substE);
   return sub.visitStatement(stmt);
+}
+
+export function replaceVarBlock (varName: string, substA: Syntax.Term, substE: Syntax.Expression,
+                                 block: Syntax.BlockStatement): Syntax.BlockStatement {
+  const sub = new Substituter();
+  sub.replaceVar(varName, substA, substE);
+  return sub.visitBlockStatement(block);
 }
 
 /**
