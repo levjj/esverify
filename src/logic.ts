@@ -170,7 +170,11 @@ export const tru: P = { type: 'True' };
 export const fls: P = { type: 'False' };
 
 export function truthy (expr: A): P {
+  if (typeof expr !== 'string' && expr.type === 'Literal') {
+    return expr.value ? tru : fls;
+  } else {
   return { type: 'Truthy', expr };
+}
 }
 
 export function falsy (expr: A): P {
