@@ -321,8 +321,8 @@ export function stringifyExpression (expr: Syntax.Expression): string {
 
 export function stringifyTestCode (body: Array<Syntax.Statement>): string {
   const stringifier = new Stringifier();
-  return `function assert(p) { if (!p) throw new Error("assertion failed"); }
-function spec(f, id, req, ens) {
+  return `function assert (p) { if (!p) throw new Error("assertion failed"); }
+function spec (f, id, req, ens) {
   if (f._mapping) {
     f._mapping[id] = [req, ens];
     return f;
