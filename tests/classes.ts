@@ -207,14 +207,14 @@ describe('map invariant', () => {
       }
       invariant () {
         return spec(this.each, x => true, (x, y) => pure() && typeof(y) === 'boolean') &&
-               this.each(this.head) &&
+               (true && this.each)(this.head) &&
                (this.tail === null || this.tail instanceof List && this.each === this.tail.each);
       }
     }
 
     function map (f, lst, newEach) {
       requires(spec(newEach, x => true, (x, y) => pure() && typeof(y) === 'boolean'));
-      requires(lst === null || spec(f, x => lst.each(x), (x, y) => pure() && newEach(y)));
+      requires(lst === null || spec(f, x => (true && lst.each)(x), (x, y) => pure() && newEach(y)));
       requires(lst === null || lst instanceof List);
       ensures(res => res === null || (res instanceof List && res.each === newEach));
       ensures(pure());
