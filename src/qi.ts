@@ -1,5 +1,5 @@
 import { FreeVars, Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser, Vars, and, copy,
-         eq, eqProp, implies, tru } from './logic';
+         eq, eqExpr, eqHeap, eqProp, implies, tru } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
 
@@ -107,8 +107,17 @@ class QuantifierLifter extends QuantifierTransformer {
     if (prop.existsHeaps.size + prop.existsLocs.size + prop.existsVars.size > 0) {
       throw new Error('Existentials in negative positions not supported');
     }
-    const trigger: P = { type: 'CallTrigger', callee: prop.callee, heap: prop.heap, args: prop.args, fuel: prop.fuel };
+    const thisArg: string = this.freshVar(prop.thisArg);
+    const trigger: P = {
+      type: 'CallTrigger',
+      callee: prop.callee,
+      heap: prop.heap,
+      thisArg: prop.thisArg,
+      args: prop.args,
+      fuel: prop.fuel
+    };
     const sub = this.liftExistantials(prop);
+    sub.replaceVar(prop.thisArg, thisArg);
     const renamedVars: Array<Syntax.Variable> = [];
     prop.args.forEach(a => {
       const renamedVar = this.freshVar(a);
@@ -116,7 +125,7 @@ class QuantifierLifter extends QuantifierTransformer {
       this.freeVars.push(renamedVar);
       sub.replaceVar(a, renamedVar);
     });
-    prop.liftCallback(renamedVars);
+    prop.liftCallback(thisArg, renamedVars);
     return this.visitProp(sub.visitProp(implies(trigger, prop.prop)));
   }
 
@@ -124,13 +133,13 @@ class QuantifierLifter extends QuantifierTransformer {
     if (this.position) return copy(prop);
     const trigger: P = {
       type: 'AccessTrigger',
-      object: 'this',
+      object: prop.thisArg,
       property: this.freshVar('prop'),
       heap: prop.heap,
       fuel: prop.fuel
     };
     const sub = new Substituter();
-    sub.replaceVar('this', this.freshVar('this'));
+    sub.replaceVar(prop.thisArg, this.freshVar(prop.thisArg));
     return this.visitProp(sub.visitProp(implies(trigger, prop.prop)));
   }
 
@@ -272,6 +281,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
   instantiateCall (prop: Syntax.ForAllCalls, trigger: Syntax.CallTrigger) {
     const sub = this.liftExistantials(prop, trigger.heap);
     // substitute arguments
+    sub.replaceVar(prop.thisArg, trigger.thisArg);
     prop.args.forEach((a, idx) => {
       sub.replaceVar(a, trigger.args[idx]);
     });
@@ -281,7 +291,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
 
   instantiateAccessObject (prop: Syntax.ForAllAccessObject, trigger: Syntax.AccessTrigger) {
     const sub = new Substituter();
-    sub.replaceVar('this', trigger.object);
+    sub.replaceVar(prop.thisArg, trigger.object);
     sub.replaceHeap(prop.heap, trigger.heap);
     const replaced = sub.visitProp(prop.prop);
     return this.consumeFuel(replaced, trigger.fuel);

@@ -343,6 +343,7 @@ function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
         return {
           type: 'SpecAssertion',
           callee: expressionAsTerm(callee),
+          hasThis: false,
           args: r.params.map(p => (p as JSyntax.Identifier).name),
           pre: expressionAsAssertion(r.body),
           post: { argument, expression: expressionAsAssertion(s.body), loc: loc(s) },
@@ -628,6 +629,91 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
   }
 }
 
+function findConstructor (clsDef: JSyntax.ClassDeclaration): Array<string> {
+  let constrMethod: JSyntax.MethodDefinition | null = null;
+  for (const method of clsDef.body.body) {
+    if (method.kind === 'constructor') {
+      if (constrMethod !== null) {
+        throw unsupported(method, 'class can have at most one constructor');
+      }
+      constrMethod = method;
+    }
+  }
+  if (constrMethod === null) {
+    throw unsupported(clsDef, 'class needs one constructor');
+  }
+  if (constrMethod.kind === 'get' || constrMethod.kind === 'set') {
+    throw unsupported(constrMethod, 'getters and setters not supported');
+  }
+  if (constrMethod.static) throw unsupported(constrMethod, 'static not supported');
+  if (constrMethod.key.type !== 'Identifier') {
+    throw unsupported(constrMethod.key, 'key needs to be identifier');
+  }
+  if (constrMethod.key.name !== 'constructor') {
+    throw unsupported(constrMethod.key, "constructor needs to be named 'constructor'");
+  }
+  const constr = constrMethod.value;
+  if (constr.generator || constr.async) throw unsupported(constr);
+  if (constr.params.length > 9) throw unsupported(constr, 'more than 9 arguments not supported yet');
+  if (constr.params.length !== constr.body.body.length) {
+    throw unsupported(constr, 'constructor should assign each param to a field');
+  }
+  checkDistinct(constr.params);
+  const params: Array<string> = constr.params.map(patternAsIdentifier).map(i => i.name);
+  for (let i = 0; i < params.length; i++) {
+    const asg = constr.body.body[i];
+    if (asg.type !== 'ExpressionStatement' ||
+        asg.expression.type !== 'AssignmentExpression' ||
+        asg.expression.left.type !== 'MemberExpression' ||
+        asg.expression.left.computed ||
+        asg.expression.left.object.type !== 'ThisExpression' ||
+        asg.expression.left.property.type !== 'Identifier' ||
+        asg.expression.left.property.name !== params[i] ||
+        asg.expression.operator !== '=' ||
+        asg.expression.right.type !== 'Identifier' ||
+        asg.expression.right.name !== params[i]) {
+      throw unsupported(asg, 'constructor should assign each param to a field');
+    }
+  }
+  return params;
+}
+
+function findClassInvariant (clsDef: JSyntax.ClassDeclaration): JSyntax.Expression {
+  let invMethod: JSyntax.MethodDefinition | null = null;
+  for (const method of clsDef.body.body) {
+    if (method.key.type === 'Identifier' && method.key.name === 'invariant') {
+      if (invMethod !== null) {
+        throw unsupported(method, 'class can have at most one invariant');
+      }
+      invMethod = method;
+    }
+  }
+  if (invMethod === null) {
+    return { type: 'Literal', value: true, raw: 'true', loc: clsDef.loc };
+  }
+  if (invMethod.kind === 'get' || invMethod.kind === 'set') {
+    throw unsupported(invMethod, 'getters and setters not supported');
+  }
+  if (invMethod.static) throw unsupported(invMethod, 'static not supported');
+  if (invMethod.key.type !== 'Identifier') {
+    throw unsupported(invMethod.key, 'key needs to be identifier');
+  }
+  const inv = invMethod.value;
+  if (inv.generator || inv.async) throw unsupported(inv);
+  if (inv.params.length > 0) {
+    throw unsupported(inv, 'invariant cannot have parameters');
+  }
+  if (inv.generator || inv.async) throw unsupported(inv);
+  if (inv.body.body.length !== 1) {
+    throw unsupported(inv.body, 'invariant needs to be single expression statement');
+  }
+  const invStmt = inv.body.body[0];
+  if (invStmt.type !== 'ReturnStatement' || !invStmt.argument) {
+    throw unsupported(inv.body, 'invariant needs to be a single return statement with an expression');
+  }
+  return invStmt.argument;
+}
+
 function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement> {
   function assert (cond: boolean) { if (!cond) throw unsupported(stmt); }
   switch (stmt.type) {
@@ -733,112 +819,45 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
     }
     case 'ClassDeclaration': {
       if (stmt.superClass) throw unsupported(stmt, 'inheritance not supported');
-      if (stmt.body.body.length > 2) {
-        throw unsupported(stmt, 'at most one constructor and invariant supported');
-      }
-      let [m1, m2] = stmt.body.body;
-      if (!m2) {
-        m2 = {
-          type: 'MethodDefinition',
-          key: { 'type': 'Identifier', 'name': 'invariant' },
-          computed: false,
-          value: {
-            type: 'FunctionExpression',
-            id: null,
-            params: [],
-            body: {
-              type: 'BlockStatement',
-              body: [{
-                type: 'ReturnStatement',
-                argument: { type: 'Literal', value: true, raw: 'true', loc: stmt.loc }
-              }],
-              loc: stmt.loc
-            },
-            generator: false,
-            loc: stmt.loc
-          },
-          kind: 'method',
-          static: false,
-          loc: stmt.loc
-        };
-      }
-      if (!m1 || m1.kind !== 'constructor' && m2.kind !== 'constructor') {
-        throw unsupported(stmt, 'class needs one constructor');
-      }
-      if (m1.kind === 'constructor' && m2.kind === 'constructor') {
-        throw unsupported(stmt, 'class can have at most one constructor');
-      }
-      if (m1.kind === 'get' || m1.kind === 'set') {
-        throw unsupported(m1, 'getters and setters not supported');
-      }
-      if (m1.static) throw unsupported(m1, 'static not supported');
-      if (m2.static) throw unsupported(m2, 'static not supported');
-      if (m2.kind === 'get' || m2.kind === 'set') {
-        throw unsupported(m2, 'getters and setters not supported');
-      }
-      if (m1.key.type !== 'Identifier') {
-        throw unsupported(m1.key, 'key needs to be identifier');
-      }
-      if (m2.key.type !== 'Identifier') {
-        throw unsupported(m2.key, 'key needs to be identifier');
-      }
-
-      const constr: JSyntax.Function = m1.kind === 'constructor' ? m1.value : m2.value;
-      if (constr === m1.value && m1.key.name !== 'constructor') {
-        throw unsupported(m1, "constructor needs to be named 'constructor'");
-      }
-      if (constr === m2.value && m2.key.name !== 'constructor') {
-        throw unsupported(m2, "constructor needs to be named 'constructor'");
-      }
-
-      if (constr.generator || constr.async) throw unsupported(constr);
-
-      if (constr.params.length > 9) throw unsupported(constr, 'more than 9 arguments not supported yet');
-      if (constr.params.length !== constr.body.body.length) {
-        throw unsupported(constr, 'constructor should assign each param to a field');
-      }
-      checkDistinct(constr.params);
-      const params: Array<Syntax.Identifier> = constr.params.map(patternAsIdentifier);
-      for (let i = 0; i < params.length; i++) {
-        const asg = constr.body.body[i];
-        if (asg.type !== 'ExpressionStatement' ||
-            asg.expression.type !== 'AssignmentExpression' ||
-            asg.expression.left.type !== 'MemberExpression' ||
-            asg.expression.left.computed ||
-            asg.expression.left.object.type !== 'ThisExpression' ||
-            asg.expression.left.property.type !== 'Identifier' ||
-            asg.expression.left.property.name !== params[i].name ||
-            asg.expression.operator !== '=' ||
-            asg.expression.right.type !== 'Identifier' ||
-            asg.expression.right.name !== params[i].name) {
-          throw unsupported(asg, 'constructor should assign each param to a field');
+      const methods: Array<Syntax.MethodDeclaration> = [];
+      for (const method of stmt.body.body) {
+        if (method.kind === 'constructor') continue;
+        if (method.key.type !== 'Identifier') {
+          throw unsupported(method.key, 'key needs to be identifier');
         }
-      }
-      if (constr === m1.value && m2.key.name !== 'invariant') {
-        throw unsupported(m2, 'no methods other than invariant supported');
-      }
-      if (constr === m2.value && m1.key.name !== 'invariant') {
-        throw unsupported(m1, 'no methods other than invariant supported');
-      }
-
-      const inv: JSyntax.Function = m1.kind === 'constructor' ? m2.value : m1.value;
-      if (inv.params.length > 0) {
-        throw unsupported(inv, 'invariant cannot have parameters');
-      }
-      if (inv.generator || inv.async) throw unsupported(constr);
-      if (inv.body.body.length !== 1) {
-        throw unsupported(inv.body, 'invariant needs to be single expression statement');
-      }
-      const invStmt = inv.body.body[0];
-      if (invStmt.type !== 'ReturnStatement' || !invStmt.argument) {
-        throw unsupported(inv.body, 'invariant needs to be a single return statement with an expression');
+        if (method.key.name === 'invariant') continue;
+        if (method.kind !== 'method') {
+          throw unsupported(method, 'getters and setters not supported');
+        }
+        if (method.static) throw unsupported(method, 'static not supported');
+        const func = method.value;
+        if (func.generator) throw unsupported(func, 'generators not supported');
+        if (func.async) throw unsupported(func, 'async method not supported');
+        checkDistinct(func.params);
+        const params: Array<Syntax.Identifier> = func.params.map(patternAsIdentifier);
+        methods.push({
+          type: 'MethodDeclaration',
+          id: id(method.key.name, loc(method.key)),
+          params,
+          requires: findPreConditions(func.body.body),
+          ensures: findPostConditions(func.body.body),
+          body: {
+            type: 'BlockStatement',
+            body: flatMap(withoutPseudoCalls('requires',
+                          withoutPseudoCalls('ensures', func.body.body)), statementAsJavaScript),
+            loc: loc(stmt.body)
+          },
+          freeVars: [],
+          className: stmt.id.name,
+          loc: loc(stmt)
+        });
       }
       return [{
         type: 'ClassDeclaration',
         id: patternAsIdentifier(stmt.id),
-        fields: params.map(p => p.name),
-        invariant: expressionAsAssertion(invStmt.argument),
-        methods: [],
+        fields: findConstructor(stmt),
+        invariant: expressionAsAssertion(findClassInvariant(stmt)),
+        methods,
         loc: loc(stmt)
       }];
     }

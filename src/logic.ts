@@ -15,6 +15,7 @@ export namespace Syntax {
   export interface HeapEffect { type: 'HeapEffect';
                                 callee: Expression;
                                 heap: HeapExpression;
+                                thisArg: Expression;
                                 args: Array<Expression>; }
   export type HeapExpression = Heap
                              | HeapStore
@@ -44,6 +45,7 @@ export namespace Syntax {
   export interface CallExpression { type: 'CallExpression';
                                     callee: Expression;
                                     heap: HeapExpression;
+                                    thisArg: Expression;
                                     args: Array<Expression>; }
   export interface NewExpression { type: 'NewExpression';
                                    className: ClassName;
@@ -84,14 +86,17 @@ export namespace Syntax {
   export interface Precondition { type: 'Precondition';
                                   callee: Expression;
                                   heap: HeapExpression;
+                                  thisArg: Expression;
                                   args: Array<Expression>; }
   export interface Postcondition { type: 'Postcondition';
                                    callee: Expression;
                                    heap: HeapExpression;
+                                   thisArg: Expression;
                                    args: Array<Expression>; }
   export interface ForAllCalls { type: 'ForAllCalls';
                                  callee: Expression;
                                  heap: Heap;
+                                 thisArg: Variable;
                                  args: Array<Variable>;
                                  existsHeaps: Set<Heap>;
                                  existsLocs: Locs;
@@ -99,14 +104,16 @@ export namespace Syntax {
                                  prop: Proposition;
                                  instantiations: Array<CallTrigger>;
                                  fuel: number;
-                                 liftCallback: (renamedArgs: Array<Variable>) => void; }
+                                 liftCallback: (thisArg: Variable, renamedArgs: Array<Variable>) => void; }
   export interface CallTrigger { type: 'CallTrigger';
                                  callee: Expression;
                                  heap: HeapExpression;
+                                 thisArg: Expression;
                                  args: Array<Expression>;
                                  fuel: number; }
   export interface ForAllAccessObject { type: 'ForAllAccessObject';
                                         heap: Heap;
+                                        thisArg: Variable;
                                         prop: Proposition;
                                         instantiations: Array<AccessTrigger>;
                                         fuel: number; }
@@ -161,7 +168,7 @@ export type Heap = Syntax.Heap;
 export type Heaps = Set<Syntax.Heap>;
 export type Locs = Set<Syntax.Location>;
 export type Vars = Set<Syntax.Variable>;
-export type Classes = Set<{ cls: Syntax.ClassName, fields: Array<string> }>;
+export type Classes = Set<{ cls: Syntax.ClassName, fields: Array<string>, methods: Array<string> }>;
 export type FreeVar = Syntax.Variable | { name: Syntax.Variable, heap: Heap };
 export type FreeVars = Array<FreeVar>;
 
@@ -173,8 +180,8 @@ export function truthy (expr: A): P {
   if (typeof expr !== 'string' && expr.type === 'Literal') {
     return expr.value ? tru : fls;
   } else {
-  return { type: 'Truthy', expr };
-}
+    return { type: 'Truthy', expr };
+  }
 }
 
 export function falsy (expr: A): P {
@@ -226,7 +233,7 @@ export function heapEq (left: Syntax.HeapExpression, right: Syntax.HeapExpressio
   return { type: 'HeapEq', left, right };
 }
 
-function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
+export function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): boolean {
   if (exprA === exprB) return true;
   if (typeof(exprA) === 'number') {
     return typeof(exprB) === 'number' && exprA === exprB;
@@ -237,6 +244,7 @@ function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): bo
       return exprA.type === exprB.type &&
              eqExpr(exprA.callee, exprB.callee) &&
              eqHeap(exprA.heap, exprB.heap) &&
+             eqExpr(exprA.thisArg, exprB.thisArg) &&
              exprA.args.length === exprB.args.length &&
              exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
     case 'HeapStore':
@@ -247,7 +255,7 @@ function eqHeap (exprA: Syntax.HeapExpression, exprB: Syntax.HeapExpression): bo
   }
 }
 
-function eqExpr (exprA: A, exprB: A): boolean {
+export function eqExpr (exprA: A, exprB: A): boolean {
   if (exprA === exprB) return true;
   if (typeof(exprA) === 'string') {
     return typeof(exprB) === 'string' && exprA === exprB;
@@ -279,6 +287,7 @@ function eqExpr (exprA: A, exprB: A): boolean {
       return exprA.type === exprB.type &&
              eqHeap(exprA.heap, exprB.heap) &&
              eqExpr(exprA.callee, exprB.callee) &&
+             eqExpr(exprA.thisArg, exprB.thisArg) &&
              exprA.args.length === exprB.args.length &&
              exprA.args.every((e,idx) => eqExpr(e, exprB.args[idx]));
     case 'NewExpression':
@@ -328,11 +337,13 @@ export function eqProp (propA: P, propB: P): boolean {
       return propA.type === propB.type &&
              eqHeap(propA.heap, propB.heap) &&
              eqExpr(propA.callee, propB.callee) &&
+             eqExpr(propA.thisArg, propB.thisArg) &&
              propA.args.length === propB.args.length &&
              propA.args.every((e,idx) => eqExpr(e, propB.args[idx]));
     case 'ForAllCalls':
       return propA.type === propB.type &&
              eqExpr(propA.callee, propB.callee) &&
+             propA.thisArg === propB.thisArg &&
              propA.args.length === propB.args.length &&
              propA.args.every((e,idx) => e === propB.args[idx]) &&
              propA.existsHeaps.size === propB.existsHeaps.size &&
@@ -344,6 +355,7 @@ export function eqProp (propA: P, propB: P): boolean {
              eqProp(propA.prop, propB.prop);
     case 'ForAllAccessObject':
       return propA.type === propB.type &&
+             propA.thisArg === propB.thisArg &&
              eqHeap(propA.heap, propB.heap) &&
              eqProp(propA.prop, propB.prop);
     case 'ForAllAccessProperty':
@@ -484,10 +496,11 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
                   this.visitExpr(expr.expr));
   }
 
-  visitHeapEffect (prop: Syntax.HeapEffect): R {
-    return this.r(this.visitHeapExpr(prop.heap),
-                  this.visitExpr(prop.callee),
-                  ...prop.args.map(a => this.visitExpr(a)));
+  visitHeapEffect (expr: Syntax.HeapEffect): R {
+    return this.r(this.visitHeapExpr(expr.heap),
+                  this.visitExpr(expr.callee),
+                  this.visitExpr(expr.thisArg),
+                  ...expr.args.map(a => this.visitExpr(a)));
   }
 
   visitVariable (expr: Syntax.Variable) { return this.empty(); }
@@ -513,6 +526,7 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   visitCallExpression (expr: Syntax.CallExpression): R {
     return this.r(this.visitHeapExpr(expr.heap),
                   this.visitExpr(expr.callee),
+                  this.visitExpr(expr.thisArg),
                   ...expr.args.map(a => this.visitExpr(a)));
   }
 
@@ -555,12 +569,14 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   visitPrecondition (prop: Syntax.Precondition): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
+                  this.visitExpr(prop.thisArg),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
   visitPostcondition (prop: Syntax.Postcondition): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
+                  this.visitExpr(prop.thisArg),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
@@ -572,6 +588,7 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   visitCallTrigger (prop: Syntax.CallTrigger): R {
     return this.r(this.visitHeapExpr(prop.heap),
                   this.visitExpr(prop.callee),
+                  this.visitExpr(prop.thisArg),
                   ...prop.args.map(a => this.visitExpr(a)));
   }
 
@@ -638,6 +655,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
      type: 'HeapEffect',
      callee: this.visitExpr(expr.callee),
      heap: this.visitHeapExpr(expr.heap),
+     thisArg: this.visitExpr(expr.thisArg),
      args: expr.args.map(a => this.visitExpr(a))
     };
   }
@@ -689,6 +707,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
      type: 'CallExpression',
      callee: this.visitExpr(expr.callee),
      heap: this.visitHeapExpr(expr.heap),
+     thisArg: this.visitExpr(expr.thisArg),
      args: expr.args.map(a => this.visitExpr(a))
     };
   }
@@ -754,6 +773,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       type: 'Precondition',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
+      thisArg: this.visitExpr(prop.thisArg),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
@@ -763,6 +783,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       type: 'Postcondition',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
+      thisArg: this.visitExpr(prop.thisArg),
       args: prop.args.map(a => this.visitExpr(a))
     };
   }
@@ -772,6 +793,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       type: 'ForAllCalls',
       callee: this.visitExpr(prop.callee),
       heap: prop.heap,
+      thisArg: prop.thisArg,
       args: prop.args,
       existsHeaps: new Set([...prop.existsHeaps]),
       existsLocs: new Set([...prop.existsLocs]),
@@ -788,6 +810,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
       type: 'CallTrigger',
       callee: this.visitExpr(prop.callee),
       heap: this.visitHeapExpr(prop.heap),
+      thisArg: this.visitExpr(prop.thisArg),
       args: prop.args.map(a => this.visitExpr(a)),
       fuel: prop.fuel
     };
@@ -797,6 +820,7 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     return {
       type: 'ForAllAccessObject',
       heap: prop.heap,
+      thisArg: prop.thisArg,
       prop: this.visitProp(prop.prop),
       instantiations: [...prop.instantiations], // shallow copy, do not process
       fuel: prop.fuel
@@ -900,6 +924,7 @@ export class Substituter extends Transformer {
     const origThetaVar = Object.assign({}, this.thetaVar);
     try {
       delete this.thetaHeap[prop.heap];
+      delete this.thetaVar[prop.thisArg];
       prop.args.forEach(a => { delete this.thetaVar[a]; });
       prop.existsHeaps.forEach(h => { delete this.thetaHeap[h]; });
       prop.existsLocs.forEach(l => { delete this.thetaLoc[l]; });
@@ -916,8 +941,9 @@ export class Substituter extends Transformer {
     const origThetaHeap = Object.assign({}, this.thetaHeap);
     const origThetaVar = Object.assign({}, this.thetaVar);
     try {
+      delete this.thetaVar[prop.thisArg];
+      delete this.thetaVar['thisProp'];
       delete this.thetaHeap[prop.heap];
-      delete this.thetaVar['this'];
       return super.visitForAllAccessObject(prop);
     } finally {
       this.thetaHeap = origThetaHeap;
@@ -929,8 +955,8 @@ export class Substituter extends Transformer {
     const origThetaHeap = Object.assign({}, this.thetaHeap);
     const origThetaVar = Object.assign({}, this.thetaVar);
     try {
-      delete this.thetaHeap[prop.heap];
       delete this.thetaVar[prop.property];
+      delete this.thetaHeap[prop.heap];
       return super.visitForAllAccessProperty(prop);
     } finally {
       this.thetaHeap = origThetaHeap;
@@ -945,12 +971,12 @@ export function replaceVar (v: string, subst: A, prop: P): P {
   return sub.visitProp(prop);
 }
 
-export function replaceResultWithCall (callee: A, heap: Heap, args: Array<string>,
+export function replaceResultWithCall (callee: A, heap: Heap, thisArg: Syntax.Variable, args: Array<Syntax.Variable>,
                                        result: { name: string } | null, post: P): P {
   if (!result) return post;
     // replace result argument with orig. function invocation
   const sub = new Substituter();
-  sub.replaceVar(result.name, { type: 'CallExpression', callee, heap, args });
+  sub.replaceVar(result.name, { type: 'CallExpression', callee, heap, thisArg, args });
   return sub.visitProp(post);
 }
 
@@ -965,25 +991,27 @@ export function removePrefix (prefix: P, prop: P): P {
   return and(...prop.clauses.slice(prefixLength));
 }
 
-export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, heap: Heap, toHeap: Heap = heap + 1,
+export function transformSpec (callee: A, thisArg: Syntax.Variable, args: Array<Syntax.Variable>, req: P, ens: P,
+                               heap: Heap, toHeap: Heap = heap + 1,
                                existsLocs: Locs = new Set(), existsVars: Vars = new Set()): P {
   const numHeaps = Math.max(0, toHeap - heap - 1);
   const existsHeaps: Set<Heap> = new Set([...Array(numHeaps).keys()].map(i => i + heap + 1));
-  const preP: P = { type: 'Precondition', callee, heap, args };
-  const postP: P = { type: 'Postcondition', callee, heap, args };
+  const preP: P = { type: 'Precondition', callee, heap, thisArg, args };
+  const postP: P = { type: 'Postcondition', callee, heap, thisArg, args };
   let s;
   if (heap !== toHeap) {
     const sub = new Substituter();
-    sub.replaceHeap(toHeap, { type: 'HeapEffect', callee, heap, args });
+    sub.replaceHeap(toHeap, { type: 'HeapEffect', callee, heap, thisArg, args });
     s = sub.visitProp(ens);
   } else {
-    s = and(ens, heapEq(heap, { type: 'HeapEffect', callee, heap, args }));
+    s = and(ens, heapEq(heap, { type: 'HeapEffect', callee, heap, thisArg, args }));
   }
   const prop = and(implies(req, preP), implies(and(req, postP), s));
   const forAll: P = {
     type: 'ForAllCalls',
     callee,
     heap,
+    thisArg,
     args,
     existsHeaps,
     existsLocs,
@@ -1006,9 +1034,10 @@ export function transformSpec (callee: A, args: Array<string>, req: P, ens: P, h
   return and(truthy(fnCheck), forAll);
 }
 
-export function transformClassInvariant (className: string, fields: Array<string>, inv: P, heap: Heap): P {
-  const instP: P = { type: 'InstanceOf', left: 'this', right: className };
-  return { type: 'ForAllAccessObject', heap, prop: implies(instP, inv), instantiations: [], fuel: 0 };
+export function transformClassInvariant (className: string, thisArg: Syntax.Variable, fields: Array<string>,
+                                         inv: P, heap: Heap): P {
+  const instP: P = { type: 'InstanceOf', left: thisArg, right: className };
+  return { type: 'ForAllAccessObject', heap, thisArg, prop: implies(instP, inv), instantiations: [], fuel: 0 };
 }
 
 export function transformEveryInvariant (array: A, elemName: string, index: string | null, inv: P, heap: Heap): P {

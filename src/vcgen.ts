@@ -1,6 +1,7 @@
 import { stringifyAssertion, stringifyExpression } from './codegen';
 import { Syntax, TestCode, Visitor, id, isValidAssignmentTarget, nullLoc, removeTestCodePrefix,
-         replaceVarAssertion as replaceJSVarAssertion, uniqueIdentifier } from './javascript';
+         replaceVarAssertion as replaceJSVarAssertion, replaceVarFunction as replaceJSVarFunction,
+         replaceVarBlock as replaceJSVarBlock, uniqueIdentifier } from './javascript';
 import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq, heapStore, implies, not, or,
          removePrefix, replaceResultWithCall, replaceVar, transformClassInvariant, transformEveryInvariant,
          transformSpec, tru, truthy, und } from './logic';
@@ -135,6 +136,13 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     return `_tmp_${i}`;
   }
 
+  freshThisVar (): string {
+    let i = 0;
+    while (this.vars.has(`_this_${i}`)) i++;
+    this.vars.add(`_this_${i}`);
+    return `_this_${i}`;
+  }
+
   testVar (loc: Syntax.SourceLocation): Syntax.Identifier {
     return id(`_tmp_${uniqueIdentifier(loc)}`, loc);
   }
@@ -252,10 +260,12 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
   visitCallTerm (term: Syntax.CallTerm): [A, Syntax.Expression] {
     const [calleeA, calleeE] = this.visitTerm(term.callee);
     const args = term.args.map(a => this.visitTerm(a));
+    let thisArg: A = (typeof calleeA !== 'string' && calleeA.type === 'MemberExpression') ? calleeA.object : und;
     return [{
       type: 'CallExpression',
       callee: calleeA,
       heap: this.heap,
+      thisArg,
       args: args.map(([argA]) => argA)
     }, {
       type: 'CallExpression',
@@ -344,10 +354,18 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
 
   visitSpecAssertion (assertion: Syntax.SpecAssertion): [P, Syntax.Expression, TestCode] {
     const [calleeA, calleeE] = this.visitTerm(assertion.callee);
+    // reserve fresh name for 'this'
+    const thisArg = this.freshThisVar();
+    // translate pre and post
     const [rP, rT] = this.assume(assertion.pre, this.heap + 1, this.heap + 1);
     const [sP, sT] = this.assert(assertion.post.expression, this.heap + 1, this.heap + 2);
-    const sP2 = replaceResultWithCall(calleeA, this.heap + 1, assertion.args, assertion.post.argument, sP);
-    const specP = transformSpec(calleeA, assertion.args, rP, sP2, this.heap + 1);
+    // remove 'this' name from scope again
+    this.vars.delete(thisArg);
+    // rename 'this' to the name reserved above in the generated propositions
+    const rP2 = replaceVar('this', thisArg, rP);
+    const sP2 = replaceVar('this', thisArg, sP);
+    const sP3 = replaceResultWithCall(calleeA, this.heap + 1, thisArg, assertion.args, assertion.post.argument, sP2);
+    const specP = transformSpec(calleeA, thisArg, assertion.args, rP2, sP3, this.heap + 1);
     const retName = assertion.post.argument === null
       ? id(`_res_${uniqueIdentifier(assertion.loc)}`)
       : assertion.post.argument;
@@ -387,16 +405,37 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
         if (forAllP.type !== 'ForAllCalls') {
           throw new Error('expected spec to translate to [fnCheck, forAll]');
         }
-        const callExpr: Syntax.CallExpression = {
-          type: 'CallExpression',
-          callee: calleeE,
-          args: [],
+        const callStmt: Syntax.ExpressionStatement = {
+          type: 'ExpressionStatement',
+          expression: calleeE,
           loc: assertion.loc
         };
-        forAllP.liftCallback = (renamedArgs: Array<string>) => {
-          callExpr.args = renamedArgs.map(arg => this.smtPlaceholder(arg));
+        let lifted = false;
+        forAllP.liftCallback = (renamedThis: string, renamedArgs: Array<string>) => {
+          if (lifted) return;
+          lifted = true;
+          if (assertion.hasThis) {
+            callStmt.expression = {
+              type: 'CallExpression',
+              callee: {
+                type: 'MemberExpression',
+                object: callStmt.expression,
+                property: { type: 'Literal', value: 'call', loc: assertion.loc },
+                loc: assertion.loc
+              },
+              args: [id(renamedThis)].concat(renamedArgs.map(arg => this.smtPlaceholder(arg))),
+              loc: assertion.loc
+            };
+          } else {
+            callStmt.expression = {
+              type: 'CallExpression',
+              callee: callStmt.expression,
+              args: renamedArgs.map(arg => this.smtPlaceholder(arg)),
+              loc: assertion.loc
+            };
+          }
         };
-        specT.push({ type: 'ExpressionStatement', expression: callExpr, loc: assertion.loc });
+        specT.push(callStmt);
       }
     }
     return [specP, specE, specT];
@@ -599,6 +638,9 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     // evaluate callee
     const [callee, calleeE] = this.visitExpression(expr.callee);
 
+    // determine this argument
+    let thisArg: A = (typeof callee !== 'string' && callee.type === 'MemberExpression') ? callee.object : und;
+
     // evaluate arguments
     const argsAE: Array<[A, Syntax.Expression]> = expr.args.map(e => this.visitExpression(e));
     const args: Array<A> = argsAE.map(([a]) => a);
@@ -607,21 +649,21 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     const heap = this.heap;
 
     // apply call trigger
-    this.have({ type: 'CallTrigger', callee, heap, args, fuel: 1 });
+    this.have({ type: 'CallTrigger', callee, heap, thisArg, args, fuel: 1 });
 
     // verify precondition
-    const pre: P = { type: 'Precondition', callee, heap, args };
+    const pre: P = { type: 'Precondition', callee, heap, thisArg, args };
     const callExpr: Syntax.Expression = { type: 'CallExpression', callee: calleeE, args: argsE, loc: expr.loc };
     const callStmt: TestCode = [{ type: 'ExpressionStatement', expression: callExpr, loc: expr.loc }];
     this.verify(pre, callStmt, expr.loc, `precondition ${stringifyExpression(expr)}`);
 
     // assume postcondition
-    this.have({ type: 'Postcondition', callee, heap, args });
+    this.have({ type: 'Postcondition', callee, heap, thisArg, args });
 
     // function call effect
-    this.have(heapEq(this.heap + 1, { type: 'HeapEffect', callee, heap, args }));
+    this.have(heapEq(this.heap + 1, { type: 'HeapEffect', callee, heap, thisArg, args }));
     this.heap++;
-    return [{ type: 'CallExpression', callee, heap, args }, callExpr];
+    return [{ type: 'CallExpression', callee, heap, thisArg, args }, callExpr];
   }
 
   visitNewExpression (expr: Syntax.NewExpression): [A, Syntax.Expression] {
@@ -728,7 +770,8 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
 
   visitFunctionExpression (expr: Syntax.FunctionExpression): [A, Syntax.Expression] {
     const callee = expr.id ? expr.id.name : this.freshVar();
-    const [preTestCode, postTestCode, testBody, retVar] = this.visitFunction(expr, callee);
+    const [preTestCode, postTestCode, testBody, inlinedSpec, retVar] = this.visitFunction(expr, callee);
+    this.have(inlinedSpec);
     const testFuncExpr: Syntax.Expression = {
       type: 'FunctionExpression',
       id: expr.id,
@@ -912,6 +955,7 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     return {
       type: 'SpecAssertion',
       callee: f.id,
+      hasThis: f.type === 'MethodDeclaration',
       args: f.params.map(param => param.name),
       pre,
       post: { argument: retName, expression: post, loc: f.loc },
@@ -919,7 +963,11 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     };
   }
 
-  visitFunctionBody (f: Syntax.Function, funcName: string): [P, Syntax.BlockStatement] {
+  visitFunctionBody (f: Syntax.Function, funcName: string, thisArg: string): [P, Syntax.BlockStatement] {
+
+    // add "this" argument
+    this.vars.add(thisArg);
+    this.freeVar(thisArg);
 
     // add arguments to scope
     const args: Array<A> = [];
@@ -940,7 +988,7 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     this.oldHeap = this.heap;
 
     // assume non-rec spec if named function
-    if (f.id !== null) {
+    if (f.type !== 'MethodDeclaration' && f.id !== null) {
       const [fP, fT] = this.assume(this.functionAsSpec(f));
       const funDecl: TestCode = [{
         type: 'FunctionDeclaration',
@@ -972,30 +1020,51 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     if (blockBody.length !== 1) throw new Error('expected single block statement');
     const blockStmt = blockBody[0];
     if (blockStmt.type !== 'BlockStatement') throw new Error('expected single block statement');
-    this.testBody = startBody;
+
+    this.have(eq(this.resVar, { type: 'CallExpression', callee: funcName, heap: startHeap, thisArg, args }));
 
     // assume function body and call
-    this.have(eq(this.resVar, { type: 'CallExpression', callee: funcName, heap: startHeap, args }), [{
-      type: 'FunctionDeclaration',
-      id: id(funcName),
-      params: f.params,
-      requires: [],
-      ensures: [],
-      body: f.body,
-      freeVars: f.freeVars,
-      loc: f.loc
-    }, {
-      type: 'VariableDeclaration',
-      id: id(this.resVar, f.loc),
-      init: {
-        type: 'CallExpression',
-        callee: id(funcName),
-        args: f.params,
+    if (f.type === 'MethodDeclaration') {
+      this.testBody = startBody.concat([{
+        type: 'VariableDeclaration',
+        id: id(this.resVar, f.loc),
+        init: {
+          type: 'CallExpression',
+          callee: {
+            type: 'MemberExpression',
+            object: id(thisArg),
+            property: { type: 'Literal', value: f.id.name, loc: f.loc },
+            loc: f.loc
+          },
+          args: f.params,
+          loc: f.loc
+        },
+        kind: 'let',
         loc: f.loc
-      },
-      kind: 'let',
-      loc: f.loc
-    }]);
+      }]);
+    } else {
+      this.testBody = startBody.concat([{
+        type: 'FunctionDeclaration',
+        id: id(funcName),
+        params: f.params,
+        requires: [],
+        ensures: [],
+        body: f.body,
+        freeVars: f.freeVars,
+        loc: f.loc
+      }, {
+        type: 'VariableDeclaration',
+        id: id(this.resVar, f.loc),
+        init: {
+          type: 'CallExpression',
+          callee: id(funcName),
+          args: f.params,
+          loc: f.loc
+        },
+        kind: 'let',
+        loc: f.loc
+      }]);
+    }
 
     // ensure post conditions
     for (const ens of f.ensures) {
@@ -1014,13 +1083,19 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
   }
 
   visitFunction (fun: Syntax.Function, funcName: string):
-                [TestCode, TestCode, Syntax.BlockStatement, Syntax.Identifier] {
-    this.vars.add(funcName);
+                [TestCode, TestCode, Syntax.BlockStatement, P, Syntax.Identifier] {
+    if (fun.type !== 'MethodDeclaration') {
+      this.vars.add(funcName);
+    }
     const inliner = new VCGenerator(this.classes, this.heap + 1, this.heap + 1,
                                     new Set([...this.locs]),
                                     new Set([...this.vars]), this.prop);
     inliner.testBody = this.testBody;
-    const [inlinedP, inlinedBlock] = inliner.visitFunctionBody(fun, funcName);
+    const thisArg = this.freshThisVar();
+    const renamedFunc = replaceJSVarFunction('this', id(thisArg), id(thisArg), fun);
+    let [inlinedP, inlinedBlock] = inliner.visitFunctionBody(renamedFunc, funcName, thisArg);
+    inlinedBlock = replaceJSVarBlock(thisArg, id('this'), id('this'), inlinedBlock);
+    inliner.vcs.forEach(vc => vc.description = vc.description.replace(thisArg, 'this'));
     this.vcs = this.vcs.concat(inliner.vcs);
     const existsLocs = new Set([...inliner.locs].filter(l => !this.locs.has(l)));
     const existsVars = new Set([...inliner.vars].filter(v => {
@@ -1038,18 +1113,20 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
     });
 
     const args: Array<string> = fun.params.map(p => p.name);
-    let preP: P = pre.reduceRight((prev, [p]) => and(prev, p), tru);
-    let postP: P = post.reduceRight((post, [p]) => {
-      return and(post, replaceResultWithCall(funcName, this.heap + 1, args, retVar, p));
+    const preP = pre.reduceRight((prev, [p]) => and(prev, replaceVar('this', thisArg, p)), tru);
+    const postP = post.reduceRight((post, [p]) => {
+      const p2 = replaceVar('this', thisArg, p);
+      return and(post, replaceResultWithCall(funcName, this.heap + 1, thisArg, args, retVar, p2));
     }, eraseTriggersProp(inlinedP));
-    this.have(transformSpec(funcName, args, preP, postP, this.heap + 1, inliner.heap, existsLocs, existsVars));
+    const inlinedSpec = transformSpec(funcName, thisArg, args, preP, postP,
+                                      this.heap + 1, inliner.heap, existsLocs, existsVars);
 
-    return [flatMap(pre, ([,c]) => c), flatMap(post, ([,c]) => c), inlinedBlock, retVar];
+    return [flatMap(pre, ([,c]) => c), flatMap(post, ([,c]) => c), inlinedBlock, inlinedSpec, retVar];
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
-    const [preTestCode, postTestCode, blockStmt, retVar] = this.visitFunction(stmt, stmt.id.name);
-    this.testBody = this.testBody.concat([{
+    const [preTestCode, postTestCode, blockStmt, inlinedSpec, retVar] = this.visitFunction(stmt, stmt.id.name);
+    this.have(inlinedSpec, [{
       type: 'FunctionDeclaration',
       id: stmt.id,
       params: stmt.params,
@@ -1072,31 +1149,167 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
   }
 
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): BreakCondition {
-    this.classes.add({ cls: stmt.id.name, fields: stmt.fields });
-    const [invP, invT] = this.assert(stmt.invariant, this.heap, this.heap);
-    const testCode: TestCode = [{
-      type: 'ClassDeclaration',
-      id: stmt.id,
-      fields: stmt.fields,
-      invariant: { type: 'Literal', value: true, loc: stmt.invariant.loc },
-      methods: [{
-        type: 'FunctionDeclaration',
-        id: id('checkInvariant', stmt.invariant.loc),
-        params: [],
+    const startProp = this.prop;
+    const startBody = this.testBody;
+
+    // first assume non-recursive specs of methods
+    const methodNames: Array<string> = [];
+    const methodSpecs: Array<P> = [];
+    const methodTestBodies: Array<Syntax.MethodDeclaration> = [];
+    for (const method of stmt.methods) {
+      method.requires.push({
+        type: 'InstanceOfAssertion',
+        left: id('this', stmt.id.loc),
+        right: stmt.id,
+        loc: method.loc
+      });
+      const globalMethodName = `${stmt.id.name}.${method.id.name}`;
+      methodNames.push(method.id.name);
+      const [fP, fT] = this.assume(this.functionAsSpec(method));
+      methodSpecs.push(replaceVar(method.id.name, globalMethodName, fP));
+      methodTestBodies.push({
+        type: 'MethodDeclaration',
+        id: method.id,
+        params: method.params,
         requires: [],
         ensures: [],
         body: {
           type: 'BlockStatement',
-          body: [...invT],
-          loc: stmt.invariant.loc
+          body: [{
+            type: 'FunctionDeclaration',
+            id: method.id,
+            params: method.params,
+            requires: [],
+            ensures: [],
+            body: method.body,
+            freeVars: method.freeVars,
+            loc: method.loc
+          }, ...fT, {
+            type: 'ReturnStatement',
+            argument: {
+              type: 'CallExpression',
+              callee: {
+                type: 'MemberExpression',
+                object: method.id,
+                property: { type: 'Literal', value: 'call', loc: method.loc },
+                loc: method.loc
+              },
+              args: [id('this'), ...method.params],
+              loc: method.loc
+            },
+            loc: method.loc
+          }],
+          loc: method.loc
         },
-        freeVars: [],
-        loc: stmt.invariant.loc
-      }],
-      loc: stmt.loc
-    }];
-    this.have(transformClassInvariant(stmt.id.name, stmt.fields, invP, this.heap), testCode);
+        freeVars: method.freeVars,
+        className: stmt.id.name,
+        loc: method.loc
+      });
+    }
+    const [invP, invT] = this.assert(stmt.invariant, this.heap, this.heap);
+    this.classes.add({ cls: stmt.id.name, fields: stmt.fields, methods: methodNames });
+    this.have(and(...methodSpecs), this.classDeclarationCode(stmt, methodTestBodies, invT));
+    this.have(transformClassInvariant(stmt.id.name, 'this', stmt.fields, invP, this.heap));
+
+    // verify inidivual function bodies
+
+    const preMethodProp = this.prop;
+    const preMethodBody = this.testBody;
+
+    const inlinedMethodSpecs: Array<P> = [];
+    const inlinedMethodTestBodies: Array<Syntax.MethodDeclaration> = [];
+    for (const method of stmt.methods) {
+      const globalMethodName = `${stmt.id.name}.${method.id.name}`;
+      this.prop = preMethodProp;
+      this.testBody = preMethodBody;
+
+      const [preTestCode, postTestCode, blockStmt, inlinedSpec, retVar] = this.visitFunction(method, globalMethodName);
+
+      inlinedMethodSpecs.push(inlinedSpec);
+      inlinedMethodTestBodies.push({
+        type: 'MethodDeclaration',
+        id: method.id,
+        params: method.params,
+        requires: [],
+        ensures: [],
+        body: {
+          type: 'BlockStatement',
+          body: [{
+            type: 'FunctionDeclaration',
+            id: method.id,
+            params: method.params,
+            requires: [],
+            ensures: [],
+            body: blockStmt,
+            freeVars: method.freeVars,
+            loc: method.loc
+          }, {
+            type: 'ExpressionStatement',
+            expression: {
+              type: 'AssignmentExpression',
+              left: method.id,
+              right: this.insertWrapper(method.id, method.loc, method.params, preTestCode, retVar, postTestCode),
+              loc: stmt.loc
+            },
+            loc: stmt.loc
+          }, {
+            type: 'ReturnStatement',
+            argument: {
+              type: 'CallExpression',
+              callee: {
+                type: 'MemberExpression',
+                object: method.id,
+                property: { type: 'Literal', value: 'call', loc: method.loc },
+                loc: method.loc
+              },
+              args: [id('this'), ...method.params],
+              loc: method.loc
+            },
+            loc: method.loc
+          }],
+          loc: method.loc
+        },
+        freeVars: method.freeVars,
+        className: stmt.id.name,
+        loc: method.loc
+      });
+    }
+
+    // now use rewritten function bodies and assume inlined specs for methods
+    this.prop = startProp;
+    this.testBody = startBody;
+
+    this.have(and(...inlinedMethodSpecs), this.classDeclarationCode(stmt, inlinedMethodTestBodies, invT));
+    this.have(transformClassInvariant(stmt.id.name, 'this', stmt.fields, invP, this.heap));
+
     return fls;
+  }
+
+  classDeclarationCode (clsDef: Syntax.ClassDeclaration, methods: Array<Syntax.MethodDeclaration>,
+                        invT: TestCode): TestCode {
+    const checkInvariant: Array<Syntax.MethodDeclaration> = [{
+      type: 'MethodDeclaration',
+      id: id('checkInvariant', clsDef.invariant.loc),
+      params: [],
+      requires: [],
+      ensures: [],
+      body: {
+        type: 'BlockStatement',
+        body: [...invT],
+        loc: clsDef.invariant.loc
+      },
+      freeVars: [],
+      className: clsDef.id.name,
+      loc: clsDef.invariant.loc
+    }];
+    return [{
+      type: 'ClassDeclaration',
+      id: clsDef.id,
+      fields: clsDef.fields,
+      invariant: { type: 'Literal', value: true, loc: clsDef.invariant.loc },
+      methods: checkInvariant.concat(methods),
+      loc: clsDef.loc
+    }];
   }
 
   visitProgram (prog: Syntax.Program): BreakCondition {

@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { verificationConditions } from '../src';
-import { code, incorrect, verified } from './helpers';
+import { code, incorrect, verified, unverified } from './helpers';
 
 declare const assert: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
@@ -340,4 +340,167 @@ describe('simple class instance access', () => {
   verified('assert: ("b" in a)');
   verified('assert: (a.b > 22)');
   verified('assert: (a[p] > 22)');
+});
+
+describe('static methods', () => {
+
+  code(() => {
+    class A {
+      constructor () { /* emtpy */ }
+      method () {
+        return 23;
+      }
+    }
+
+    const a = new A();
+    const m = a.method();
+    assert(m === 23);
+  });
+
+  verified('a has property "method"');
+  verified('precondition a.method()');
+  verified('assert: (m === 23)');
+});
+
+describe('methods', () => {
+
+  code(() => {
+    class Adder {
+      base: number;
+      constructor (base) {
+        this.base = base;
+      }
+      invariant () {
+        return typeof this.base === 'number';
+      }
+      addTo (n) {
+        requires(typeof n === 'number');
+        return this.base + n;
+      }
+    }
+
+    const adder = new Adder(5);
+    const m = adder.addTo(3);
+    assert(m === 8);
+
+    function f (a: Adder) {
+      requires(a instanceof Adder);
+      ensures(res => res !== 2);
+
+      return a.addTo(1);
+    }
+  });
+
+  verified('addTo: this has property "base"');
+  verified('class invariant Adder');
+  verified('adder has property "addTo"');
+  verified('precondition adder.addTo(3)');
+  verified('assert: (m === 8)');
+  incorrect('f: (res !== 2)', ['a', { _cls_: 'Adder', _args_: [1] }]);
+});
+
+describe('methods calling other methods', () => {
+
+  code(() => {
+    class A {
+      b: number;
+      constructor (b) {
+        this.b = b;
+      }
+      invariant () {
+        return typeof this.b === 'number';
+      }
+      m (x) {
+        requires(x >= 4);
+        ensures(y => y > 4);
+        return this.n(x) + x;
+      }
+      n (x) {
+        requires(x > 3);
+        ensures(y => y >= 1);
+        return 1;
+      }
+      o () {
+        return this.n(4);
+      }
+      p () {
+        requires(this.b >= 0);
+        ensures(y => y >= 0);
+        return this.b + this.n(4);
+      }
+      q () {
+        this.n(2);
+        (this as any).x();
+      }
+      r () {
+        return this.n(2);
+      }
+    }
+
+    const a = new A(5);
+    const m = a.m(4);
+    assert(m > 4);
+    const o = a.o();
+    assert(o === 1);
+    a.n(0);
+    const n = a.n(5);
+    assert(n === 1);
+    const p = a.p();
+    assert(p >= 0);
+    (new A(-1)).p();
+  });
+
+  verified('m: this has property "n"');
+  verified('m: precondition this.n(x)');
+  verified('m: (y > 4)');
+  verified('n: (y >= 1)');
+  verified('o: this has property "n"');
+  verified('o: precondition this.n(4)');
+  verified('p: this has property "b"');
+  verified('p: this has property "n"');
+  verified('p: precondition this.n(4)');
+  verified('p: (y >= 0)');
+  verified('q: this has property "n"');
+  incorrect('q: precondition this.n(2)', ['_this_4', { _cls_: 'A', _args_: [0] }]);
+  incorrect('q: this has property "x"', ['_this_4', { _cls_: 'A', _args_: [0] }]);
+  incorrect('q: precondition this.x()', ['_this_4', { _cls_: 'A', _args_: [-39] }]);
+  verified('r: this has property "n"');
+  incorrect('r: precondition this.n(2)', ['_this_5', { _cls_: 'A', _args_: [0] }]);
+  verified('class invariant A');
+  verified('a has property "m"');
+  verified('precondition a.m(4)');
+  verified('assert: (m > 4)');
+  verified('a has property "n"');
+  verified('a has property "o"');
+  verified('precondition a.o()');
+  unverified('assert: (o === 1)');
+  incorrect('precondition a.n(0)');
+  verified('a has property "n"');
+  verified('precondition a.n(5)');
+  verified('assert: (n === 1)');
+  verified('a has property "p"');
+  verified('precondition a.p()');
+  verified('assert: (p >= 0)');
+  verified('class invariant A');
+  verified('new A(-1) has property "p"');
+  incorrect('precondition new A(-1).p()');
+});
+
+describe('access method as function', () => {
+
+  code(() => {
+    class A {
+      constructor () { /* emtpy */ }
+      method () {
+        return 23;
+      }
+    }
+
+    const a = new A();
+    const m = a.method;
+    m();
+  });
+
+  verified('a has property "method"');
+  incorrect('precondition m()');
 });

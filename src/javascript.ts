@@ -80,6 +80,7 @@ export namespace Syntax {
                                    loc: SourceLocation; }
   export interface SpecAssertion { type: 'SpecAssertion';
                                    callee: Term;
+                                   hasThis: boolean;
                                    args: Array<string>;
                                    pre: Assertion;
                                    post: PostCondition;
@@ -232,11 +233,20 @@ export namespace Syntax {
                                          body: BlockStatement;
                                          freeVars: Array<string>;
                                          loc: SourceLocation; }
+  export interface MethodDeclaration { type: 'MethodDeclaration';
+                                       id: Identifier;
+                                       params: Array<Identifier>;
+                                       requires: Array<Assertion>;
+                                       ensures: Array<PostCondition>;
+                                       body: BlockStatement;
+                                       freeVars: Array<string>;
+                                       className: string;
+                                       loc: SourceLocation; }
   export interface ClassDeclaration { type: 'ClassDeclaration';
                                       id: Identifier;
                                       fields: Array<string>;
                                       invariant: Assertion;
-                                      methods: Array<FunctionDeclaration>;
+                                      methods: Array<MethodDeclaration>;
                                       loc: SourceLocation; }
 
   export type Statement = VariableDeclaration
@@ -250,7 +260,7 @@ export namespace Syntax {
                         | FunctionDeclaration
                         | ClassDeclaration;
 
-  export type Function = FunctionExpression | FunctionDeclaration;
+  export type Function = FunctionExpression | FunctionDeclaration | MethodDeclaration;
 
   export type Program = { body: Array<Statement>,
                           invariants: Array<Assertion> };
@@ -513,6 +523,7 @@ export class Substituter extends Visitor<Syntax.Term, Syntax.Assertion, Syntax.E
     return {
       type: 'SpecAssertion',
       callee: this.visitTerm(assertion.callee),
+      hasThis: assertion.hasThis,
       args: assertion.args,
       pre: this.withoutBindings(() => this.visitAssertion(assertion.pre), ...assertion.args),
       post: this.withoutBindings(() => this.visitPostCondition(assertion.post), ...assertion.args),
@@ -804,17 +815,34 @@ export class Substituter extends Visitor<Syntax.Term, Syntax.Assertion, Syntax.E
     };
   }
 
+  visitMethodDeclaration (stmt: Syntax.MethodDeclaration): Syntax.MethodDeclaration {
+    const bindings = [...stmt.params.map(p => p.name)];
+    return {
+      type: 'MethodDeclaration',
+      id: stmt.id,
+      params: stmt.params,
+      requires: stmt.requires.map(req =>
+        this.withoutBindings(() => this.visitAssertion(req), ...bindings)),
+      ensures: stmt.ensures.map(ens =>
+        this.withoutBindings(() => this.visitPostCondition(ens), ...bindings)),
+      body: this.withoutBindings(() => this.visitBlockStatement(stmt.body), ...bindings),
+      freeVars: stmt.freeVars,
+      className: stmt.className,
+      loc: stmt.loc
+    };
+  }
+
   visitClassDeclaration (stmt: Syntax.ClassDeclaration): Syntax.Statement {
     delete this.thetaA[stmt.id.name]; // gets restored at end of next block or function
-    delete this.thetaE[stmt.id.name]; // gets restored at end of next block or function
-    return {
+    delete this.thetaE[stmt.id.name];
+    return this.withoutBindings((): Syntax.Statement => ({
       type: 'ClassDeclaration',
       id: stmt.id,
       fields: stmt.fields,
       invariant: this.visitAssertion(stmt.invariant),
-      methods: stmt.methods.map(method => this.withoutBindings(() => this.visitFunctionDeclaration(method))),
+      methods: stmt.methods.map(method => this.visitMethodDeclaration(method)),
       loc: stmt.loc
-    };
+    }), 'this');
   }
 
   visitProgram (prog: Syntax.Program): Syntax.Statement {

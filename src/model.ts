@@ -365,8 +365,8 @@ export class Model {
     const fun: LazyFun =
       numArgs in funcBlocks ? funcBlocks[numArgs] : (funcBlocks[numArgs] = { type: 'fun', body: [] });
     const fullCond: Array<JSVal> = [];
-    // ignore 'and', func match and heap cond -> remaining part of cond are arguments
-    for (let idx = 3; idx < condList.length; idx++) {
+    // ignore 'and', func match, this arg and heap cond -> remaining part of cond are arguments
+    for (let idx = 4; idx < condList.length; idx++) {
       const condMatch = matchSExpr(condList[idx], ['=', `x!${idx - 1}`, { expr: 'val' }]);
       if (!condMatch) throw this.modelError('expected (= x!idx $val)');
       const matchVal: JSVal | null = this.tryParseSimpleValue(condMatch.val);

@@ -328,11 +328,13 @@ function spec (f, id, req, ens) {
     return f;
   } else {
     const mapping = { [id]: [req, ens] };
-    const wrapped = (...args) => {
-      return Object.values(mapping).reduceRight((cont, [req, ens]) => (...args2) => {
-        const args3 = req.apply(null, args2);
-        return ens.apply(null, args3.concat(cont.apply(null, args3)));
-      }, f).apply(null, args);
+    const wrapped = function (...args) {
+      return Object.values(mapping).reduceRight(function (cont, [req, ens]) {
+        return function (...args2) {
+          const args3 = req.apply(this, args2);
+          return ens.apply(this, args3.concat(cont.apply(this, args3)));
+        };
+      }, f).apply(this, args);
     };
     wrapped._mapping = mapping;
     return wrapped;

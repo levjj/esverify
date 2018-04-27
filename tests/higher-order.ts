@@ -102,7 +102,7 @@ describe('higher-order proofs', () => {
     }
 
     function fMono (f, fInc, n, m) {
-      requires(spec(f, x => x >= 0, x => pure() && typeof (f(x)) === 'number'));
+      requires(spec(f, x => x >= 0, (x, y) => pure() && typeof y === 'number'));
       requires(spec(fInc, x => x >= 0, x => pure() && f(x) <= f(x + 1)));
       requires(n >= 0);
       requires(m >= 0);

@@ -56,9 +56,9 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitHeapEffect (expr: Syntax.HeapEffect): SMTInput {
-    const { callee, heap, args } = expr;
-    return `(eff${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
-             `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, thisArg, args } = expr;
+    return `(eff${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)} ` +
+             `${this.visitExpr(thisArg)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitVariable (expr: Syntax.Variable): SMTInput {
@@ -101,13 +101,17 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitCallExpression (expr: Syntax.CallExpression): SMTInput {
-    const { callee, heap, args } = expr;
-    return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
-            `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, thisArg, args } = expr;
+    return `(app${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)} ` +
+            `${this.visitExpr(thisArg)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitNewExpression (expr: Syntax.NewExpression): SMTInput {
-    return `(jsobj_${expr.className}${expr.args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    if (expr.args.length === 0) {
+      return `jsobj_${expr.className}`;
+    } else {
+      return `(jsobj_${expr.className}${expr.args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    }
   }
 
   visitMemberExpression (expr: Syntax.MemberExpression): SMTInput {
@@ -184,21 +188,21 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitPrecondition (prop: Syntax.Precondition): SMTInput {
-    const { callee, heap, args } = prop;
-    return `(pre${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
-             `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, thisArg, args } = prop;
+    return `(pre${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)} ` +
+             `${this.visitExpr(thisArg)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitPostcondition (prop: Syntax.Postcondition): SMTInput {
-    const { callee, heap, args } = prop;
-    return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
-            `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, thisArg, args } = prop;
+    return `(post${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)} ` +
+            `${this.visitExpr(thisArg)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitForAllCalls (prop: Syntax.ForAllCalls): SMTInput {
     const { callee, heap, args, fuel } = prop;
     const params = `${args.map(a => `(${this.visitVariable(a)} JSVal)`).join(' ')}`;
-    const callP: P = { type: 'CallTrigger', callee, heap, args: args, fuel };
+    const callP: P = { type: 'CallTrigger', callee, heap, thisArg: prop.thisArg, args, fuel };
     let p = this.visitProp(implies(callP, prop.prop));
     if (prop.existsLocs.size + prop.existsHeaps.size + prop.existsVars.size > 0) {
       p = `(exists (${[...prop.existsHeaps].map(h => `(${this.visitHeap(h)} Heap)`).join(' ')} `
@@ -206,23 +210,25 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
                  + `${[...prop.existsVars].map(v => `(${this.visitVariable(v)} JSVal)`).join(' ')})\n  ${p})`;
     }
     const trigger: SMTInput = this.visitProp(callP);
-    return `(forall ((${this.visitHeap(heap)} Heap) ${params}) (!\n  ${p}\n  :pattern (${trigger})))`;
+    return `(forall ((${this.visitHeap(heap)} Heap) `
+                  + `(${this.visitVariable(prop.thisArg)} JSVal) `
+                  + `${params}) (!\n  ${p}\n  :pattern ${trigger}))`;
   }
 
   visitCallTrigger (prop: Syntax.CallTrigger): SMTInput {
-    const { callee, heap, args } = prop;
-    return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)}` +
-            `${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
+    const { callee, heap, thisArg, args } = prop;
+    return `(call${args.length} ${this.visitExpr(callee)} ${this.visitHeapExpr(heap)} ` +
+            `${this.visitExpr(thisArg)}${args.map(a => ' ' + this.visitExpr(a)).join('')})`;
   }
 
   visitForAllAccessObject (prop: Syntax.ForAllAccessObject): SMTInput {
     const { heap, fuel } = prop;
-    const accessP: P = { type: 'AccessTrigger', object: 'this', property: 'thisProp', heap, fuel };
+    const accessP: P = { type: 'AccessTrigger', object: prop.thisArg, property: 'thisProp', heap, fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
-    return `(forall ((${this.visitVariable('this')} JSVal) `
-                  + `(${this.visitVariable('thisProp')} JSVal)`
-                  + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
+    return `(forall ((${this.visitVariable(prop.thisArg)} JSVal) `
+                  + `(${this.visitVariable('thisProp')} JSVal) `
+                  + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern ${trigger}))`;
   }
 
   visitForAllAccessProperty (prop: Syntax.ForAllAccessProperty): SMTInput {
@@ -230,8 +236,8 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     const accessP: P = { type: 'AccessTrigger', object: prop.object, property: prop.property, heap, fuel };
     let p = this.visitProp(implies(accessP, prop.prop));
     const trigger: SMTInput = this.visitProp(accessP);
-    return `(forall ((${this.visitVariable(prop.property)} JSVal)`
-                  + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern (${trigger})))`;
+    return `(forall ((${this.visitVariable(prop.property)} JSVal) `
+                  + `(${this.visitHeap(heap)} Heap)) (!\n  ${p}\n  :pattern ${trigger}))`;
   }
 
   visitInstanceOf (prop: Syntax.InstanceOf): SMTInput {
@@ -471,11 +477,11 @@ ${[...classes].map(({ cls }) =>
 
 ; Functions
 ${[...Array(10).keys()].map(i => `
-(declare-fun pre${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
-(declare-fun post${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
-(declare-fun app${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
-(declare-fun eff${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
-${options.qi ? '' : `(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`}
+(declare-fun pre${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
+(declare-fun post${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
+(declare-fun app${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
+(declare-fun eff${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
+${options.qi ? '' : `(declare-fun call${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`}
 `).join('')}
 ; Objects
 (declare-datatypes () ((ClassName
@@ -490,6 +496,10 @@ ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap${[...Array(i).keys()].map
 (declare-fun arrelems (Arr Int) JSVal)
 ${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
 
+; Methods
+${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
+`(declare-fun v_${cls}.${method} () JSVal)\n`).join('')}
+
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
@@ -497,6 +507,8 @@ ${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
 `      (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}"))`).join('\n')}
+${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
+`      (and (is-jsobj_${cls} obj) (= (_tostring prop) "${method}"))`).join('\n')}
 ))
 
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
@@ -511,8 +523,10 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
        (arrelems (arrv obj) (str.to.int (_tostring prop)))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
 `  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${field}")) (${cls}-${field} obj)`).join('\n')}
+${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
+`  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${method}")) v_${cls}.${method}`).join('\n')}
   jsundefined
-${flatMap([...classes], ({ cls, fields }) => fields.map(field => ')')).join('')})))))
+${flatMap([...classes], ({ cls, fields, methods }) => fields.concat(methods).map(_ => ')')).join('')})))))
 
 (define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
   (or (and (is-jsobj obj) (= cls c_Object))

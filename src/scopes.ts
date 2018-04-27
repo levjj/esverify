@@ -369,18 +369,25 @@ class NameResolver extends Visitor<void, void, void, void> {
     }, false, true, stmt);
   }
 
+  visitMethodDeclaration (stmt: Syntax.MethodDeclaration, cls: Syntax.ClassDeclaration) {
+    this.scoped(() => {
+      this.scope.defSymbol(id('this'), { type: 'This', decl: cls });
+      stmt.params.forEach(p => this.scope.defSymbol(p, { type: 'Param', func: stmt, decl: p }));
+      stmt.requires.forEach(r => this.visitAssertion(r));
+      stmt.ensures.forEach(s => {
+        this.scoped(() => this.visitPostCondition(s), true);
+      });
+      stmt.body.body.forEach(s => this.visitStatement(s));
+    }, false, true, stmt);
+  }
+
   visitClassDeclaration (stmt: Syntax.ClassDeclaration) {
     this.scope.defSymbol(stmt.id, { type: 'Class', decl: stmt });
     this.scoped(() => {
       this.scope.defSymbol(id('this'), { type: 'This', decl: stmt });
       this.visitAssertion(stmt.invariant);
     }, false, false);
-    stmt.methods.forEach(method => {
-      this.scoped(() => {
-        this.scope.defSymbol(id('this'), { type: 'This', decl: stmt });
-        this.visitFunctionDeclaration(method);
-      });
-    });
+    stmt.methods.forEach(method => this.visitMethodDeclaration(method, stmt));
   }
 
   builtinClass (name: string) {
