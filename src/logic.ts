@@ -478,10 +478,10 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
 
   visitHeap (heap: Heap): R { return this.empty(); }
 
-  visitHeapStore (prop: Syntax.HeapStore): R {
-    return this.r(this.visitHeapExpr(prop.target),
-                  this.visitLocation(prop.loc),
-                  this.visitExpr(prop.expr));
+  visitHeapStore (expr: Syntax.HeapStore): R {
+    return this.r(this.visitHeapExpr(expr.target),
+                  this.visitLocation(expr.loc),
+                  this.visitExpr(expr.expr));
   }
 
   visitHeapEffect (prop: Syntax.HeapEffect): R {
