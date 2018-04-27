@@ -299,6 +299,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
     if (!this.position) return copy(prop);
     const clauses: Array<P> = [prop];
     for (const t of this.triggers[0]) {
+      // continue if already instantiated with same trigger
       if (prop.args.length !== t.args.length || prop.instantiations.some(trigger => eqProp(t, trigger))) {
         continue;
       }
@@ -317,7 +318,8 @@ class QuantifierInstantiator extends QuantifierTransformer {
     if (!this.position) return copy(prop);
     const clauses: Array<P> = [prop];
     for (const t of this.triggers[1]) {
-      if (prop.instantiations.some(trigger => eqProp(t, trigger))) {
+      // continue if already instantiated with same trigger, ignoring trigger.property
+      if (prop.instantiations.some(trigger => eqHeap(t.heap, trigger.heap) && eqExpr(t.object, trigger.object))) {
         continue;
       }
       const instantiated: P = this.instantiateAccessObject(prop, t);
@@ -335,6 +337,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
     if (!this.position) return copy(prop);
     const clauses: Array<P> = [prop];
     for (const t of this.triggers[1]) {
+      // continue if already instantiated with same trigger
       if (prop.instantiations.some(trigger => eqProp(t, trigger))) {
         continue;
       }
