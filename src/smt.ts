@@ -256,7 +256,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): SMTInput {
-    return `(access ${this.visitExpr(prop.object)} ${this.visitHeapExpr(prop.heap)})`;
+    return `(access ${this.visitExpr(prop.object)} ${this.visitExpr(prop.property)} ${this.visitHeapExpr(prop.heap)})`;
   }
 }
 
