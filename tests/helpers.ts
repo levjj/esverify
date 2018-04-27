@@ -77,26 +77,33 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
 
 export function skip (description: string) { return it.skip(description); }
 
-export function verified (description: string): Mocha.ITest {
-  return helper('verified', description, false, new Map());
+interface VerifiedFun {
+  (description: string): Mocha.ITest;
+  debug: (description: string) => Mocha.ITest;
+}
+interface UnverifiedFun {
+  (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest;
+  debug: (description: string, ...expectedVariables: Array<[FreeVar, any]>) => Mocha.ITest;
 }
 
-export function unverified (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
-  return helper('unverified', description, false, new Map(expectedVariables));
-}
+export const verified: VerifiedFun = (() => {
+  const f: any = (description: string): Mocha.ITest => helper('verified', description, false, new Map());
+  f.debug = (description: string): Mocha.ITest => helper('verified', description, true, new Map());
+  return f;
+})();
 
-export function incorrect (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
-  return helper('incorrect', description, false, new Map(expectedVariables));
-}
+export const unverified: UnverifiedFun = (() => {
+  const f: any = (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest =>
+    helper('unverified', description, false, new Map(expectedVariables));
+  f.debug = (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest =>
+    helper('unverified', description, true, new Map(expectedVariables));
+  return f;
+})();
 
-export function verifiedDebug (description: string): Mocha.ITest {
-  return helper('verified', description, true, new Map());
-}
-
-export function unverifiedDebug (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
-  return helper('unverified', description, true, new Map(expectedVariables));
-}
-
-export function incorrectDebug (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest {
-  return helper('incorrect', description, true, new Map(expectedVariables));
-}
+export const incorrect: UnverifiedFun = (() => {
+  const f: any = (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest =>
+    helper('incorrect', description, false, new Map(expectedVariables));
+  f.debug = (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest =>
+    helper('incorrect', description, true, new Map(expectedVariables));
+  return f;
+})();
