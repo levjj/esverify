@@ -132,7 +132,7 @@ describe('mapLen external', () => {
     function len (lst) {
       requires(lst === null || lst instanceof List);
       ensures(pure());
-      ensures(res => res >= 0);
+      ensures(res => typeof res === 'number' && res >= 0);
 
       return lst === null ? 0 : len(lst.tail) + 1;
     }
@@ -173,7 +173,7 @@ describe('mapLen external', () => {
   verified('len: lst has property "tail"');
   verified('len: precondition len(lst.tail)');
   verified('len: pure()');
-  verified('len: (res >= 0)');
+  verified('len: ((typeof(res) === "number") && (res >= 0))');
   verified('mapLen: precondition len(lst)');
   verified('mapLen: precondition map(lst, f)');
   verified('mapLen: precondition len(map(lst, f))');
@@ -461,11 +461,11 @@ describe('methods calling other methods', () => {
   verified('p: precondition this.n(4)');
   verified('p: (y >= 0)');
   verified('q: this has property "n"');
-  incorrect('q: precondition this.n(2)', ['_this_4', { _cls_: 'A', _args_: [0] }]);
-  incorrect('q: this has property "x"', ['_this_4', { _cls_: 'A', _args_: [0] }]);
-  incorrect('q: precondition this.x()', ['_this_4', { _cls_: 'A', _args_: [-39] }]);
+  incorrect('q: precondition this.n(2)', ['_this_5', { _cls_: 'A', _args_: [0] }]);
+  incorrect('q: this has property "x"', ['_this_5', { _cls_: 'A', _args_: [0] }]);
+  incorrect('q: precondition this.x()', ['_this_5', { _cls_: 'A', _args_: [-1237] }]);
   verified('r: this has property "n"');
-  incorrect('r: precondition this.n(2)', ['_this_5', { _cls_: 'A', _args_: [0] }]);
+  incorrect('r: precondition this.n(2)', ['_this_6', { _cls_: 'A', _args_: [0] }]);
   verified('class invariant A');
   verified('a has property "m"');
   verified('precondition a.m(4)');

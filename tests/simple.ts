@@ -134,7 +134,7 @@ describe('post conditions global call', () => {
   verified('precondition inc(i)');
   verified('assert: (j >= 4)');
   verified('precondition inc2(i)');
-  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 9]);
+  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 6]);
   // only inline one level, so post-cond of inc(inc(i)) not available
 });
 

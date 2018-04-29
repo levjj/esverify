@@ -19,7 +19,7 @@ describe('simple arrays', () => {
     function g (a: Array<number>) {
       requires(a instanceof Array);
       requires(a.length >= 1);
-      ensures(res => res > 0);
+      ensures(res => res > 3);
 
       return a[0];
     }
@@ -50,7 +50,7 @@ describe('simple arrays', () => {
 
   verified('f: a has property 0');
   verified('g: a has property 0');
-  incorrect('g: (res > 0)', ['a', [false]]);
+  incorrect('g: (res > 3)', ['a', [true]]);
 
   verified('assert: (a0 instanceof Array)');
   verified('assert: (a0 instanceof Object)');
