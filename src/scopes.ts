@@ -37,9 +37,11 @@ export function isMutable (idOrDecl: Syntax.Identifier | Syntax.Declaration): bo
 }
 
 class Scope {
+
   funcOrLoop: Syntax.Function | Syntax.WhileStatement | null;
   ids: { [varname: string]: Syntax.Declaration } = {};
   parent: Scope | null;
+
   constructor (parent: Scope | null = null, fw: Syntax.Function | Syntax.WhileStatement | null = null) {
     this.parent = parent;
     this.funcOrLoop = fw;
