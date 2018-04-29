@@ -502,6 +502,9 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
 
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
+      (and (is-jsstr obj) (= (_tostring prop) "length"))
+      (and (is-jsstr obj) (>= (str.to.int (_tostring prop)) 0)
+                          (< (str.to.int (_tostring prop)) (str.len (strv obj))))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
       (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
@@ -514,6 +517,13 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
   (ite (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
        (objfield (objv obj) (_tostring prop))
+  (ite (and (is-jsstr obj) (= (_tostring prop) "length")) (jsnum (str.len (strv obj)))
+  (ite (and (is-jsstr obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv obj))))
+       (jsstr (str.at (strv obj) (numv prop)))
+  (ite (and (is-jsstr obj)
+            (>= (str.to.int (_tostring prop)) 0)
+            (< (str.to.int (_tostring prop)) (str.len (strv obj))))
+       (jsstr (str.at (strv obj) (str.to.int (_tostring prop))))
   (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
   (ite (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
        (arrelems (arrv obj) (numv prop))
@@ -526,7 +536,7 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
 ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
 `  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${method}")) v_${cls}.${method}`).join('\n')}
   jsundefined
-${flatMap([...classes], ({ cls, fields, methods }) => fields.concat(methods).map(_ => ')')).join('')})))))
+${flatMap([...classes], ({ cls, fields, methods }) => fields.concat(methods).map(_ => ')')).join('')}))))))))
 
 (define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
   (or (and (is-jsobj obj) (= cls c_Object))
