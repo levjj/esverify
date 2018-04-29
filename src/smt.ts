@@ -350,12 +350,12 @@ ${[...classes].map(({ cls }) =>
 ; -
 (define-fun _js-negative ((x JSVal)) JSVal
   (ite (is-jsnum x) (jsnum (- (numv x)))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; +
 (define-fun _js-positive ((x JSVal)) JSVal
   (ite (is-jsnum x) x
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; !
 (define-fun _js-not ((x JSVal)) JSVal
@@ -364,7 +364,7 @@ ${[...classes].map(({ cls }) =>
 ; ~
 (define-fun _js-bnot ((x JSVal)) JSVal
   (ite (is-jsnum x) (jsnum (bv2int (bvneg ((_ int2bv 32) (numv x)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; void
 (define-fun _js-void ((x JSVal)) JSVal
@@ -372,35 +372,35 @@ ${[...classes].map(({ cls }) =>
 
 ; ==
 (define-fun _js-eq ((a JSVal) (b JSVal)) JSVal
-  (jsbool (= a b))) ; non-standard!
+  (jsbool (= a b)))
 
 ; !=
 (define-fun _js-neq ((a JSVal) (b JSVal)) JSVal
-  (jsbool (not (= a b)))) ; non-standard!
+  (jsbool (not (= a b))))
 
 ; <
 (define-fun _js_lt ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsbool (< (numv a) (numv b)))
-    (jsbool false))) ; non-standard!
+    (jsbool false)))
 
 ; <=
 (define-fun _js_leq ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsbool (<= (numv a) (numv b)))
-    (jsbool false))) ; non-standard!
+    (jsbool false)))
 
 ; >
 (define-fun _js_gt ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsbool (> (numv a) (numv b)))
-    (jsbool false))) ; non-standard!
+    (jsbool false)))
 
 ; >=
 (define-fun _js-geq ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsbool (>= (numv a) (numv b)))
-    (jsbool false))) ; non-standard!
+    (jsbool false)))
 
 ; +
 (define-fun _js-plus ((a JSVal) (b JSVal)) JSVal
@@ -408,67 +408,67 @@ ${[...classes].map(({ cls }) =>
     (jsnum (+ (numv a) (numv b)))
   (ite (and (is-jsstr a) (is-jsstr b))
     (jsstr (str.++ (strv a) (strv b)))
-  jsundefined))) ; non-standard!
+  jsundefined)))
 
 ; -
 (define-fun _js-minus ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (- (numv a) (numv b)))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; *
 (define-fun _js-multiply ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (* (numv a) (numv b)))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; /
 (define-fun _js-divide ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (div (numv a) (numv b)))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; %
 (define-fun _js-mod ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (rem (numv a) (numv b)))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; <<
 (define-fun _js-lshift ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvshl ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; >>
 (define-fun _js-rshift ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvashr ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; >>>
 (define-fun _js-rzshift ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvlshr ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; |
 (define-fun _js-bor ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvor ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; ^
 (define-fun _js-bxor ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvxor ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; &
 (define-fun _js-band ((a JSVal) (b JSVal)) JSVal
   (ite (and (is-jsnum a) (is-jsnum b))
     (jsnum (bv2int (bvand ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
-  jsundefined)) ; non-standard!
+  jsundefined))
 
 ; Heap
 
