@@ -272,7 +272,10 @@ export class Model {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
         if (typeof v !== 'string') throw this.modelError(s.toString());
-        return { type: 'str', v: v.substr(1, v.length - 2) };
+        const vchars = v.substr(1, v.length - 2);
+        // replace "\x00" with "\0", etc.
+        const vreplaced = vchars.replace(/\\x(\d\d)/g, (m, c) => String.fromCharCode(parseInt(c, 16)));
+        return { type: 'str', v: vreplaced };
       } else if (tag === 'jsfun') {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];
