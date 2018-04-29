@@ -10,9 +10,9 @@ cache:
     - node_modules
     - ~/.npm
 before_script:
-  - wget https://github.com/Z3Prover/z3/releases/download/z3-4.5.0/z3-4.5.0-x64-ubuntu-14.04.zip -O /tmp/z3-4.5.0-x64-ubuntu-14.04.zip
-  - unzip -d . /tmp/z3-4.5.0-x64-ubuntu-14.04.zip
-  - export PATH=$PATH:$PWD/z3-4.5.0-x64-ubuntu-14.04/bin/
+  - wget https://github.com/Z3Prover/z3/releases/download/z3-4.6.0/z3-4.6.0-x64-ubuntu-14.04.zip -O /tmp/z3-4.6.0-x64-ubuntu-14.04.zip
+  - unzip -d . /tmp/z3-4.6.0-x64-ubuntu-14.04.zip
+  - export PATH=$PATH:$PWD/z3-4.6.0-x64-ubuntu-14.04/bin/
   - npm prune
   - npm install
 script:
