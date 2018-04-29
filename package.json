@@ -28,7 +28,7 @@
     "lint": "tsc --noEmit && tslint --project .",
     "test": "TS_NODE_DISABLE_WARNINGS=true mocha -r ts-node/register tests/*.ts",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.module.json",
-    "commit": "git-cz",
+    "commit": "commit",
     "commitmsg": "commitlint -x @commitlint/config-conventional -e $GIT_PARAMS",
     "prepush": "npm run lint && npm test && npm run build",
     "semantic-release": "semantic-release",
@@ -48,26 +48,18 @@
     "@commitlint/cli": "^6.1.3",
     "@commitlint/config-conventional": "^6.1.3",
     "@commitlint/prompt": "^6.1.3",
-    "@types/chai": "^4.1.2",
-    "@types/mocha": "^5.0.0",
+    "@commitlint/prompt-cli": "^6.1.3",
+    "@commitlint/travis-cli": "^6.1.3",
+    "@types/chai": "^4.1.3",
+    "@types/mocha": "^5.2.0",
     "chai": "^4.1.2",
-    "commitizen": "^2.9.6",
-    "cz-conventional-changelog": "^2.1.0",
     "husky": "^0.14.3",
-    "mocha": "^5.0.5",
-    "semantic-release": "^15.1.4",
-    "ts-loader": "^4.1.0",
+    "mocha": "^5.1.1",
+    "semantic-release": "^15.1.7",
+    "travis-deploy-once": "^4.4.1",
     "ts-node": "^5.0.1",
     "tslint": "^5.9.1",
     "tslint-config-standard": "^7.0.0",
-    "typescript": "^2.8.1",
-    "webpack": "^4.4.1",
-    "webpack-cli": "^2.0.13",
-    "travis-deploy-once": "^4.4.1"
-  },
-  "config": {
-    "commitizen": {
-      "path": "@commitlint/prompt"
-    }
+    "typescript": "^2.8.3"
   }
 }

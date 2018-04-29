@@ -16,6 +16,7 @@ before_script:
   - npm prune
   - npm install
 script:
+  - commitlint-travis
   - npm run lint
   - npm test
   - npm run build
