@@ -9,13 +9,14 @@ import { eraseTriggersProp } from './qi';
 import { isMutable } from './scopes';
 import { flatMap } from './util';
 import VerificationCondition from './verification';
+import { generatePreamble } from './preamble';
 
-type BreakCondition = P;
+export type BreakCondition = P;
 
-class VCGenerator extends Visitor<[A, Syntax.Expression],
-                                  [P, Syntax.Expression, TestCode],
-                                  [A, Syntax.Expression],
-                                  BreakCondition> {
+export class VCGenerator extends Visitor<[A, Syntax.Expression],
+                                         [P, Syntax.Expression, TestCode],
+                                         [A, Syntax.Expression],
+                                         BreakCondition> {
 
   classes: Classes;
   oldHeap: Heap;
@@ -1338,7 +1339,8 @@ class VCGenerator extends Visitor<[A, Syntax.Expression],
 }
 
 export function vcgenProgram (prog: Syntax.Program): Array<VerificationCondition> {
-  const vcgen = new VCGenerator(new Set(), 0, 0, new Set(), new Set(), tru);
+  const { classes, heap, locs, vars, prop } = generatePreamble();
+  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, prop);
   vcgen.visitProgram(prog);
   return vcgen.vcs;
 }

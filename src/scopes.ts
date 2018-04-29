@@ -1,5 +1,6 @@
-import { Syntax, Visitor, id, nullLoc } from './javascript';
+import { Syntax, Visitor, id } from './javascript';
 import { MessageException, unexpected } from './message';
+import { globalDeclarations } from './preamble';
 
 function unsupportedLoc (loc: Syntax.SourceLocation, description: string = '') {
   return new MessageException({ status: 'error', type: 'unsupported', loc, description });
@@ -390,28 +391,22 @@ class NameResolver extends Visitor<void, void, void, void> {
     stmt.methods.forEach(method => this.visitMethodDeclaration(method, stmt));
   }
 
-  builtinClass (name: string) {
-    const decl: Syntax.ClassDeclaration = {
-      type: 'ClassDeclaration',
-      id: id(name),
-      fields: [],
-      invariant: { type: 'Literal', value: true, loc: nullLoc() },
-      methods: [],
-      loc: nullLoc()
-    };
-    this.scope.defSymbol(decl.id, { type: 'Class', decl });
+  visitPreamble () {
+    for (const decl of globalDeclarations()) {
+      this.scope.defSymbol(decl.decl.id, decl);
+    }
   }
 
   visitProgram (prog: Syntax.Program) {
-    this.builtinClass('Object');
-    this.builtinClass('Function');
-    this.builtinClass('Array');
     prog.body.forEach(stmt => this.visitStatement(stmt));
     prog.invariants.forEach(inv => this.visitAssertion(inv));
   }
 }
 
-export function resolveNames (program: Syntax.Program): void {
+export function resolveNames (program: Syntax.Program, preamble: boolean = true): void {
   const resolver = new NameResolver();
+  if (preamble) {
+    resolver.visitPreamble();
+  }
   resolver.visitProgram(program);
 }
