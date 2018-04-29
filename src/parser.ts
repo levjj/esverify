@@ -640,7 +640,7 @@ function findConstructor (clsDef: JSyntax.ClassDeclaration): Array<string> {
     }
   }
   if (constrMethod === null) {
-    throw unsupported(clsDef, 'class needs one constructor');
+    return [];
   }
   if (constrMethod.kind === 'get' || constrMethod.kind === 'set') {
     throw unsupported(constrMethod, 'getters and setters not supported');
