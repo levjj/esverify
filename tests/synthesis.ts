@@ -108,7 +108,7 @@ describe('function counter examples', () => {
     const arg = retStmt.argument;
     expect(arg.type).to.eql('Literal');
     if (arg.type !== 'Literal') throw new Error();
-    expect(arg.value).to.eql(1);
+    expect(arg.value).to.eql(undefined);
   });
   verified('g3: precondition f(5)');
   incorrect('g3: (res < 20)');

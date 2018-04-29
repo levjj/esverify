@@ -19,6 +19,7 @@ describe('simple arrays', () => {
     function g (a: Array<number>) {
       requires(a instanceof Array);
       requires(a.length >= 1);
+      requires(a.length < 5);
       ensures(res => res > 3);
 
       return a[0];
@@ -50,7 +51,7 @@ describe('simple arrays', () => {
 
   verified('f: a has property 0');
   verified('g: a has property 0');
-  incorrect('g: (res > 3)', ['a', [true]]);
+  incorrect('g: (res > 3)', ['a', ['number']]);
 
   verified('assert: (a0 instanceof Array)');
   verified('assert: (a0 instanceof Object)');
@@ -112,6 +113,7 @@ describe('array invariants', () => {
     function g_2 (a: Array<number>) {
       requires(every(a, e => e > 23));
       requires(a.length >= 1);
+      requires(a.length < 6);
       ensures(res => res > 42);
 
       return a[0];
@@ -138,7 +140,7 @@ describe('array invariants', () => {
   verified('f_4: every(res, (e, i) => (e > i))');
   incorrect('g_1: every(res, e => (e > 23))');
   verified('g_2: a has property 0');
-  incorrect('g_2: (res > 42)', ['a', [24]]);
-  incorrect('g_3: (a[2] > 12)', ['a', [true, true, true]]);
+  incorrect('g_2: (res > 42)', ['a', [24, 24, 24]]);
+  incorrect('g_3: (a[2] > 12)', ['a', ['number', 'number', 'number', 'number']]);
   incorrect('g_4: every(res, (e, i) => (e > i))');
 });
