@@ -45,7 +45,10 @@ export default class VerificationCondition {
     try {
       const smtin = this.prepareSMT();
       const smtout = await (options.remote ? this.solveRemote(smtin) : this.solveLocal(smtin));
-      return this.result = this.process(smtout);
+      const modelOrMessage = this.processSMTOutput(smtout);
+      return this.result = modelOrMessage instanceof Model
+        ? this.runTest(modelOrMessage)
+        : modelOrMessage;
     } catch (error) {
       if (error instanceof MessageException) return this.result = error.msg;
       return this.result = unexpected(error, this.loc, this.description);
@@ -54,12 +57,33 @@ export default class VerificationCondition {
     }
   }
 
-  runTest () {
-    if (!this.result) throw new Error('no model available');
-    if (this.result.status === 'verified' || this.result.status === 'unknown') throw new Error('no model available');
-    if (this.result.status === 'error' && this.result.type !== 'incorrect') throw new Error('no model available');
-    /* tslint:disable:no-eval */
-    eval(this.testCode(this.result.model));
+  runTest (model: Model | undefined): Message {
+    if (model === undefined) {
+      if (!this.result) throw new Error('no model available');
+      if (this.result.status === 'verified' || this.result.status === 'unknown') throw new Error('no model available');
+      if (this.result.status === 'error' && this.result.type !== 'incorrect') throw new Error('no model available');
+      return this.runTest(this.result.model);
+    } else {
+      const code = this.testCode(model);
+      try {
+        /* tslint:disable:no-eval */
+        eval(code);
+        return { status: 'unverified', description: this.description, loc: this.loc, model };
+      } catch (e) {
+        if (e instanceof Error && e.message === 'assertion failed') {
+          return {
+            status: 'error',
+            type: 'incorrect',
+            description: this.description,
+            loc: this.loc,
+            model,
+            error: e
+          };
+        } else {
+          return unexpected(e, this.loc, this.description);
+        }
+      }
+    }
   }
 
   private prepareSMT (): SMTInput {
@@ -80,43 +104,19 @@ export default class VerificationCondition {
       const und: Syntax.Literal = { type: 'Literal', value: undefined, loc: nullLoc() };
       sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, und, expr);
     });
-    return stringifyTestCode(this.testBody.map(s => sub.visitStatement(s)));
-  }
-
-  private process (out: SMTOutput): Message {
+    const code = stringifyTestCode(this.testBody.map(s => sub.visitStatement(s)));
     if (!options.quiet && options.verbose) {
-      console.log('SMT Output:');
+      console.log('Test Code:');
       console.log('------------');
-      console.log(out);
+      console.log(code);
       console.log('------------');
     }
+    return code;
+  }
+
+  private processSMTOutput (out: SMTOutput): Model | Message {
     if (out && out.startsWith('sat')) {
-      const m = new Model(out);
-      const code = this.testCode(m);
-      if (!options.quiet && options.verbose) {
-        console.log('Test Code:');
-        console.log('------------');
-        console.log(code);
-        console.log('------------');
-      }
-      try {
-        /* tslint:disable:no-eval */
-        eval(code);
-        return { status: 'unverified', description: this.description, loc: this.loc, model: m };
-      } catch (e) {
-        if (e instanceof Error && e.message === 'assertion failed') {
-          return {
-            status: 'error',
-            type: 'incorrect',
-            description: this.description,
-            loc: this.loc,
-            model: m,
-            error: e
-          };
-        } else {
-          return unexpected(e, this.loc, this.description);
-        }
-      }
+      return new Model(out);
     } else if (out && out.startsWith('unsat')) {
       return { status: 'verified', description: this.description, loc: this.loc };
     } else if (out && out.startsWith('unknown')) {
@@ -166,7 +166,15 @@ export default class VerificationCondition {
       const p = spawn(options.z3path, ['-smt2', '-in'], { stdio: ['pipe', 'pipe', 'ignore'] });
       let result: string = '';
       p.stdout.on('data', (data: Object) => { result += data.toString(); });
-      p.on('exit', (code: number) => resolve(result));
+      p.on('exit', (code: number) => {
+        if (!options.quiet && options.verbose) {
+          console.log('SMT Output:');
+          console.log('------------');
+          console.log(result);
+          console.log('------------');
+        }
+        return resolve(result);
+      });
       p.on('error', reject);
       p.stdin.write(smt);
       p.stdin.end();
@@ -174,10 +182,18 @@ export default class VerificationCondition {
     return p;
   }
 
-  private solveRemote (smt: SMTInput): Promise<SMTOutput> {
+  private async solveRemote (smt: SMTInput): Promise<SMTOutput> {
     if (!options.quiet && options.verbose) {
       console.log(`${this.description}: sending request to ${options.z3url}`);
     }
-    return fetch(options.z3url, { method: 'POST', body: smt }).then(req => req.text());
+    const req = await fetch(options.z3url, { method: 'POST', body: smt });
+    const smtout = await req.text();
+    if (!options.quiet && options.verbose) {
+      console.log('SMT Output:');
+      console.log('------------');
+      console.log(smtout);
+      console.log('------------');
+    }
+    return smtout;
   }
 }
