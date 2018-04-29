@@ -70,7 +70,7 @@ export default class VerificationCondition {
         eval(code);
         return { status: 'unverified', description: this.description, loc: this.loc, model };
       } catch (e) {
-        if (e instanceof Error && e.message === 'assertion failed') {
+        if (e instanceof Error && (e instanceof TypeError || e.message === 'assertion failed')) {
           return {
             status: 'error',
             type: 'incorrect',
