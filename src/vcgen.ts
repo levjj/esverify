@@ -4,7 +4,7 @@ import { Syntax, TestCode, Visitor, id, isValidAssignmentTarget, nullLoc, remove
          replaceVarBlock as replaceJSVarBlock, uniqueIdentifier } from './javascript';
 import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq, heapStore, implies, not, or,
          removePrefix, replaceResultWithCall, replaceVar, transformClassInvariant, transformEveryInvariant,
-         transformSpec, tru, truthy, und } from './logic';
+         transformSpec, tru, truthy, und, Syntax as Logic } from './logic';
 import { eraseTriggersProp } from './qi';
 import { isMutable } from './scopes';
 import { flatMap } from './util';
@@ -12,9 +12,10 @@ import VerificationCondition from './verification';
 import { generatePreamble } from './preamble';
 
 export type BreakCondition = P;
+export type AccessTriggers = Array<Logic.AccessTrigger>;
 
-export class VCGenerator extends Visitor<[A, Syntax.Expression],
-                                         [P, Syntax.Expression, TestCode],
+export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
+                                         [P, AccessTriggers, Syntax.Expression, TestCode],
                                          [A, Syntax.Expression],
                                          BreakCondition> {
 
@@ -65,19 +66,20 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     };
   }
 
-  visitComplexAssertion (assertion: Syntax.Assertion): [P, Syntax.Expression] {
+  visitComplexAssertion (assertion: Syntax.Assertion): [P, AccessTriggers, Syntax.Expression] {
     const origSimpleAssertion = this.simpleAssertion;
     try {
       this.simpleAssertion = false;
-      const [p, e, t] = this.visitAssertion(assertion);
+      const [p, triggers, e, t] = this.visitAssertion(assertion);
       if (t.length > 0) throw new Error('specs in in complex assertions not supported yet');
-      return [p, e];
+      return [p, triggers, e];
     } finally {
       this.simpleAssertion = origSimpleAssertion;
     }
   }
 
-  assert (assertion: Syntax.Assertion, oldHeap: Heap = this.oldHeap, heap: Heap = this.heap): [P, TestCode] {
+  assert (assertion: Syntax.Assertion, oldHeap: Heap = this.oldHeap, heap: Heap = this.heap):
+          [P, AccessTriggers, TestCode] {
     const origOldHeap = this.oldHeap;
     const origHeap = this.heap;
     const origSimpleAssertion = this.simpleAssertion;
@@ -85,12 +87,12 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
       this.oldHeap = oldHeap;
       this.heap = heap;
       this.simpleAssertion = true;
-      const [assertP, assertE, assertT] = this.visitAssertion(assertion);
+      const [assertP, assertTriggers, assertE, assertT] = this.visitAssertion(assertion);
       const checkT: Array<Syntax.Statement> = [];
       if (this.assertionPolarity && (assertE.type !== 'Literal' || assertE.value !== true)) {
         checkT.push(this.check(assertE));
       }
-      return [assertP, checkT.concat(assertT)];
+      return [assertP, assertTriggers, checkT.concat(assertT)];
     } finally {
       this.heap = origHeap;
       this.oldHeap = origOldHeap;
@@ -98,7 +100,8 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     }
   }
 
-  assume (assertion: Syntax.Assertion, oldHeap: Heap = this.oldHeap, heap: Heap = this.heap): [P, TestCode] {
+  assume (assertion: Syntax.Assertion, oldHeap: Heap = this.oldHeap, heap: Heap = this.heap):
+         [P, AccessTriggers, TestCode] {
     try {
       this.assertionPolarity = !this.assertionPolarity;
       return this.assert(assertion, oldHeap, heap);
@@ -194,111 +197,131 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
                                             loc, desc, this.freeVars, this.testBody.concat(testBody)));
   }
 
-  visitIdentifierTerm (term: Syntax.Identifier): [A, Syntax.Expression] {
+  visitIdentifierTerm (term: Syntax.Identifier): [A, AccessTriggers, Syntax.Expression] {
     if (isMutable(term)) {
-      return [{ type: 'HeapReference', heap: this.heap, loc: term.name }, term];
+      return [{ type: 'HeapReference', heap: this.heap, loc: term.name }, [], term];
     } else {
-      return [term.name, term];
+      return [term.name, [], term];
     }
   }
 
-  visitOldIdentifierTerm (term: Syntax.OldIdentifier): [A, Syntax.Expression] {
+  visitOldIdentifierTerm (term: Syntax.OldIdentifier): [A, AccessTriggers, Syntax.Expression] {
     if (!isMutable(term.id)) { throw new Error('not mutable'); }
     return [
       { type: 'HeapReference', heap: this.oldHeap, loc: term.id.name },
+      [],
       id(`old_${term.id.name}`, term.loc)
     ];
   }
 
-  visitLiteralTerm (term: Syntax.Literal): [A, Syntax.Expression] {
-    return [term, term];
+  visitLiteralTerm (term: Syntax.Literal): [A, AccessTriggers, Syntax.Expression] {
+    return [term, [], term];
   }
 
-  visitUnaryTerm (term: Syntax.UnaryTerm): [A, Syntax.Expression] {
-    const [argumentA, argumentE] = this.visitTerm(term.argument);
+  visitUnaryTerm (term: Syntax.UnaryTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [argumentA, argumentTriggers, argumentE] = this.visitTerm(term.argument);
     return [
       { type: 'UnaryExpression', operator: term.operator, argument: argumentA },
+      argumentTriggers,
       { type: 'UnaryExpression', operator: term.operator, argument: argumentE, loc: term.loc }
     ];
   }
 
-  visitBinaryTerm (term: Syntax.BinaryTerm): [A, Syntax.Expression] {
-    const [leftA, leftE] = this.visitTerm(term.left);
-    const [rightA, rightE] = this.visitTerm(term.right);
+  visitBinaryTerm (term: Syntax.BinaryTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [leftA, leftTriggers, leftE] = this.visitTerm(term.left);
+    const [rightA, rightTriggers, rightE] = this.visitTerm(term.right);
     return [
       { type: 'BinaryExpression', operator: term.operator, left: leftA, right: rightA },
+      leftTriggers.concat(rightTriggers),
       { type: 'BinaryExpression', operator: term.operator, left: leftE, right: rightE, loc: term.loc }
     ];
   }
 
-  visitLogicalTerm (term: Syntax.LogicalTerm): [A, Syntax.Expression] {
-    const [leftA, leftE] = this.visitTerm(term.left);
-    const [rightA, rightE] = this.visitTerm(term.right);
+  visitLogicalTerm (term: Syntax.LogicalTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [leftA, leftTriggers, leftE] = this.visitTerm(term.left);
+    const [rightA, rightTriggers, rightE] = this.visitTerm(term.right);
     switch (term.operator) {
       case '&&':
         return [
           { type: 'ConditionalExpression', test: truthy(leftA), consequent: rightA, alternate: leftA },
+          leftTriggers.concat(rightTriggers),
           { type: 'LogicalExpression', operator: '&&', left: leftE, right: rightE, loc: term.loc }
         ];
       case '||':
         return [
           { type: 'ConditionalExpression', test: truthy(leftA), consequent: leftA, alternate: rightA },
+          leftTriggers.concat(rightTriggers),
           { type: 'LogicalExpression', operator: '||', left: leftE, right: rightE, loc: term.loc }
         ];
     }
   }
 
-  visitConditionalTerm (term: Syntax.ConditionalTerm): [A, Syntax.Expression] {
-    const [testA, testE] = this.visitTerm(term.test);
-    const [consequentA, consequentE] = this.visitTerm(term.consequent);
-    const [alternateA, alternateE] = this.visitTerm(term.alternate);
+  visitConditionalTerm (term: Syntax.ConditionalTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [testA, testTriggers, testE] = this.visitTerm(term.test);
+    const [consequentA, consequentTriggers, consequentE] = this.visitTerm(term.consequent);
+    const [alternateA, alternateTriggers, alternateE] = this.visitTerm(term.alternate);
     return [
       { type: 'ConditionalExpression', test: truthy(testA), consequent: consequentA, alternate: alternateA },
+      [...testTriggers, ...consequentTriggers, ...alternateTriggers],
       { type: 'ConditionalExpression', test: testE, consequent: consequentE, alternate: alternateE, loc: term.loc }
     ];
   }
 
-  visitCallTerm (term: Syntax.CallTerm): [A, Syntax.Expression] {
-    const [calleeA, calleeE] = this.visitTerm(term.callee);
+  visitCallTerm (term: Syntax.CallTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [calleeA, calleeTriggers, calleeE] = this.visitTerm(term.callee);
     const args = term.args.map(a => this.visitTerm(a));
     let thisArg: A = (typeof calleeA !== 'string' && calleeA.type === 'MemberExpression') ? calleeA.object : und;
-    return [{
-      type: 'CallExpression',
-      callee: calleeA,
-      heap: this.heap,
-      thisArg,
-      args: args.map(([argA]) => argA)
-    }, {
-      type: 'CallExpression',
-      callee: calleeE,
-      args: args.map(([, argE]) => argE),
-      loc: term.loc
-    }];
+    return [
+      {
+        type: 'CallExpression',
+        callee: calleeA,
+        heap: this.heap,
+        thisArg,
+        args: args.map(([argA]) => argA)
+      },
+      calleeTriggers.concat(flatMap(args, ([, argTriggers]) => argTriggers)),
+      {
+        type: 'CallExpression',
+        callee: calleeE,
+        args: args.map(([, , argE]) => argE),
+        loc: term.loc
+      }
+    ];
   }
 
-  visitMemberTerm (term: Syntax.MemberTerm): [A, Syntax.Expression] {
-    const [objectA, objectE] = this.visitTerm(term.object);
-    const [propertyA, propertyE] = this.visitTerm(term.property);
-    return [{
-      type: 'MemberExpression',
-      object: objectA,
-      property: propertyA
-    }, {
-      type: 'MemberExpression',
-      object: objectE,
-      property: propertyE,
-      loc: term.loc
-    }];
+  visitMemberTerm (term: Syntax.MemberTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [objectA, objectTriggers, objectE] = this.visitTerm(term.object);
+    const [propertyA, propertyTriggers, propertyE] = this.visitTerm(term.property);
+    return [
+      {
+        type: 'MemberExpression',
+        object: objectA,
+        property: propertyA
+      },
+      objectTriggers.concat(propertyTriggers, [{
+        type: 'AccessTrigger',
+        object: objectA,
+        property: propertyA,
+        heap: this.heap,
+        fuel: 1
+      }]),
+      {
+        type: 'MemberExpression',
+        object: objectE,
+        property: propertyE,
+        loc: term.loc
+      }
+    ];
   }
 
-  visitTermAssertion (term: Syntax.Term): [P, Syntax.Expression, TestCode] {
-    const [termA, termE] = this.visitTerm(term);
-    return [truthy(termA), termE, []];
+  visitTermAssertion (term: Syntax.Term): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    const [termA, termTriggers, termE] = this.visitTerm(term);
+    return [truthy(termA), termTriggers, termE, []];
   }
 
-  visitPureAssertion (assertion: Syntax.PureAssertion): [P, Syntax.Expression, TestCode] {
+  visitPureAssertion (assertion: Syntax.PureAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
     const tru: Syntax.Expression = { type: 'Literal', value: true, loc: assertion.loc };
-    return [heapEq(this.heap, this.oldHeap), tru, []];
+    return [heapEq(this.heap, this.oldHeap), [], tru, []];
   }
 
   insertWrapper (callee: Syntax.Expression, loc: Syntax.SourceLocation, args: Array<Syntax.Identifier>, rT: TestCode,
@@ -353,13 +376,13 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     };
   }
 
-  visitSpecAssertion (assertion: Syntax.SpecAssertion): [P, Syntax.Expression, TestCode] {
-    const [calleeA, calleeE] = this.visitTerm(assertion.callee);
+  visitSpecAssertion (assertion: Syntax.SpecAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    const [calleeA,, calleeE] = this.visitTerm(assertion.callee);
     // reserve fresh name for 'this'
     const thisArg = this.freshThisVar();
     // translate pre and post
-    const [rP, rT] = this.assume(assertion.pre, this.heap + 1, this.heap + 1);
-    const [sP, sT] = this.assert(assertion.post.expression, this.heap + 1, this.heap + 2);
+    const [rP,, rT] = this.assume(assertion.pre, this.heap + 1, this.heap + 1);
+    const [sP,, sT] = this.assert(assertion.post.expression, this.heap + 1, this.heap + 2);
     // remove 'this' name from scope again
     this.vars.delete(thisArg);
     // rename 'this' to the name reserved above in the generated propositions
@@ -439,13 +462,13 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
         specT.push(callStmt);
       }
     }
-    return [specP, specE, specT];
+    return [specP, [], specE, specT];
   }
 
-  visitEveryAssertion (assertion: Syntax.EveryAssertion): [P, Syntax.Expression, TestCode] {
-    const [arrayA, arrayE] = this.visitTerm(assertion.array);
+  visitEveryAssertion (assertion: Syntax.EveryAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    const [arrayA,, arrayE] = this.visitTerm(assertion.array);
     this.heap++;
-    const [invP, invE] = this.visitComplexAssertion(assertion.expression);
+    const [invP,, invE] = this.visitComplexAssertion(assertion.expression);
     this.heap--;
     const index = assertion.indexArgument !== null ? assertion.indexArgument.name : null;
     const everyP = transformEveryInvariant(arrayA, assertion.argument.name, index, invP, this.heap + 1);
@@ -490,30 +513,32 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
       },
       loc: assertion.loc
     };
-    return [everyP, everyE, []];
+    return [everyP, [], everyE, []];
   }
 
-  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): [P, Syntax.Expression, TestCode] {
-    const [leftA, leftE] = this.visitTerm(assertion.left);
+  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    const [leftA, leftTriggers, leftE] = this.visitTerm(assertion.left);
     return [
       { type: 'InstanceOf', left: leftA, right: assertion.right.name },
+      leftTriggers,
       { type: 'InstanceOfExpression', left: leftE, right: assertion.right, loc: assertion.loc },
       []
     ];
   }
 
-  visitInAssertion (assertion: Syntax.InAssertion): [P, Syntax.Expression, TestCode] {
-    const [objectA, objectE] = this.visitTerm(assertion.object);
-    const [propertyA, propertyE] = this.visitTerm(assertion.property);
+  visitInAssertion (assertion: Syntax.InAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    const [objectA, objectTriggers, objectE] = this.visitTerm(assertion.object);
+    const [propertyA, propertyTriggers, propertyE] = this.visitTerm(assertion.property);
     return [
       { type: 'HasProperty', object: objectA, property: propertyA },
+      objectTriggers.concat(propertyTriggers),
       { type: 'InExpression', property: propertyE, object: objectE, loc: assertion.loc },
       []
     ];
   }
 
-  visitUnaryAssertion (assertion: Syntax.UnaryAssertion): [P, Syntax.Expression, TestCode] {
-    const [argP, argE] = this.visitComplexAssertion(assertion.argument);
+  visitUnaryAssertion (assertion: Syntax.UnaryAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    const [argP, argTriggers, argE] = this.visitComplexAssertion(assertion.argument);
     let retE: Syntax.Expression;
     if (argE.type === 'Literal' && argE.value === true) {
       retE = { type: 'Literal', value: false, loc: assertion.loc };
@@ -522,14 +547,14 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     } else {
       retE = { type: 'UnaryExpression', argument: argE, operator: '!', loc: assertion.loc };
     }
-    return [not(argP), retE, []];
+    return [not(argP), argTriggers, retE, []];
   }
 
-  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): [P, Syntax.Expression, TestCode] {
+  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
     switch (assertion.operator) {
       case '&&': {
-        const [leftP, leftE, leftT] = this.visitAssertion(assertion.left);
-        const [rightP, rightE, rightT] = this.visitAssertion(assertion.right);
+        const [leftP, leftTriggers, leftE, leftT] = this.visitAssertion(assertion.left);
+        const [rightP, rightTriggers, rightE, rightT] = this.visitAssertion(assertion.right);
         let retE: Syntax.Expression;
         if (leftE.type === 'Literal' && leftE.value === true) {
           retE = rightE;
@@ -538,11 +563,11 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
         } else {
           retE = { type: 'LogicalExpression', operator: '&&', left: leftE, right: rightE, loc: assertion.loc };
         }
-        return [and(leftP, rightP), retE, leftT.concat(rightT)];
+        return [and(leftP, rightP), leftTriggers.concat(rightTriggers), retE, leftT.concat(rightT)];
       }
       case '||': {
-        const [leftP, leftE] = this.visitComplexAssertion(assertion.left);
-        const [rightP, rightE] = this.visitComplexAssertion(assertion.right);
+        const [leftP, leftTriggers, leftE] = this.visitComplexAssertion(assertion.left);
+        const [rightP, rightTriggers, rightE] = this.visitComplexAssertion(assertion.right);
         let retE: Syntax.Expression;
         if (leftE.type === 'Literal' && leftE.value === false) {
           retE = rightE;
@@ -551,7 +576,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
         } else {
           retE = { type: 'LogicalExpression', operator: '||', left: leftE, right: rightE, loc: assertion.loc };
         }
-        return [or(leftP, rightP), retE, []];
+        return [or(leftP, rightP), leftTriggers.concat(rightTriggers), retE, []];
       }
     }
   }
@@ -842,9 +867,11 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
   }
 
   visitAssertStatement (stmt: Syntax.AssertStatement): BreakCondition {
-    const [assertP, assertT] = this.assert(stmt.expression);
-    this.verify(assertP, assertT, stmt.expression.loc, 'assert: ' + stringifyAssertion(stmt.expression));
-    const [assumeP, assumeT] = this.assume(stmt.expression);
+    const [assertP, assertTriggers, assertT] = this.assert(stmt.expression);
+    this.tryPre(and(...assertTriggers), () => {
+      this.verify(assertP, assertT, stmt.expression.loc, 'assert: ' + stringifyAssertion(stmt.expression));
+    });
+    const [assumeP,, assumeT] = this.assume(stmt.expression);
     this.have(assumeP, assumeT);
     return fls;
   }
@@ -879,8 +906,10 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
   visitWhileStatement (stmt: Syntax.WhileStatement): BreakCondition {
     // verify invariants on entry
     for (const inv of stmt.invariants) {
-      const [invP, invT] = this.assert(inv, this.heap, this.heap);
-      this.verify(invP, invT, inv.loc, 'invariant on entry: ' + stringifyAssertion(inv));
+      const [invP, invTriggers, invT] = this.assert(inv, this.heap, this.heap);
+      this.tryPre(and(...invTriggers), () => {
+        this.verify(invP, invT, inv.loc, 'invariant on entry: ' + stringifyAssertion(inv));
+      });
     }
 
     // havoc heap
@@ -899,7 +928,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     let [testEnterA, testEnterE] = this.visitExpression(stmt.test);
     this.have(truthy(testEnterA), [{ type: 'ExpressionStatement', expression: testEnterE, loc: stmt.test.loc }]);
     for (const inv of stmt.invariants) {
-      const [invP, invT] = this.assume(inv, this.heap, this.heap);
+      const [invP,, invT] = this.assume(inv, this.heap, this.heap);
       this.have(invP, invT);
     }
 
@@ -908,8 +937,10 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
 
     // ensure invariants maintained
     for (const inv of stmt.invariants) {
-      const [invP, invT] = this.assert(inv, this.heap, this.heap);
-      this.verify(invP, invT, inv.loc, 'invariant maintained: ' + stringifyAssertion(inv));
+      const [invP, invTriggers, invT] = this.assert(inv, this.heap, this.heap);
+      this.tryPre(and(...invTriggers), () => {
+        this.verify(invP, invT, inv.loc, 'invariant maintained: ' + stringifyAssertion(inv));
+      });
     }
 
     // we are going to use the returned verification conditions and break condition
@@ -922,7 +953,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     const [testExitA, testExitE] = this.visitExpression(stmt.test);
     this.have(falsy(testExitA), [{ type: 'ExpressionStatement', expression: testExitE, loc: stmt.test.loc }]);
     for (const inv of stmt.invariants) {
-      const [invP, invT] = this.assume(inv, this.heap, this.heap);
+      const [invP,, invT] = this.assume(inv, this.heap, this.heap);
       this.have(invP, invT);
     }
     return and(truthy(testEnterA), bcBody);
@@ -990,7 +1021,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
 
     // assume non-rec spec if named function
     if (f.type !== 'MethodDeclaration' && f.id !== null) {
-      const [fP, fT] = this.assume(this.functionAsSpec(f));
+      const [fP,, fT] = this.assume(this.functionAsSpec(f));
       const funDecl: TestCode = [{
         type: 'FunctionDeclaration',
         id: f.id,
@@ -1006,7 +1037,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
 
     // assume preconditions
     for (const r of f.requires) {
-      const [rP, rT] = this.assume(r);
+      const [rP,, rT] = this.assume(r);
       startBody = startBody.concat(rT);
       this.have(rP, rT);
     }
@@ -1072,8 +1103,10 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
       const ens2 = ens.argument !== null
           ? replaceJSVarAssertion(ens.argument.name, id(this.resVar), id(this.resVar), ens.expression)
           : ens.expression;
-      const [ensP, ensT] = this.assert(ens2);
-      this.verify(ensP, ensT, ens.loc, stringifyAssertion(ens.expression));
+      const [ensP, ensTriggers, ensT] = this.assert(ens2);
+      this.tryPre(and(...ensTriggers), () => {
+        this.verify(ensP, ensT, ens.loc, stringifyAssertion(ens.expression));
+      });
     }
     this.vcs.forEach(vc => {
       vc.description = (f.id ? f.id.name : 'func') + ': ' + vc.description;
@@ -1103,10 +1136,10 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
       return !this.vars.has(v) && !fun.params.some(n => n.name === v);
     }));
 
-    const pre: Array<[P, TestCode]> = fun.requires.map(req =>
+    const pre: Array<[P, AccessTriggers, TestCode]> = fun.requires.map(req =>
       this.assert(req, this.heap + 1, this.heap + 1));
     const retVar: Syntax.Identifier = this.testVar(fun.loc);
-    const post: Array<[P, TestCode]> = fun.ensures.map(ens => {
+    const post: Array<[P, AccessTriggers, TestCode]> = fun.ensures.map(ens => {
       const ens2 = ens.argument !== null
         ? replaceJSVarAssertion(ens.argument.name, retVar, retVar, ens.expression)
         : ens.expression;
@@ -1122,7 +1155,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
     const inlinedSpec = transformSpec(funcName, thisArg, args, preP, postP,
                                       this.heap + 1, inliner.heap, existsLocs, existsVars);
 
-    return [flatMap(pre, ([,c]) => c), flatMap(post, ([,c]) => c), inlinedBlock, inlinedSpec, retVar];
+    return [flatMap(pre, ([,,c]) => c), flatMap(post, ([,,c]) => c), inlinedBlock, inlinedSpec, retVar];
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
@@ -1166,7 +1199,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
       });
       const globalMethodName = `${stmt.id.name}.${method.id.name}`;
       methodNames.push(method.id.name);
-      const [fP, fT] = this.assume(this.functionAsSpec(method));
+      const [fP,, fT] = this.assume(this.functionAsSpec(method));
       methodSpecs.push(replaceVar(method.id.name, globalMethodName, fP));
       methodTestBodies.push({
         type: 'MethodDeclaration',
@@ -1207,7 +1240,7 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
         loc: method.loc
       });
     }
-    const [invP, invT] = this.assert(stmt.invariant, this.heap, this.heap);
+    const [invP,, invT] = this.assert(stmt.invariant, this.heap, this.heap);
     this.classes.add({ cls: stmt.id.name, fields: stmt.fields, methods: methodNames });
     this.have(and(...methodSpecs), this.classDeclarationCode(stmt, methodTestBodies, invT));
     this.have(transformClassInvariant(stmt.id.name, 'this', stmt.fields, invP, this.heap));
@@ -1329,9 +1362,11 @@ export class VCGenerator extends Visitor<[A, Syntax.Expression],
 
     // main program body needs to establish invariants
     for (const inv of prog.invariants) {
-      const [assertP, assertT] = this.assert(inv);
-      this.verify(assertP, assertT, inv.loc, 'initially: ' + stringifyAssertion(inv));
-      const [assumeP, assumeT] = this.assume(inv);
+      const [assertP, assertTriggers, assertT] = this.assert(inv);
+      this.tryPre(and(...assertTriggers), () => {
+        this.verify(assertP, assertT, inv.loc, 'initially: ' + stringifyAssertion(inv));
+      });
+      const [assumeP,, assumeT] = this.assume(inv);
       this.have(assumeP, assumeT);
     }
     return fls;
