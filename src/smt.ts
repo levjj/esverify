@@ -122,6 +122,18 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
     return `(arrelems (arrv ${this.visitExpr(expr.array)}) (numv ${this.visitExpr(expr.index)}))`;
   }
 
+  visitRawSMTExpression (expr: Syntax.RawSMTExpression): SMTInput {
+    let result = '';
+    for (const e of expr.smt) {
+      if (typeof e === 'string') {
+        result += e;
+      } else {
+        result += this.visitExpr(e.e);
+      }
+    }
+    return result;
+  }
+
   visitTruthy (prop: Syntax.Truthy): SMTInput {
     if (typeof(prop.expr) === 'object' &&
         prop.expr.type === 'ConditionalExpression' &&
