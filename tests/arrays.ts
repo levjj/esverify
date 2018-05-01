@@ -144,3 +144,21 @@ describe('array invariants', () => {
   incorrect('g_3: (a[2] > 12)', ['a', ['number', 'number', 'number', 'number']]);
   incorrect('g_4: every(res, (e, i) => (e > i))');
 });
+
+describe('array constructor', () => {
+
+  code(() => {
+    const a = new Array(3, 2);
+    assert(a.length === 2);
+    assert(a[1] === 2);
+
+    const b = Array(3, 2);
+    assert(b.length === 2);
+    assert(b[1] === 2);
+  });
+
+  verified('assert: (a.length === 2)');
+  verified('assert: (a[1] === 2)');
+  verified('assert: (b.length === 2)');
+  verified('assert: (b[1] === 2)');
+});

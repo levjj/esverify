@@ -515,6 +515,19 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       };
     case 'CallExpression':
       if (expr.callee.type === 'Super') throw unsupported(expr.callee);
+      if (expr.callee.type === 'Identifier' && expr.callee.name === 'Array') {
+        return {
+          type: 'ArrayExpression',
+          elements: expr.arguments.map(expr => {
+            if (expr.type === 'SpreadElement') {
+              throw unsupported(expr);
+            } else {
+              return expressionAsJavaScript(expr);
+            }
+          }),
+          loc: loc(expr)
+        };
+      }
       if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
       return {
         type: 'CallExpression',
@@ -530,6 +543,19 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       };
     case 'NewExpression':
       if (expr.callee.type !== 'Identifier') throw unsupported(expr.callee);
+      if (expr.callee.name === 'Array') {
+        return {
+          type: 'ArrayExpression',
+          elements: expr.arguments.map(expr => {
+            if (expr.type === 'SpreadElement') {
+              throw unsupported(expr);
+            } else {
+              return expressionAsJavaScript(expr);
+            }
+          }),
+          loc: loc(expr)
+        };
+      }
       if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
       return {
         type: 'NewExpression',
