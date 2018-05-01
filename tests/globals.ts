@@ -44,3 +44,34 @@ describe('console', () => {
   incorrect('console has property "mog"');
   incorrect('precondition console.mog("hello")');
 });
+
+describe('parseInt', () => {
+
+  code(() => {
+    function f (x) {
+      requires(typeof x === 'string');
+      ensures(y => typeof y === 'number');
+
+      return parseInt(x, 10);
+    }
+
+    function g (x) {
+      requires(typeof x === 'string');
+      ensures(y => y !== 12);
+
+      return parseInt(x, 10);
+    }
+
+    const z = parseInt('23', 10);
+    assert(z === 23);
+    parseInt('23', 16);
+  });
+
+  verified('f: precondition parseInt(x, 10)');
+  verified('f: (typeof(y) === "number")');
+  verified('g: precondition parseInt(x, 10)');
+  incorrect('g: (y !== 12)', ['x', '12']);
+  verified('precondition parseInt("23", 10)');
+  verified('assert: (z === 23)');
+  unverified('precondition parseInt("23", 16)');
+});

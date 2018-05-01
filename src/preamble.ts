@@ -25,7 +25,7 @@ function builtinClass (name: string): GlobalDeclaration {
   };
 }
 
-function constVar (name: string): GlobalDeclaration {
+function builtinConst (name: string): GlobalDeclaration {
   return {
     type: 'Var',
     decl: {
@@ -33,6 +33,22 @@ function constVar (name: string): GlobalDeclaration {
       id: id(name),
       init: { type: 'Literal', value: undefined, loc: nullLoc() },
       kind: 'const',
+      loc: nullLoc()
+    }
+  };
+}
+
+function builtinFunc (name: string, numArgs: number): GlobalDeclaration {
+  return {
+    type: 'Func',
+    decl: {
+      type: 'FunctionDeclaration',
+      id: id(name),
+      params: [...Array(numArgs)].map((_, i) => id(`arg${i + 1}`)),
+      requires: [],
+      ensures: [],
+      body: { type: 'BlockStatement', body: [], loc: nullLoc() },
+      freeVars: [],
       loc: nullLoc()
     }
   };
@@ -47,7 +63,8 @@ export function globalDeclarations (): Array<GlobalDeclaration> {
       builtinClass('Function'),
       builtinClass('Array'),
       builtinClass('String'),
-      constVar('console')
+      builtinConst('console'),
+      builtinFunc('parseInt', 2)
     ];
   }
   return cachedGlobalDeclarations;
@@ -199,5 +216,13 @@ function preamble () {
         '(jsstr (str.substr (strv (ite (is-jsstr ', this, ') ', this, ' (String-_str_ ', this, '))) ',
         '(numv ', from, ') (numv ', to - from, ')))'];
     }
+  }
+
+  // @ts-ignore: function never used
+  function parseInt (s: string, n) {
+    requires(typeof s === 'string');
+    requires(n === 10);
+
+    return [ '_builtin_', '(jsnum (str.to.int (strv ', s, ')))'];
   }
 }
