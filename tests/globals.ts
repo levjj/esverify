@@ -75,3 +75,39 @@ describe('parseInt', () => {
   verified('assert: (z === 23)');
   unverified('precondition parseInt("23", 16)');
 });
+
+describe('Math', () => {
+
+  code(() => {
+    function f (x) {
+      requires(typeof x === 'number');
+      ensures(y => y >= 4);
+
+      return Math.max(x, 4);
+    }
+
+    function g (x) {
+      requires(typeof x === 'number');
+      ensures(y => y !== 5);
+
+      return Math.max(x, 4);
+    }
+
+    const z = Math.max(12, 44);
+    assert(z === 44);
+    // @ts-ignore: intentionally using wrong type
+    Math.max('abc', 16);
+  });
+
+  verified('f: Math has property "max"');
+  verified('f: precondition Math.max(x, 4)');
+  verified('f: (y >= 4)');
+  verified('g: Math has property "max"');
+  verified('g: precondition Math.max(x, 4)');
+  incorrect('g: (y !== 5)', ['x', 5]);
+  verified('Math has property "max"');
+  verified('precondition Math.max(12, 44)');
+  verified('assert: (z === 44)');
+  verified('Math has property "max"');
+  unverified('precondition Math.max("abc", 16)');
+});

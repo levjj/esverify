@@ -64,7 +64,8 @@ export function globalDeclarations (): Array<GlobalDeclaration> {
       builtinClass('Array'),
       builtinClass('String'),
       builtinConst('console'),
-      builtinFunc('parseInt', 2)
+      builtinFunc('parseInt', 2),
+      builtinConst('Math')
     ];
   }
   return cachedGlobalDeclarations;
@@ -225,4 +226,13 @@ function preamble () {
 
     return [ '_builtin_', '(jsnum (str.to.int (strv ', s, ')))'];
   }
+
+  // @ts-ignore: var never used
+  const Math = {
+    max: function (n: number, m: number) {
+      requires(typeof n === 'number');
+      requires(typeof m === 'number');
+      ensures(z => z === (n >= m ? n : m));
+    }
+  };
 }
