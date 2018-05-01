@@ -503,9 +503,11 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
       (and (is-jsstr obj) (= (_tostring prop) "length"))
+      (and (is-jsstr obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv obj))))
       (and (is-jsstr obj) (>= (str.to.int (_tostring prop)) 0)
                           (< (str.to.int (_tostring prop)) (str.len (strv obj))))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
+      (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
       (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
