@@ -69,7 +69,7 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
     }
   };
   if (debug) {
-    return it.only(description + ' ' + expected, body);
+    return it.only(description + ' ' + expected, body).timeout(60000);
   } else {
     return it(description + ' ' + expected, body);
   }

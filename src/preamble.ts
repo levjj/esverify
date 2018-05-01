@@ -1,5 +1,5 @@
 import { VCGenerator } from './vcgen';
-import { Classes, Heap, Locs, Vars, P, tru, copy } from './logic';
+import { Classes, Heap, Locs, Vars, P, tru, copy, A } from './logic';
 import { Syntax, TestCode, nullLoc, id } from './javascript';
 import { parseScript } from 'esprima';
 import { programAsJavaScript } from './parser';
@@ -46,6 +46,7 @@ export function globalDeclarations (): Array<GlobalDeclaration> {
       builtinClass('Object'),
       builtinClass('Function'),
       builtinClass('Array'),
+      builtinClass('String'),
       constVar('console')
     ];
   }
@@ -53,12 +54,37 @@ export function globalDeclarations (): Array<GlobalDeclaration> {
 }
 
 class PreambleGenrator extends VCGenerator {
+
   verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string) {
     /* only generate preamble, do not verify */
   }
 
-  visitFunctionBody (f: Syntax.Function, funcName: string, thisArg: string): [P, Syntax.BlockStatement] {
-    return [tru, { type: 'BlockStatement', body: [], loc: nullLoc() }];
+  createFunctionBodyInliner () {
+    return new PreambleGenrator(this.classes,
+                                this.heap + 1,
+                                this.heap + 1,
+                                new Set([...this.locs]),
+                                new Set([...this.vars]),
+                                this.prop);
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): [A, Syntax.Expression] {
+    if (expr.elements.length >= 2) {
+      const tag = expr.elements[0];
+      if (tag.type === 'Literal' && tag.value === '_builtin_') {
+        const smt: Array<string | { e: A }> = [];
+        for (const element of expr.elements.slice(1)) {
+          if (element.type === 'Literal' && typeof element.value === 'string') {
+            smt.push(element.value);
+          } else {
+            const [elementA] = this.visitExpression(element);
+            smt.push({ e: elementA });
+          }
+        }
+        return [{ type: 'RawSMTExpression', smt }, expr];
+      }
+    }
+    return super.visitArrayExpression(expr);
   }
 }
 
@@ -93,6 +119,7 @@ declare const pure: () => boolean;
 
 function preamble () {
   /* tslint:disable:no-unused-expression */
+  /* tslint:disable:variable-name */
 
   class Console {
     log (arg: any) {
@@ -126,5 +153,51 @@ function preamble () {
       ensures(pure());
     }
 
+  }
+
+  // @ts-ignore: class never used
+  class String {
+
+    _str_: string;
+    // @ts-ignore: not assigned in constructors
+    length: number;
+
+    constructor (_str_: string) {
+      this._str_ = _str_;
+    }
+
+    invariant () {
+      return typeof this === 'string' || typeof this._str_ === 'string';
+    }
+
+    substr (from: number, len: number) {
+      requires(typeof from === 'number');
+      requires(typeof len === 'number');
+      requires(from >= 0);
+      requires(len >= 0);
+
+      ensures(pure());
+
+      return [
+        '_builtin_',
+        '(jsstr (str.substr (strv (ite (is-jsstr ', this, ') ', this, ' (String-_str_ ', this, '))) ',
+        '(numv ', from, ') (numv ', len, ')))'];
+    }
+
+    substring (from: number, to: number) {
+      requires(typeof from === 'number');
+      requires(typeof to === 'number');
+      requires(from >= 0);
+      requires(from < this.length);
+      requires(to >= from);
+      requires(to < this.length);
+
+      ensures(pure());
+
+      return [
+        '_builtin_',
+        '(jsstr (str.substr (strv (ite (is-jsstr ', this, ') ', this, ' (String-_str_ ', this, '))) ',
+        '(numv ', from, ') (numv ', to - from, ')))'];
+    }
   }
 }

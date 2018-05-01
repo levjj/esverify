@@ -1116,14 +1116,21 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     return [removePrefix(preBodyProp, this.prop), blockStmt];
   }
 
+  createFunctionBodyInliner () {
+    return new VCGenerator(this.classes,
+                           this.heap + 1,
+                           this.heap + 1,
+                           new Set([...this.locs]),
+                           new Set([...this.vars]),
+                           this.prop);
+  }
+
   visitFunction (fun: Syntax.Function, funcName: string):
                 [TestCode, TestCode, Syntax.BlockStatement, P, Syntax.Identifier] {
     if (fun.type !== 'MethodDeclaration') {
       this.vars.add(funcName);
     }
-    const inliner = new VCGenerator(this.classes, this.heap + 1, this.heap + 1,
-                                    new Set([...this.locs]),
-                                    new Set([...this.vars]), this.prop);
+    const inliner = this.createFunctionBodyInliner();
     inliner.testBody = this.testBody;
     const thisArg = this.freshThisVar();
     const renamedFunc = replaceJSVarFunction('this', id(thisArg), id(thisArg), fun);

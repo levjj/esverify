@@ -253,7 +253,12 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitInstanceOf (prop: Syntax.InstanceOf): SMTInput {
-    return `(instanceof ${this.visitExpr(prop.left)} ${this.visitClassName(prop.right)})`;
+    const instCheck = `(instanceof ${this.visitExpr(prop.left)} ${this.visitClassName(prop.right)})`;
+    if (prop.right === 'String') {
+      return `(or (is-jsstr ${this.visitExpr(prop.left)}) ${instCheck})`;
+    } else {
+      return instCheck;
+    }
   }
 
   visitHasProperty (prop: Syntax.HasProperty): SMTInput {
@@ -293,6 +298,8 @@ function propositionToAssert (prop: P): SMTInput {
 export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, freeVars, p) : p;
   const regClasses: Classes = new Set([...classes].filter(c => c.cls !== 'Array'));
+  const strClass = [...classes].find(({ cls }) => cls === 'String');
+  if (strClass === undefined) throw new Error('cannot find String class');
   return `(set-option :produce-models true)
 (set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
@@ -507,6 +514,16 @@ ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap JSVal${[...Array(i).keys(
 (declare-fun arrelems (Arr Int) JSVal)
 ${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
 
+(define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
+  (or (and (is-jsobj obj) (= cls c_Object))
+      (and (is-jsobj obj) (= cls c_ObjectLiteral))
+      (and (is-jsfun obj) (= cls c_Object))
+      (and (is-jsfun obj) (= cls c_Function))
+${[...classes].map(({ cls }) =>
+`      (and (is-jsobj_${cls} obj) (= cls c_Object))
+      (and (is-jsobj_${cls} obj) (= cls c_${cls}))`).join('\n')}
+))
+
 ; Methods
 ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
 `(declare-fun v_${cls}.${method} () JSVal)\n`).join('')}
@@ -517,6 +534,12 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
       (and (is-jsstr obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv obj))))
       (and (is-jsstr obj) (>= (str.to.int (_tostring prop)) 0)
                           (< (str.to.int (_tostring prop)) (str.len (strv obj))))
+${strClass.methods.map(method =>
+`      (and (is-jsstr obj) (= (_tostring prop) "${method}"))`).join('\n')}
+      (and (is-jsobj_String obj) (= (_tostring prop) "length"))
+      (and (is-jsobj_String obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv (String-_str_ obj)))))
+      (and (is-jsobj_String obj) (>= (str.to.int (_tostring prop)) 0)
+                                 (< (str.to.int (_tostring prop)) (str.len (strv (String-_str_ obj)))))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
       (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
       (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
@@ -537,6 +560,17 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
             (>= (str.to.int (_tostring prop)) 0)
             (< (str.to.int (_tostring prop)) (str.len (strv obj))))
        (jsstr (str.at (strv obj) (str.to.int (_tostring prop))))
+${strClass.methods.map(method =>
+`  (ite (and (is-jsstr obj) (= (_tostring prop) "${method}")) v_String.${method}`).join('\n')}
+  (ite (and (is-jsobj_String obj) (= (_tostring prop) "length")) (jsnum (str.len (strv (String-_str_ obj))))
+  (ite (and (is-jsobj_String obj) (is-jsnum prop)
+            (>= (numv prop) 0)
+            (< (numv prop) (str.len (strv (String-_str_ obj)))))
+       (jsstr (str.at (strv (String-_str_ obj)) (numv prop)))
+  (ite (and (is-jsobj_String obj)
+            (>= (str.to.int (_tostring prop)) 0)
+            (< (str.to.int (_tostring prop)) (str.len (strv (String-_str_ obj)))))
+       (jsstr (str.at (strv (String-_str_ obj)) (str.to.int (_tostring prop))))
   (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
   (ite (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
        (arrelems (arrv obj) (numv prop))
@@ -549,17 +583,7 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
 ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
 `  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${method}")) v_${cls}.${method}`).join('\n')}
   jsundefined
-${flatMap([...classes], ({ cls, fields, methods }) => fields.concat(methods).map(_ => ')')).join('')}))))))))
-
-(define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
-  (or (and (is-jsobj obj) (= cls c_Object))
-      (and (is-jsobj obj) (= cls c_ObjectLiteral))
-      (and (is-jsfun obj) (= cls c_Object))
-      (and (is-jsfun obj) (= cls c_Function))
-${[...classes].map(({ cls }) =>
-`      (and (is-jsobj_${cls} obj) (= cls c_Object))
-      (and (is-jsobj_${cls} obj) (= cls c_${cls}))`).join('\n')}
-))
+${flatMap([strClass,...classes], ({ cls, fields, methods }) => fields.concat(methods).map(_ => ')')).join('')}))))))))))
 
 ; Declarations
 ${[...heaps].map(h => `(declare-fun h_${h} () Heap)\n`).join('')}

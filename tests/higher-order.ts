@@ -233,7 +233,7 @@ describe('function subtyping with stronger post', () => {
     }
   });
 
-  incorrect('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))', ['x', 8460]);
+  incorrect('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))', ['x', 1657]);
 });
 
 describe('function subtyping with weaker post', () => {
