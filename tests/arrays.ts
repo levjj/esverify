@@ -1,4 +1,4 @@
-import { code, incorrect, verified } from './helpers';
+import { code, incorrect, verified, unverified } from './helpers';
 
 declare const assert: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
@@ -51,7 +51,7 @@ describe('simple arrays', () => {
 
   verified('f: a has property 0');
   verified('g: a has property 0');
-  incorrect('g: (res > 3)', ['a', ['number']]);
+  incorrect('g: (res > 3)', ['a', ['number', 'number', 'number', 'number']]);
 
   verified('assert: (a0 instanceof Array)');
   verified('assert: (a0 instanceof Object)');
@@ -158,4 +158,44 @@ describe('array constructor', () => {
   verified('assert: (a[1] === 2)');
   verified('assert: (b.length === 2)');
   verified('assert: (b[1] === 2)');
+});
+
+describe('array slice', () => {
+
+  code(() => {
+    const arr = [1, 2, 3];
+    const sliced = arr.slice(1, 2);
+    assert(sliced[0] === 2);
+
+    function f (a) {
+      requires(a instanceof Array);
+      requires(a.length === 6);
+      ensures(y => y.length === 2);
+      ensures(y => y[1] === a[3]);
+
+      return a.slice(2, 4);
+    }
+
+    function g (a) {
+      requires(a instanceof Array);
+      requires(a.length === 6);
+      ensures(y => y[1] !== a[3]);
+
+      return a.slice(2, 4);
+    }
+
+    const d = [1, 2, 3];
+    d.slice(1, 4);
+  });
+
+  verified('precondition arr.slice(1, 2)');
+  verified('assert: (sliced[0] === 2)');
+  verified('f: a has property "slice"');
+  verified('f: precondition a.slice(2, 4)');
+  verified('f: (y.length === 2)');
+  verified('f: (y[1] === a[3])');
+  verified('g: a has property "slice"');
+  verified('g: precondition a.slice(2, 4)');
+  incorrect('g: (y[1] !== a[3])', ['a', [2, 2, 2, 8, 2, 2]]);
+  unverified('precondition d.slice(1, 4)');
 });

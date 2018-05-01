@@ -35,7 +35,7 @@ describe('simple object access', () => {
   verified('f: a has property "b"');
   verified('f: (res >= 0)');
   verified('g: a has property "b"');
-  incorrect('g: (res < 0)', ['a', { b: 1 }]);
+  incorrect('g: (res < 0)', ['a', { b: 1, length: false }]);
   verified('assert: (a instanceof Object)');
   verified('assert: ("b" in a)');
   verified('assert: (a.b > 22)');

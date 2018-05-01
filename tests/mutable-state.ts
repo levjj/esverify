@@ -178,7 +178,7 @@ describe('global mutable variable with missing invariant', () => {
     }
   });
 
-  incorrect('f: (res > 22)', [{ name: 'x', heap: 3 }, 23], [{ name: 'x', heap: 4 }, false]);
-  incorrect('g: (res > 22)', [{ name: 'y', heap: 3 }, 42], [{ name: 'y', heap: 4 }, 22]);
+  incorrect('f: (res > 22)', [{ name: 'x', heap: 3 }, 23], [{ name: 'x', heap: 4 }, 'number']);
+  incorrect('g: (res > 22)', [{ name: 'y', heap: 3 }, 42], [{ name: 'y', heap: 4 }, 0]);
   verified('h: (res > 22)');
 });

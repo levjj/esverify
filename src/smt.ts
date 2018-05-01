@@ -280,6 +280,7 @@ function propositionToAssert (prop: P): SMTInput {
 
 export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): SMTInput {
   const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, freeVars, p) : p;
+  const regClasses: Classes = new Set([...classes].filter(c => c.cls !== 'Array'));
   return `(set-option :produce-models true)
 (set-option :smt.auto-config false) ; disable automatic self configuration
 (set-option :smt.mbqi false) ; disable model-based quantifier instantiation
@@ -298,7 +299,7 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
   (jsfun (funv Func))
   (jsobj (objv Obj))
   (jsobj_Array (arrv Arr))
-${[...classes].map(({ cls, fields }) =>
+${[...regClasses].map(({ cls, fields }) =>
   fields.length === 0
   ? `    jsobj_${cls}\n`
   : `    (jsobj_${cls} ${fields.map(field => `(${cls}-${field} JSVal)`).join(' ')})\n`
@@ -323,10 +324,9 @@ ${[...classes].map(({ cls, fields }) =>
   (ite (is-jsnull x) "null"
   (ite (is-jsundefined x) "undefined"
   (ite (is-jsfun x) "function () { ... }"
-  (ite (is-jsobj_Array x) "[object Array]"
 ${[...classes].map(({ cls }) =>
   `  (ite (is-jsobj_${cls} x) "[object ${cls}]"`).join('\n')}
-  "[object Object]"${[...classes].map(c => ')').join('')}))))))))
+  "[object Object]"${[...classes].map(c => ')').join('')})))))))
 
 (define-fun _falsy ((x JSVal)) Bool
   (or (is-jsnull x)
@@ -487,7 +487,6 @@ ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap JSVal${[...Array(i).keys(
 (declare-datatypes () ((ClassName
   (c_Object)
   (c_Function)
-  (c_Array)
   (c_ObjectLiteral)${[...classes].map(({ cls }) => `\n  (c_${cls})`).join('')})))
 
 (declare-fun objproperties (Obj) (Array String Bool))
@@ -545,8 +544,6 @@ ${flatMap([...classes], ({ cls, fields, methods }) => fields.concat(methods).map
       (and (is-jsobj obj) (= cls c_ObjectLiteral))
       (and (is-jsfun obj) (= cls c_Object))
       (and (is-jsfun obj) (= cls c_Function))
-      (and (is-jsobj_Array obj) (= cls c_Object))
-      (and (is-jsobj_Array obj) (= cls c_Array))
 ${[...classes].map(({ cls }) =>
 `      (and (is-jsobj_${cls} obj) (= cls c_Object))
       (and (is-jsobj_${cls} obj) (= cls c_${cls}))`).join('\n')}

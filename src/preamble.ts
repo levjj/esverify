@@ -86,15 +86,45 @@ export function generatePreamble (): Preamble {
 
 // --- javascript preamble ---
 
+declare const requires: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
+declare const every: (a: Array<any>, b: ((x: any) => boolean) | ((x: any, y: any) => boolean)) => boolean;
+declare const pure: () => boolean;
+
 function preamble () {
   /* tslint:disable:no-unused-expression */
 
   class Console {
     log (arg: any) {
-      ensures(y => y === undefined);
+      ensures(y => pure() && y === undefined);
     }
   }
   // @ts-ignore: variable only initialized, never read
   const console = new Console();
+
+    // @ts-ignore: class never used
+  class Array {
+
+    // @ts-ignore: not assigned in constructors
+    length: number;
+
+    invariant () {
+      return this.length >= 0;
+    }
+
+    slice (from: number, to: number) {
+      requires(typeof from === 'number');
+      requires(typeof to === 'number');
+      requires(from >= 0);
+      requires(from < this.length);
+      requires(to >= from);
+      requires(to < this.length);
+
+      // @ts-ignore: indexing this
+      ensures(y => every(y, (ele, idx) => ele === this[idx + from]));
+      ensures(y => y.length === to - from);
+      ensures(pure());
+    }
+
+  }
 }

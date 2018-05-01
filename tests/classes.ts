@@ -333,7 +333,7 @@ describe('simple class instance access', () => {
   verified('f: a has property "b"');
   verified('f: (res >= 0)');
   verified('g: a has property "b"');
-  incorrect('g: (res < 0)', ['a', { _cls_: 'A', _args_: [0] }]);
+  incorrect('g: (res < 0)', ['a', { _cls_: 'A', _args_: [7719] }]);
   verified('class invariant A');
   verified('assert: (a instanceof A)');
   verified('assert: (a instanceof Object)');
@@ -461,11 +461,11 @@ describe('methods calling other methods', () => {
   verified('p: precondition this.n(4)');
   verified('p: (y >= 0)');
   verified('q: this has property "n"');
-  incorrect('q: precondition this.n(2)', ['_this_5', { _cls_: 'A', _args_: [0] }]);
-  incorrect('q: this has property "x"', ['_this_5', { _cls_: 'A', _args_: [0] }]);
-  incorrect('q: precondition this.x()', ['_this_5', { _cls_: 'A', _args_: [-1] }]);
+  incorrect('q: precondition this.n(2)', ['_this_6', { _cls_: 'A', _args_: [1] }]);
+  incorrect('q: this has property "x"', ['_this_6', { _cls_: 'A', _args_: [1] }]);
+  incorrect('q: precondition this.x()', ['_this_6', { _cls_: 'A', _args_: [-1] }]);
   verified('r: this has property "n"');
-  incorrect('r: precondition this.n(2)', ['_this_6', { _cls_: 'A', _args_: [0] }]);
+  incorrect('r: precondition this.n(2)', ['_this_7', { _cls_: 'A', _args_: [1] }]);
   verified('class invariant A');
   verified('a has property "m"');
   verified('precondition a.m(4)');

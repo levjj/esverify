@@ -24,7 +24,7 @@ describe('string concatenation', () => {
     assert(s2 + s1 === 'helloworld');
   });
 
-  incorrect('f: (z === "abc")', ['x', 'a'], ['y', 'b']);
+  incorrect('f: (z === "abc")', ['x', ''], ['y', 'ab']);
   verified('assert: (s3 === "hello world")');
   verified('assert: (((s1 + " ") + s2) === "hello world")');
   incorrect('assert: ((s2 + s1) === "helloworld")');
