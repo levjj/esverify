@@ -138,40 +138,18 @@ declare const pure: () => boolean;
 
 function preamble () {
   /* tslint:disable:no-unused-expression */
+  /* tslint:disable:strict-type-predicates */
   /* tslint:disable:variable-name */
 
-  // @ts-ignore: variable only initialized, never read
-  const console = {
-    log: function (arg: any) {
-      ensures(y => pure() && y === undefined);
+  // @ts-ignore: var never used
+  const Number = {
+
+    isInteger: function (n: number): boolean {
+      ensures(pure());
+    // @ts-ignore: var never used
+      return [ '_builtin_', '(jsbool (is-jsint ', n, '))'];
     }
   };
-
-    // @ts-ignore: class never used
-  class Array {
-
-    // @ts-ignore: not assigned in constructors
-    length: number;
-
-    invariant () {
-      return this.length >= 0;
-    }
-
-    slice (from: number, to: number) {
-      requires(Number.isInteger(from));
-      requires(Number.isInteger(to));
-      requires(from >= 0);
-      requires(from < this.length);
-      requires(to >= from);
-      requires(to < this.length);
-
-      // @ts-ignore: indexing this
-      ensures(y => every(y, (ele, idx) => ele === this[idx + from]));
-      ensures(y => y.length === to - from);
-      ensures(pure());
-    }
-
-  }
 
   // @ts-ignore: class never used
   class String {
@@ -219,14 +197,29 @@ function preamble () {
     }
   }
 
-  // @ts-ignore: function never used
-  function parseInt (s: string, n) {
-    requires(typeof s === 'string');
-    requires(n === 10);
+  // @ts-ignore: class never used
+  class Array {
 
-    ensures(pure());
+    // @ts-ignore: not assigned in constructors
+    length: number;
 
-    return [ '_builtin_', '(jsint (str.to.int (strv ', s, ')))'];
+    invariant () {
+      return this.length >= 0;
+    }
+
+    slice (from: number, to: number) {
+      requires(Number.isInteger(from));
+      requires(Number.isInteger(to));
+      requires(from >= 0);
+      requires(from < this.length);
+      requires(to >= from);
+      requires(to < this.length);
+
+      // @ts-ignore: indexing this
+      ensures(y => every(y, (ele, idx) => ele === this[idx + from]));
+      ensures(y => y.length === to - from);
+      ensures(pure());
+    }
   }
 
   // @ts-ignore: var never used
@@ -251,13 +244,21 @@ function preamble () {
     }
   };
 
-  // @ts-ignore: var never used
-  const Number = {
+  // @ts-ignore: function never used
+  function parseInt (s: string, n) {
+    requires(typeof s === 'string');
+    requires(n === 10);
 
-    isInteger: function (n: number): boolean {
-      ensures(pure());
-    // @ts-ignore: var never used
-      return [ '_builtin_', '(jsbool (is-jsint ', n, '))'];
+    ensures(pure());
+
+    return [ '_builtin_', '(jsint (str.to.int (strv ', s, ')))'];
+  }
+
+  // @ts-ignore: variable only initialized, never read
+  const console = {
+
+    log: function (arg: any) {
+      ensures(y => pure() && y === undefined);
     }
   };
 }

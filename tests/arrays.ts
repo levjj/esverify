@@ -51,7 +51,7 @@ describe('simple arrays', () => {
 
   verified('f: a has property 0');
   verified('g: a has property 0');
-  incorrect('g: (res > 3)', ['a', [false, false, false]]);
+  incorrect('g: (res > 3)', ['a', [false, false]]);
 
   verified('assert: (a0 instanceof Array)');
   verified('assert: (a0 instanceof Object)');
@@ -137,7 +137,7 @@ describe('array invariants', () => {
   verified('f_4: every(res, (e, i) => (e > i))');
   incorrect('g_1: every(res, e => (e > 23))');
   verified('g_2: a has property 0');
-  incorrect('g_2: (res > 42)', ['a', [42, 42]]);
+  incorrect('g_2: (res > 42)', ['a', [24, 24]]);
   incorrect('g_3: (a[2] > 12)', ['a', []]);
   incorrect('g_4: every(res, (e, i) => (e > i))');
 });
@@ -196,6 +196,6 @@ describe('array slice', () => {
   verified('f: (y[1] === a[3])');
   verified('g: a has property "slice"');
   verified('g: precondition a.slice(2, 4)');
-  incorrect('g: (y[1] !== a[3])', ['a', [2, 2, 2, 8, 2, 2]]);
+  incorrect('g: (y[1] !== a[3])', ['a', [2, 2, 2, 12, 2, 2]]);
   unverified('precondition d.slice(1, 4)');
 });

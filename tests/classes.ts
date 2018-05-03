@@ -333,7 +333,7 @@ describe('simple class instance access', () => {
   verified('f: a has property "b"');
   verified('f: (res >= 0)');
   verified('g: a has property "b"');
-  incorrect('g: (res < 0)', ['a', { _cls_: 'A', _args_: [0] }]);
+  incorrect('g: (res < 0)', ['a', { _cls_: 'A', _args_: [7719] }]);
   verified('class invariant A');
   verified('assert: (a instanceof A)');
   verified('assert: (a instanceof Object)');
