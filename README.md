@@ -1,6 +1,7 @@
 # esverify
 
 [![Build Status](https://travis-ci.org/levjj/esverify.svg?branch=master)](https://travis-ci.org/levjj/esverify)
+[![NPM Version](https://img.shields.io/npm/v/esverify.svg)](https://www.npmjs.com/package/esverify)
 
 Program Verification for ECMAScript/JavaScript ([esverify.org](http://esverify.org/)).
 
@@ -37,7 +38,7 @@ More examples can be found in the `tests` directory.
 
 ## Supported Features
 
-* expressions with boolean values, integer arithmetic and strings
+* expressions with boolean values, strings, integer and real number arithmetic
 * function pre- and postconditions as well as inline assertions and invariants
 * automatically generates counter-examples for failed assertions
 * runs counter-example as JavaScript code to reproduce errors in dynamic context
@@ -51,41 +52,63 @@ More examples can be found in the `tests` directory.
 * closures
 * checking of function purity
 * higher-order functions
-* simple and higher-order proofs
-* simple immutable classes with invariants (no methods or inheritance)
+* simple proof checking using Curry-Howard correspondence
+* simple immutable classes with fields, methods and class invariant (no inheritance)
+* immutable JavaScript objects using string keys
+* immutable arrays (no sparse arrays)
+* restricted verifier preamble for global objects such as `console` and `Math`
 
 It is based on the [z3](https://github.com/Z3Prover/z3) SMT solver but avoids
-trigger heuristics and thereby timeouts and other unpredictable results by
-requiring manual instantiation with function calls which will be used for a
-deterministic trigger instantiation.
+trigger heuristics and thereby (most) timeouts and other unpredictable results by
+requiring manual instantiation. Function definitions and class invariants correspond
+to universal quantifiers and function calls and field access act as triggers that
+instantiate these quantifiers in a deterministic way.
 
 ## To Do
 
 * termination checking
-* improved support for classes, generic objects and arrays
-* modules
+* mutable objects, arrays and classes
+* modules with imports and exports
+* prototype and subclass inheritance
+* verifier-only "ghost" variables, arguments and functions/predicates
 * TypeScript as input language
 
 ## Usage as Command Line Tool
 
+Simple usage without installation:
+
+```
+$ npx esverify myfile.js
+```
+
+Installation:
+
 ```
 $ npm install -g esverify
+```
 
-...
+Command Line Options:
 
+```
 $ esverify --help
 Usage: esverify [OPTIONS] FILE
 
 Options:
-  -f, --logformat FORMAT  Format can be either "simple" or "colored"
-                          (default format is "colored")
   --z3path PATH           Path to local z3 executable
                           (default path is "z3")
   -r, --remote            Invokes z3 remotely via HTTP request
   --z3url URL             URL to remote z3 web server
+  --noqi                  Disables quantifier instantiations
+  -t, --timeout SECS      Sets timeout in seconds for z3
+                          (default timeout is 10s, 0 disables timeout)
+  -f, --logformat FORMAT  Format can be either "simple" or "colored"
+                          (default format is "colored")
   -q, --quiet             Suppresses output
+  -v, --verbose           Prints SMT input, output and test code
+  --logsmt PATH           Path for logging SMT input in verbose mode
+                          (default path is "/tmp/vc.smt")
   -h, --help              Prints this help text and exit
-  -v, --version           Prints version information
+  --version               Prints version information
 ```
 
 ## Usage as Library
@@ -96,7 +119,7 @@ Installation via npm:
 $ npm install esverify --save
 ```
 
-Can now import `verify` which returns a promise of messages:
+Import `verify` and invoke on source code to receive a promise of messages.
 
 ```js
 import { verify } from "esverify";
@@ -112,14 +135,18 @@ The options and returned messages have the following structure:
 type opts = {
   filename: string,
   logformat: "simple" | "colored" = "colored",
-  quiet: boolean = true,
   z3path: string = "z3",
   z3url: string,
-  remote: boolean = false
+  remote: boolean = false,
+  quiet: true,
+  verbose: false,
+  logsmt: '/tmp/vc.smt'
+  timeout: 5,
+  qi: true
 }
 
 type msg = {
-  status: "verified" | "unverified" | "error",
+  status: "verified" | "unverified" | "timeout" | "error",
   loc: { file: string, start: { line: number, column: number },
                        end:   { line: number, column: number }},
   description: string
