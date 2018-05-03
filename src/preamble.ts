@@ -140,13 +140,12 @@ function preamble () {
   /* tslint:disable:no-unused-expression */
   /* tslint:disable:variable-name */
 
-  class Console {
-    log (arg: any) {
+  // @ts-ignore: variable only initialized, never read
+  const console = {
+    log: function (arg: any) {
       ensures(y => pure() && y === undefined);
     }
-  }
-  // @ts-ignore: variable only initialized, never read
-  const console = new Console();
+  };
 
     // @ts-ignore: class never used
   class Array {
