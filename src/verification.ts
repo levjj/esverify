@@ -60,8 +60,10 @@ export default class VerificationCondition {
   runTest (model: Model | undefined): Message {
     if (model === undefined) {
       if (!this.result) throw new Error('no model available');
-      if (this.result.status === 'verified' || this.result.status === 'unknown') throw new Error('no model available');
-      if (this.result.status === 'error' && this.result.type !== 'incorrect') throw new Error('no model available');
+      if (this.result.status === 'verified' || this.result.status === 'unknown' || this.result.status === 'timeout' ||
+         (this.result.status === 'error' && this.result.type !== 'incorrect')) {
+        throw new Error('no model available');
+      }
       return this.runTest(this.result.model);
     } else {
       const code = this.testCode(model);
@@ -121,6 +123,8 @@ export default class VerificationCondition {
       return { status: 'verified', description: this.description, loc: this.loc };
     } else if (out && out.startsWith('unknown')) {
       return { status: 'unknown', description: this.description, loc: this.loc };
+    } else if (out && out.startsWith('timeout')) {
+      return { status: 'timeout', description: this.description, loc: this.loc };
     } else {
       return unexpected(new Error('unexpected: ' + out), this.loc);
     }
@@ -163,7 +167,7 @@ export default class VerificationCondition {
     }
     p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
       const spawn = require('child_process').spawn;
-      const p = spawn(options.z3path, ['-smt2', '-in'], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const p = spawn(options.z3path, [`-T:${options.timeout}`, '-smt2', '-in'], { stdio: ['pipe', 'pipe', 'ignore'] });
       let result: string = '';
       p.stdout.on('data', (data: Object) => { result += data.toString(); });
       p.on('exit', (code: number) => {

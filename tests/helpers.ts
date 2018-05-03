@@ -34,12 +34,12 @@ export function code (fn: () => any) {
   });
 }
 
-function helper (expected: 'verified' | 'unverified' | 'incorrect', description: string,
+function helper (expected: 'verified' | 'unverified' | 'incorrect' | 'timeout', description: string,
                  debug: boolean, expectedModel: Map<FreeVar, any>): Mocha.ITest {
   const body = async () => {
     /* tslint:disable:no-unused-expression */
     if (debug) {
-      setOptions({ quiet: false, verbose: true });
+      setOptions({ quiet: false, verbose: true, timeout: 60 });
       console.log(savedVCs.map(vc => vc.description).join('\n'));
     }
     const vc = savedVCs.find(v => v.description === description);
@@ -55,6 +55,8 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect', description:
           expect(res.model.valueOf(v)).to.eql(plainToJSVal(expectedModel.get(v)));
         }
       }
+    } else if (expected === 'timeout') {
+      expect(res.status).to.eql('timeout');
     } else {
       expect(res.status).to.equal('error');
       if (res.status === 'error') {
@@ -105,5 +107,11 @@ export const incorrect: UnverifiedFun = (() => {
     helper('incorrect', description, false, new Map(expectedVariables));
   f.debug = (description: string, ...expectedVariables: Array<[FreeVar, any]>): Mocha.ITest =>
     helper('incorrect', description, true, new Map(expectedVariables));
+  return f;
+})();
+
+export const timeout: VerifiedFun = (() => {
+  const f: any = (description: string): Mocha.ITest => helper('timeout', description, false, new Map()).timeout(6000);
+  f.debug = (description: string): Mocha.ITest => helper('timeout', description, true, new Map());
   return f;
 })();

@@ -4,6 +4,7 @@ export interface Options {
   remote: boolean;
   z3url: string;
   qi: boolean;
+  timeout: number;
   logformat: 'simple' | 'colored';
   quiet: boolean;
   verbose: boolean;
@@ -16,6 +17,7 @@ const defaultOptions: Readonly<Options> = {
   remote: false,
   z3url: '/z3',
   qi: true,
+  timeout: 5,
   logformat: 'colored',
   quiet: true,
   verbose: false,

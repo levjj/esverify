@@ -17,6 +17,8 @@ function usage (err) {
   console.log('  -r, --remote            Invokes z3 remotely via HTTP request');
   console.log('  --z3url URL             URL to remote z3 web server');
   console.log('  --noqi                  Disables quantifier instantiations');
+  console.log('  -t, --timeout SECS      Sets timeout in seconds for z3');
+  console.log('                          (default timeout is 10s, 0 disables timeout)');
   console.log('  -f, --logformat FORMAT  Format can be either "simple" or "colored"');
   console.log('                          (default format is "colored")');
   console.log('  -q, --quiet             Suppresses output');
@@ -30,9 +32,8 @@ function usage (err) {
 
 var opts = minimist(process.argv.slice(2), {
   boolean: ['noqi', 'remote', 'quiet', 'verbose', 'help', 'version'],
-  string: ['logformat', 'z3path', 'z3url', 'logsmt'],
-  default: { quiet: false },
-  alias: {r: 'remote', f: 'logformat', q: 'quiet', v: 'verbose', h: 'help' },
+  string: ['logformat', 'z3path', 'z3url', 'logsmt', 'timeout'],
+  alias: {r: 'remote', f: 'logformat', q: 'quiet', t: 'timeout', v: 'verbose', h: 'help' },
   unknown: function(opt) { return opt[0] == '-' && opt != '-' ? usage(true) : true; }
 });
 if (opts.version) {
@@ -41,6 +42,10 @@ if (opts.version) {
 }
 if (opts._.length != 1 || opts.help) usage(!opts.help);
 opts.qi = !opts['noqi'];
+if (opts.hasOwnProperty('timeout')) {
+  opts.timeout = parseInt(opts.timeout, 10);
+  if (!Number.isInteger(opts.timeout) || opts.timeout < 0) usage(true);
+}
 opts.filename = opts._[0];
 
 function run (err, js) {

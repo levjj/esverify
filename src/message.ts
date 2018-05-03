@@ -8,6 +8,7 @@ export interface Verified extends BaseMessage { status: 'verified'; }
 
 export interface Unverified extends BaseMessage { status: 'unverified'; model: Model; }
 export interface Unknown extends BaseMessage { status: 'unknown'; }
+export interface TimeOut extends BaseMessage { status: 'timeout'; }
 
 export interface BaseError extends BaseMessage { status: 'error'; type: string; }
 export interface Incorrect extends BaseError { type: 'incorrect'; model: Model; error: Error; }
@@ -19,9 +20,9 @@ export interface AssignmentToConst extends BaseError { type: 'assignment-to-cons
 export interface ReferenceInInvariant extends BaseError { type: 'reference-in-invariant'; }
 export interface ModelError extends BaseError { type: 'unrecognized-model'; }
 export interface UnexpectedError extends BaseError { type: 'unexpected'; error: Error; }
-export type Message = Verified | Unverified | Unknown | Incorrect | ParseError | Unsupported | UndefinedIdentifier
-                    | AlreadyDefinedIdentifier | AssignmentToConst | ReferenceInInvariant | ModelError
-                    | UnexpectedError;
+export type Message = Verified | Unverified | TimeOut | Unknown | Incorrect | ParseError | Unsupported
+                    | UndefinedIdentifier | AlreadyDefinedIdentifier | AssignmentToConst | ReferenceInInvariant
+                    | ModelError | UnexpectedError;
 
 declare const console: { log: (s: string) => void, warn: (s: string) => void, error: (s: string) => void };
 
@@ -29,7 +30,7 @@ function formatSimple (msg: Message): string {
   const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;
   if (msg.status === 'verified') {
     return `${loc}: info: verified ${msg.description}`;
-  } else if (msg.status === 'unverified' || msg.status === 'unknown') {
+  } else if (msg.status === 'unverified' || msg.status === 'unknown' || msg.status === 'timeout') {
     return `${loc}: warning: ${msg.status} ${msg.description}`;
   } else {
     return `${loc}: error: ${msg.type} ${msg.description}`;
@@ -40,7 +41,7 @@ function formatColored (msg: Message): string {
   const loc = `${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}`;
   if (msg.status === 'verified') {
     return `[${loc}] \x1b[92mverified\x1b[0m ${msg.description}`;
-  } else if (msg.status === 'unverified' || msg.status === 'unknown') {
+  } else if (msg.status === 'unverified' || msg.status === 'unknown' || msg.status === 'timeout') {
     return `[${loc}] \x1b[94m${msg.status}\x1b[0m ${msg.description}`;
   } else {
     return `[${loc}] \x1b[91m${msg.type}\x1b[0m ${msg.description}`;
