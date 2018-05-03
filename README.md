@@ -39,7 +39,7 @@ More examples can be found in the `tests` directory.
 ## Supported Features
 
 * expressions with boolean values, strings, integer and real number arithmetic
-* function pre- and postconditions as well as inline assertions and invariants
+* function pre- and post conditions as well as inline assertions and invariants
 * automatically generates counter-examples for failed assertions
 * runs counter-example as JavaScript code to reproduce errors in dynamic context
   and differentiate incorrect programs from false negatives
@@ -78,7 +78,7 @@ instantiate these quantifiers in a deterministic way.
 Simple usage without installation:
 
 ```
-$ npx esverify myfile.js
+$ npx esverify file.js
 ```
 
 Installation:
@@ -125,13 +125,13 @@ Import `verify` and invoke on source code to receive a promise of messages.
 import { verify } from "esverify";
 
 const opts = { };
-const msgs = await verify("assert(1 > 2);", opts);
-msgs.forEach(msg => console.log(msg.status));
+const messages = await verify("assert(1 > 2);", opts);
+messages.forEach(msg => console.log(msg.status));
 ```
 
 The options and returned messages have the following structure:
 
-```TypeScript
+```ts
 type opts = {
   filename: string,
   logformat: "simple" | "colored" = "colored",
@@ -162,6 +162,14 @@ is available online at [esverify.org/try](http://esverify.org/try).
 
 Additionally, there is a [Vim Plugin](https://github.com/levjj/esverify-vim)
 which displays verification results inline.
+
+## License
+
+[MIT License](https://github.com/levjj/esverify/blob/master/LICENSE)
+
+## Issues
+
+Please report bugs to the [GitHub Issue Tracker](https://github.com/levjj/esverify/issues). esverify is currently developed and maintained by [Christopher Schuster](https://livoris.net/).
 
 ## Acknowledgements
 
