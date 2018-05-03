@@ -4,12 +4,12 @@ var fs = require('fs');
 var minimist = require('minimist2');
 var esverify = require('../build/main/index.js');
 
-function error(msg) {
+function error (msg) {
   console.error(msg);
   process.exit(1);
 }
 
-function usage(err) {
+function usage (err) {
   console.log('Usage: esverify [OPTIONS] FILE\n');
   console.log('Options:');
   console.log('  --z3path PATH           Path to local z3 executable');
@@ -43,7 +43,7 @@ if (opts._.length != 1 || opts.help) usage(!opts.help);
 opts.qi = !opts['noqi'];
 opts.filename = opts._[0];
 
-function run(err, js) {
+function run (err, js) {
   if (err) error('Error: ' + err.message);
   esverify.verify(js.toString(), opts)
     .then(msgs => msgs.some(msg => msg.status != 'verified') && error('failed'));
