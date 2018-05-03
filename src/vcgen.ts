@@ -447,16 +447,18 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     };
     const specT: Array<Syntax.Statement> = [];
     if (this.simpleAssertion && isValidAssignmentTarget(assertion.callee)) {
-      specT.push({
-        type: 'ExpressionStatement',
-        expression: {
-          type: 'AssignmentExpression',
-          left: calleeE,
-          right: this.insertWrapper(calleeE, assertion.loc, assertion.args.map(a => id(a)), rT, retName, sT),
+      if (rT.length + sT.length > 0) {
+        specT.push({
+          type: 'ExpressionStatement',
+          expression: {
+            type: 'AssignmentExpression',
+            left: calleeE,
+            right: this.insertWrapper(calleeE, assertion.loc, assertion.args.map(a => id(a)), rT, retName, sT),
+            loc: assertion.loc
+          },
           loc: assertion.loc
-        },
-        loc: assertion.loc
-      });
+        });
+      }
       if (this.assertionPolarity) {
         if (specP.type !== 'And' || specP.clauses.length !== 2) {
           throw new Error('expected spec to translate to [fnCheck, forAll]');
@@ -844,7 +846,11 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       freeVars: expr.freeVars,
       loc: expr.loc
     };
-    return [callee, this.insertWrapper(testFuncExpr, expr.loc, expr.params, preTestCode, retVar, postTestCode)];
+    if (preTestCode.length + postTestCode.length > 0) {
+      return [callee, this.insertWrapper(testFuncExpr, expr.loc, expr.params, preTestCode, retVar, postTestCode)];
+    } {
+      return [callee, testFuncExpr];
+    }
   }
 
   tryStatement (pre: P, stmt: Syntax.Statement): [Heap, P, TestCode, BreakCondition] {
@@ -1203,7 +1209,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
     const [preTestCode, postTestCode, blockStmt, inlinedSpec, retVar] = this.visitFunction(stmt, stmt.id.name);
-    this.have(inlinedSpec, [{
+    const testCode: Array<Syntax.Statement> = [{
       type: 'FunctionDeclaration',
       id: stmt.id,
       params: stmt.params,
@@ -1212,16 +1218,20 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       body: blockStmt,
       freeVars: stmt.freeVars,
       loc: stmt.loc
-    }, {
-      type: 'ExpressionStatement',
-      expression: {
-        type: 'AssignmentExpression',
-        left: stmt.id,
-        right: this.insertWrapper(stmt.id, stmt.loc, stmt.params, preTestCode, retVar, postTestCode),
+    }];
+    if (preTestCode.length + postTestCode.length > 0) {
+      testCode.push({
+        type: 'ExpressionStatement',
+        expression: {
+          type: 'AssignmentExpression',
+          left: stmt.id,
+          right: this.insertWrapper(stmt.id, stmt.loc, stmt.params, preTestCode, retVar, postTestCode),
+          loc: stmt.loc
+        },
         loc: stmt.loc
-      },
-      loc: stmt.loc
-    }]);
+      });
+    }
+    this.have(inlinedSpec, testCode);
     return fls;
   }
 
@@ -1309,7 +1319,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
         params: method.params,
         requires: [],
         ensures: [],
-        body: {
+        body: preTestCode.length + postTestCode.length === 0 ? blockStmt : {
           type: 'BlockStatement',
           body: [{
             type: 'FunctionDeclaration',
