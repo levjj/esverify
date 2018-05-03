@@ -112,7 +112,7 @@ let cachedPreamble: Preamble | null = null;
 export function generatePreamble (): Preamble {
   if (cachedPreamble === null) {
     let preambleSource = preamble.toString();
-    preambleSource = preambleSource.substring(72, preambleSource.length - 2); // extract body from function
+    preambleSource = preambleSource.substring(21, preambleSource.length - 1); // extract body from function
     let preambleProgram: Syntax.Program = programAsJavaScript(parseScript(preambleSource, { loc: true }));
     resolveNames(preambleProgram, false);
     const vcgen = new PreambleGenrator(new Set(), 0, 0, new Set(), new Set(), tru);
