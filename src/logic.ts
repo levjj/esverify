@@ -54,10 +54,14 @@ export namespace Syntax {
                                       object: Expression;
                                       property: Expression; }
   export interface ArrayIndexExpression { type: 'ArrayIndexExpression';
-                                          array: Expression; // assumes JSVal(Array)
-                                          index: Expression; } // assumes in-bounds JSVal(num)
+                                          array: Expression; // assumes is-jsobj_Array
+                                          index: Expression; } // assumes is-jsint
   export interface RawSMTExpression { type: 'RawSMTExpression'; // only used for preamble
-                                      smt: Array<string | { e: Expression }>; } // e.g. ['(is-jsnum ', {v: 'x'},')']
+                                      smt: Array<string | { e: Expression }>; } // e.g. ['(is-jsint ', {v: 'x'},')']
+  export interface IsIntegerExpression { type: 'IsIntegerExpression';
+                                         expression: Expression; }
+  export interface ToIntegerExpression { type: 'ToIntegerExpression';
+                                         expression: Expression; }
   export type Expression = Variable
                          | HeapReference
                          | Literal
@@ -68,7 +72,9 @@ export namespace Syntax {
                          | NewExpression
                          | MemberExpression
                          | ArrayIndexExpression
-                         | RawSMTExpression;
+                         | RawSMTExpression
+                         | IsIntegerExpression
+                         | ToIntegerExpression;
 
   export interface Truthy { type: 'Truthy';
                             expr: Expression; }
@@ -315,6 +321,12 @@ export function eqExpr (exprA: A, exprB: A): boolean {
                if (typeof e2 === 'string') return false;
                return eqExpr(e.e, e2.e);
              });
+    case 'IsIntegerExpression':
+      return exprA.type === exprB.type &&
+             eqExpr(exprA.expression, exprB.expression);
+    case 'ToIntegerExpression':
+      return exprA.type === exprB.type &&
+             eqExpr(exprA.expression, exprB.expression);
   }
 }
 
@@ -420,6 +432,8 @@ export abstract class Visitor<L,H,R,S> {
   abstract visitMemberExpression (expr: Syntax.MemberExpression): R;
   abstract visitArrayIndexExpression (expr: Syntax.ArrayIndexExpression): R;
   abstract visitRawSMTExpression (expr: Syntax.RawSMTExpression): R;
+  abstract visitIsIntegerExpression (expr: Syntax.IsIntegerExpression): R;
+  abstract visitToIntegerExpression (expr: Syntax.ToIntegerExpression): R;
 
   abstract visitTruthy (prop: Syntax.Truthy): S;
   abstract visitAnd (prop: Syntax.And): S;
@@ -462,6 +476,8 @@ export abstract class Visitor<L,H,R,S> {
       case 'MemberExpression': return this.visitMemberExpression(expr);
       case 'ArrayIndexExpression': return this.visitArrayIndexExpression(expr);
       case 'RawSMTExpression': return this.visitRawSMTExpression(expr);
+      case 'IsIntegerExpression': return this.visitIsIntegerExpression(expr);
+      case 'ToIntegerExpression': return this.visitToIntegerExpression(expr);
     }
   }
 
@@ -559,6 +575,14 @@ export abstract class Reducer<R> extends Visitor<R,R,R,R> {
   visitRawSMTExpression (expr: Syntax.RawSMTExpression): R {
     const smtExprs: Array<{ e: A }> = expr.smt.filter(a => typeof a !== 'string') as Array<{ e: A }>;
     return this.r(...smtExprs.map(a => this.visitExpr(a.e)));
+  }
+
+  visitIsIntegerExpression (expr: Syntax.IsIntegerExpression): R {
+    return this.visitExpr(expr.expression);
+  }
+
+  visitToIntegerExpression (expr: Syntax.ToIntegerExpression): R {
+    return this.visitExpr(expr.expression);
   }
 
   visitTruthy (prop: Syntax.Truthy): R {
@@ -759,6 +783,20 @@ export class Transformer extends Visitor<Syntax.Location, Syntax.HeapExpression,
     return {
       type: 'RawSMTExpression',
       smt: expr.smt.map(a => typeof a === 'string' ? a : { e: this.visitExpr(a.e) })
+    };
+  }
+
+  visitIsIntegerExpression (expr: Syntax.IsIntegerExpression): A {
+    return {
+      type: 'IsIntegerExpression',
+      expression: this.visitExpr(expr.expression)
+    };
+  }
+
+  visitToIntegerExpression (expr: Syntax.ToIntegerExpression): A {
+    return {
+      type: 'ToIntegerExpression',
+      expression: this.visitExpr(expr.expression)
     };
   }
 

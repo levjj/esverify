@@ -63,6 +63,14 @@ class Stringifier extends Visitor<string, string, string, string> {
     }
   }
 
+  visitIsIntegerTerm (term: Syntax.IsIntegerTerm): string {
+    return `Number.isInteger(${this.visitTerm(term.term)})`;
+  }
+
+  visitToIntegerTerm (term: Syntax.ToIntegerTerm): string {
+    return `Math.trunc(${this.visitTerm(term.term)})`;
+  }
+
   visitTermAssertion (assertion: Syntax.Term): string {
     return this.visitTerm(assertion);
   }

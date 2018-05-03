@@ -65,7 +65,8 @@ export function globalDeclarations (): Array<GlobalDeclaration> {
       builtinClass('String'),
       builtinConst('console'),
       builtinFunc('parseInt', 2),
-      builtinConst('Math')
+      builtinConst('Math'),
+      builtinConst('Number')
     ];
   }
   return cachedGlobalDeclarations;
@@ -158,8 +159,8 @@ function preamble () {
     }
 
     slice (from: number, to: number) {
-      requires(typeof from === 'number');
-      requires(typeof to === 'number');
+      requires(Number.isInteger(from));
+      requires(Number.isInteger(to));
       requires(from >= 0);
       requires(from < this.length);
       requires(to >= from);
@@ -189,8 +190,8 @@ function preamble () {
     }
 
     substr (from: number, len: number) {
-      requires(typeof from === 'number');
-      requires(typeof len === 'number');
+      requires(Number.isInteger(from));
+      requires(Number.isInteger(len));
       requires(from >= 0);
       requires(len >= 0);
 
@@ -199,12 +200,12 @@ function preamble () {
       return [
         '_builtin_',
         '(jsstr (str.substr (strv (ite (is-jsstr ', this, ') ', this, ' (String-_str_ ', this, '))) ',
-        '(numv ', from, ') (numv ', len, ')))'];
+        '(intv ', from, ') (intv ', len, ')))'];
     }
 
     substring (from: number, to: number) {
-      requires(typeof from === 'number');
-      requires(typeof to === 'number');
+      requires(Number.isInteger(from));
+      requires(Number.isInteger(to));
       requires(from >= 0);
       requires(from < this.length);
       requires(to >= from);
@@ -215,7 +216,7 @@ function preamble () {
       return [
         '_builtin_',
         '(jsstr (str.substr (strv (ite (is-jsstr ', this, ') ', this, ' (String-_str_ ', this, '))) ',
-        '(numv ', from, ') (numv ', to - from, ')))'];
+        '(intv ', from, ') (intv ', to - from, ')))'];
     }
   }
 
@@ -224,15 +225,40 @@ function preamble () {
     requires(typeof s === 'string');
     requires(n === 10);
 
-    return [ '_builtin_', '(jsnum (str.to.int (strv ', s, ')))'];
+    ensures(pure());
+
+    return [ '_builtin_', '(jsint (str.to.int (strv ', s, ')))'];
   }
 
   // @ts-ignore: var never used
   const Math = {
+
     max: function (n: number, m: number) {
       requires(typeof n === 'number');
       requires(typeof m === 'number');
+
+      ensures(pure());
       ensures(z => z === (n >= m ? n : m));
+    },
+
+    random: function () {
+      ensures(pure());
+      ensures(z => typeof z === 'number' && 0 <= z && z < 1.0);
+    },
+
+    trunc: function (n: number) {
+      requires(typeof n === 'number');
+      return [ '_builtin_', '(jsint (_toint ', n, '))'];
+    }
+  };
+
+  // @ts-ignore: var never used
+  const Number = {
+
+    isInteger: function (n: number): boolean {
+      ensures(pure());
+    // @ts-ignore: var never used
+      return [ '_builtin_', '(jsbool (is-jsint ', n, '))'];
     }
   };
 }

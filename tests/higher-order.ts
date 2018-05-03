@@ -17,7 +17,7 @@ describe('fibonacci increasing (external proof)', () => {
     }
 
     function fibInc (n) {
-      requires(typeof(n) === 'number');
+      requires(Number.isInteger(n));
       requires(n >= 0);
       ensures(fib(n) >= n);
       ensures(pure());
@@ -40,15 +40,15 @@ describe('simple higher-order functions', () => {
 
   code(() => {
     function inc (n) {
-      requires(typeof(n) === 'number');
-      ensures(res => res > n);
+      requires(Number.isInteger(n));
+      ensures(res => Number.isInteger(res) && res > n);
 
       return n + 1;
     }
 
     function twice (f, n) {
-      requires(spec(f, (x) => typeof(x) === 'number', (x,y) => y > x));
-      requires(typeof(n) === 'number');
+      requires(spec(f, x => Number.isInteger(x), (x, y) => Number.isInteger(y) && y > x));
+      requires(Number.isInteger(n));
       ensures(res => res > n + 1);
 
       return f(f(n));
@@ -56,24 +56,25 @@ describe('simple higher-order functions', () => {
 
     const x = 3;
     const y = twice(inc, x);
-    assert(y >= 5);
+    assert(y > 4);
   });
 
-  verified('inc: (res > n)');
+  verified('inc: (Number.isInteger(res) && (res > n))');
   verified('twice: precondition f(n)');
   verified('twice: precondition f(f(n))');
   verified('twice: (res > (n + 1))');
   verified('precondition twice(inc, x)');
-  verified('assert: (y >= 5)');
+  verified('assert: (y > 4)');
 });
 
 describe('higher-order proofs', () => {
 
   code(() => {
     function fib (n) {
+      requires(Number.isInteger(n));
       requires(n >= 0);
       ensures(pure());
-      ensures(res => typeof(res) === 'number');
+      ensures(res => Number.isInteger(res));
 
       if (n <= 1) {
         return 1;
@@ -83,6 +84,7 @@ describe('higher-order proofs', () => {
     }
 
     function fibInc (n) {
+      requires(Number.isInteger(n));
       requires(n >= 0);
       ensures(fib(n) <= fib(n + 1));
       ensures(pure());
@@ -102,9 +104,13 @@ describe('higher-order proofs', () => {
     }
 
     function fMono (f, fInc, n, m) {
-      requires(spec(f, x => x >= 0, (x, y) => pure() && typeof y === 'number'));
-      requires(spec(fInc, x => x >= 0, x => pure() && f(x) <= f(x + 1)));
+      requires(spec(f, x => Number.isInteger(x) && x >= 0,
+                       (x, y) => pure() && Number.isInteger(y)));
+      requires(spec(fInc, x => Number.isInteger(x) && x >= 0,
+                          x => pure() && f(x) <= f(x + 1)));
+      requires(Number.isInteger(n));
       requires(n >= 0);
+      requires(Number.isInteger(m));
       requires(m >= 0);
       requires(n < m);
       ensures(pure());
@@ -119,7 +125,9 @@ describe('higher-order proofs', () => {
     }
 
     function fibMono (n, m) {
+      requires(Number.isInteger(n));
       requires(n >= 0);
+      requires(Number.isInteger(m));
       requires(m >= 0);
       requires(n < m);
       ensures(pure());
@@ -133,7 +141,7 @@ describe('higher-order proofs', () => {
   verified('fib: precondition fib((n - 1))');
   verified('fib: precondition fib((n - 2))');
   verified('fib: pure()');
-  verified('fib: (typeof(res) === "number")');
+  verified('fib: Number.isInteger(res)');
   verified('fibInc: precondition fib(n)');
   verified('fibInc: precondition fib((n + 1))');
   verified('fibInc: precondition fib((n - 1))');
@@ -233,7 +241,7 @@ describe('function subtyping with stronger post', () => {
     }
   });
 
-  incorrect('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))', ['x', 1657]);
+  incorrect('f: spec(g, x => (x > 3), (x, y) => (y > (x + 1)))', ['x', 3.5]);
 });
 
 describe('function subtyping with weaker post', () => {

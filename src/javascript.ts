@@ -62,6 +62,12 @@ export namespace Syntax {
                                 object: Term;
                                 property: Term;
                                 loc: SourceLocation; }
+  export interface IsIntegerTerm { type: 'IsIntegerTerm';
+                                   term: Term;
+                                   loc: SourceLocation; }
+  export interface ToIntegerTerm { type: 'ToIntegerTerm';
+                                   term: Term;
+                                   loc: SourceLocation; }
 
   export type Term = Identifier
                    | OldIdentifier
@@ -71,7 +77,9 @@ export namespace Syntax {
                    | LogicalTerm
                    | ConditionalTerm
                    | CallTerm
-                   | MemberTerm;
+                   | MemberTerm
+                   | IsIntegerTerm
+                   | ToIntegerTerm;
 
   export interface PureAssertion { type: 'PureAssertion';
                                    loc: SourceLocation; }
@@ -280,6 +288,8 @@ export abstract class Visitor<T,A,E,S> {
   abstract visitConditionalTerm (term: Syntax.ConditionalTerm): T;
   abstract visitCallTerm (term: Syntax.CallTerm): T;
   abstract visitMemberTerm (term: Syntax.MemberTerm): T;
+  abstract visitIsIntegerTerm (term: Syntax.IsIntegerTerm): T;
+  abstract visitToIntegerTerm (term: Syntax.ToIntegerTerm): T;
 
   visitTerm (term: Syntax.Term): T {
     switch (term.type) {
@@ -292,6 +302,8 @@ export abstract class Visitor<T,A,E,S> {
       case 'ConditionalTerm': return this.visitConditionalTerm(term);
       case 'CallTerm': return this.visitCallTerm(term);
       case 'MemberTerm': return this.visitMemberTerm(term);
+      case 'IsIntegerTerm': return this.visitIsIntegerTerm(term);
+      case 'ToIntegerTerm': return this.visitToIntegerTerm(term);
     }
   }
 
@@ -497,6 +509,22 @@ export class Substituter extends Visitor<Syntax.Term, Syntax.Assertion, Syntax.E
       type: 'MemberTerm',
       object: this.visitTerm(term.object),
       property: this.visitTerm(term.property),
+      loc: term.loc
+    };
+  }
+
+  visitIsIntegerTerm (term: Syntax.IsIntegerTerm): Syntax.Term {
+    return {
+      type: 'IsIntegerTerm',
+      term: this.visitTerm(term.term),
+      loc: term.loc
+    };
+  }
+
+  visitToIntegerTerm (term: Syntax.ToIntegerTerm): Syntax.Term {
+    return {
+      type: 'ToIntegerTerm',
+      term: this.visitTerm(term.term),
       loc: term.loc
     };
   }
@@ -917,6 +945,10 @@ class ValidAssignmentTargetChecker extends Visitor<boolean, void, void, void> {
   visitMemberTerm (term: Syntax.MemberTerm): boolean {
     return this.visitTerm(term.object) && term.property.type === 'Literal';
   }
+
+  visitIsIntegerTerm (term: Syntax.IsIntegerTerm): boolean { return false; }
+
+  visitToIntegerTerm (term: Syntax.ToIntegerTerm): boolean { return false; }
 
   visitTermAssertion (assertion: Syntax.Term): void { /* empty */ }
 

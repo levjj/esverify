@@ -314,6 +314,42 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     ];
   }
 
+  visitIsIntegerTerm (term: Syntax.IsIntegerTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [termA, termTriggers, termE] = this.visitTerm(term.term);
+    return [{
+      type: 'IsIntegerExpression',
+      expression: termA
+    }, termTriggers, {
+      type: 'CallExpression',
+      callee: {
+        type: 'MemberExpression',
+        object: id('Number', term.loc),
+        property: { type: 'Literal', value: 'isInteger', loc: term.loc },
+        loc: term.loc
+      },
+      args: [termE],
+      loc: term.loc
+    }];
+  }
+
+  visitToIntegerTerm (term: Syntax.ToIntegerTerm): [A, AccessTriggers, Syntax.Expression] {
+    const [termA, termTriggers, termE] = this.visitTerm(term.term);
+    return [{
+      type: 'ToIntegerExpression',
+      expression: termA
+    }, termTriggers, {
+      type: 'CallExpression',
+      callee: {
+        type: 'MemberExpression',
+        object: id('Math', term.loc),
+        property: { type: 'Literal', value: 'trunc', loc: term.loc },
+        loc: term.loc
+      },
+      args: [termE],
+      loc: term.loc
+    }];
+  }
+
   visitTermAssertion (term: Syntax.Term): [P, AccessTriggers, Syntax.Expression, TestCode] {
     const [termA, termTriggers, termE] = this.visitTerm(term);
     return [truthy(termA), termTriggers, termE, []];

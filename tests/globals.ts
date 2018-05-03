@@ -51,6 +51,7 @@ describe('parseInt', () => {
     function f (x) {
       requires(typeof x === 'string');
       ensures(y => typeof y === 'number');
+      ensures(y => Number.isInteger(y));
 
       return parseInt(x, 10);
     }
@@ -69,6 +70,7 @@ describe('parseInt', () => {
 
   verified('f: precondition parseInt(x, 10)');
   verified('f: (typeof(y) === "number")');
+  verified('f: Number.isInteger(y)');
   verified('g: precondition parseInt(x, 10)');
   incorrect('g: (y !== 12)', ['x', '12']);
   verified('precondition parseInt("23", 10)');
@@ -110,4 +112,61 @@ describe('Math', () => {
   verified('assert: (z === 44)');
   verified('Math has property "max"');
   unverified('precondition Math.max("abc", 16)');
+});
+
+describe('Number', () => {
+
+  code(() => {
+    function f (x) {
+      requires(typeof x === 'number');
+      requires(Number.isInteger(x));
+      ensures(y => Number.isInteger(y));
+
+      return x + 1;
+    }
+
+    function g (x) {
+      requires(typeof x === 'number');
+      requires(x > 0);
+      requires(x < 1);
+      ensures(y => Number.isInteger(y));
+
+      return x;
+    }
+
+    const y = Number.isInteger(12);
+    assert(y === true);
+    // @ts-ignore: intentionally using wrong type
+    const z = Number.isInteger('abc');
+    assert(z === false);
+  });
+
+  verified('f: Number.isInteger(y)');
+  incorrect('g: Number.isInteger(y)', ['x', 0.5]);
+  verified('Number has property "isInteger"');
+  verified('precondition Number.isInteger(12)');
+  verified('assert: (y === true)');
+  verified('Number has property "isInteger"');
+  verified('precondition Number.isInteger("abc")');
+  verified('assert: (z === false)');
+});
+
+describe('Random dice roll', () => {
+
+  code(() => {
+    const d6 = Math.trunc(Math.random() * 6 + 1);
+    assert(typeof d6 === 'number');
+    assert(d6 >= 1);
+    assert(d6 <= 6);
+    assert(Number.isInteger(d6));
+  });
+
+  verified('Math has property "trunc"');
+  verified('Math has property "random"');
+  verified('precondition Math.random()');
+  verified('precondition Math.trunc(((Math.random() * 6) + 1))');
+  verified('assert: (typeof(d6) === "number")');
+  verified('assert: (d6 >= 1)');
+  verified('assert: (d6 <= 6)');
+  verified('assert: Number.isInteger(d6)');
 });

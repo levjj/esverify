@@ -176,6 +176,14 @@ class NameResolver extends Visitor<void, void, void, void> {
     this.visitTerm(term.property);
   }
 
+  visitIsIntegerTerm (term: Syntax.IsIntegerTerm) {
+    this.visitTerm(term.term);
+  }
+
+  visitToIntegerTerm (term: Syntax.ToIntegerTerm) {
+    this.visitTerm(term.term);
+  }
+
   visitTermAssertion (term: Syntax.Term) {
     this.visitTerm(term);
   }

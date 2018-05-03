@@ -32,7 +32,7 @@ export function parseSExpr (input: string): SExpr {
       }
       return list;
     }
-    const m = input.substr(idx).match(/^("[^"]*")|^[a-zA-Z0-9_\-!#=.]+/);
+    const m = input.substr(idx).match(/^("[^"]*")|^[a-zA-Z0-9_\-!#=.\/]+/);
     if (m) {
       idx += m[0].length;
       return m[0];

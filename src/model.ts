@@ -197,6 +197,24 @@ export class Model {
     });
   }
 
+  private parseNum (v: SExpr): JSVal.Num {
+    if (typeof v === 'string') {
+      return { type: 'num', v: parseFloat(v) };
+    }
+    const matchNeg = matchSExpr(v, ['-', { expr: 'num' }]);
+    if (matchNeg !== null) {
+      const num = this.parseNum(matchNeg.num);
+      return { type: 'num', v: - num.v };
+    }
+    const matchDiv = matchSExpr(v, ['/', { expr: 'n' }, { expr: 'd' }]);
+    if (matchDiv !== null) {
+      const n = this.parseNum(matchDiv.n);
+      const d = this.parseNum(matchDiv.d);
+      return { type: 'num', v: n.v / d.v };
+    }
+    throw this.modelError(`cannot parse number ${v}`);
+  }
+
   private tryParseSimpleValue (s: SExpr): JSVal | null {
     if (typeof s === 'string') {
       if (s === 'jsundefined') {
@@ -215,16 +233,9 @@ export class Model {
         const v = s[1];
         if (typeof v !== 'string') return null;
         return { type: 'bool', v: v === 'true' };
-      } else if (tag === 'jsnum') {
+      } else if (tag === 'jsint' || tag === 'jsreal') {
         if (s.length !== 2) return null;
-        const v = s[1];
-        if (typeof v === 'string') {
-          return { type: 'num', v: parseInt(v, 10) };
-        } else {
-          const m = matchSExpr(v, ['-', { name: 'num' }]);
-          if (m === null) return null;
-          return { type: 'num', v: - parseInt(m.num as string, 10) };
-        }
+        return this.parseNum(s[1]);
       } else if (tag === 'jsstr') {
         if (s.length !== 2) return null;
         const v = s[1];
@@ -258,16 +269,9 @@ export class Model {
         const v = s[1];
         if (typeof v !== 'string') throw this.modelError(s.toString());
         return { type: 'bool', v: v === 'true' };
-      } else if (tag === 'jsnum') {
+      } else if (tag === 'jsint' || tag === 'jsreal') {
         if (s.length !== 2) throw this.modelError(s.toString());
-        const v = s[1];
-        if (typeof v === 'string') {
-          return { type: 'num', v: parseInt(v, 10) };
-        } else {
-          const m = matchSExpr(v, ['-', { name: 'num' }]);
-          if (m === null) throw this.modelError(`cannot parse ${v}`);
-          return { type: 'num', v: - parseInt(m.num as string, 10) };
-        }
+        return this.parseNum(s[1]);
       } else if (tag === 'jsstr') {
         if (s.length !== 2) throw this.modelError(s.toString());
         const v = s[1];

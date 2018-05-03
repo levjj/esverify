@@ -72,11 +72,12 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   visitLiteral (expr: Syntax.Literal): SMTInput {
     if (expr.value === undefined) return `jsundefined`;
     if (expr.value === null) return `jsnull`;
-    switch (typeof expr.value) {
-      case 'boolean': return `(jsbool ${expr.value})`;
-      case 'number': return `(jsnum ${expr.value})`;
-      case 'string': return `(jsstr "${expr.value}")`;
-      default: throw new Error('unreachable');
+    if (typeof expr.value === 'boolean') {
+      return `(jsbool ${expr.value})`;
+    } else if (typeof expr.value === 'number') {
+      return Number.isInteger(expr.value) ? `(jsint ${expr.value})` : `(jsreal ${expr.value})`;
+    } else {
+      return `(jsstr "${expr.value}")`;
     }
   }
 
@@ -119,7 +120,7 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitArrayIndexExpression (expr: Syntax.ArrayIndexExpression): SMTInput {
-    return `(arrelems (arrv ${this.visitExpr(expr.array)}) (numv ${this.visitExpr(expr.index)}))`;
+    return `(arrelems (arrv ${this.visitExpr(expr.array)}) (intv ${this.visitExpr(expr.index)}))`;
   }
 
   visitRawSMTExpression (expr: Syntax.RawSMTExpression): SMTInput {
@@ -132,6 +133,14 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
       }
     }
     return result;
+  }
+
+  visitIsIntegerExpression (expr: Syntax.IsIntegerExpression): SMTInput {
+    return `(jsbool (is-jsint ${this.visitExpr(expr.expression)}))`;
+  }
+
+  visitToIntegerExpression (expr: Syntax.ToIntegerExpression): SMTInput {
+    return `(jsint (_toint ${this.visitExpr(expr.expression)}))`;
   }
 
   visitTruthy (prop: Syntax.Truthy): SMTInput {
@@ -273,9 +282,9 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
 
   visitInBounds (prop: Syntax.InBounds): SMTInput {
     const indexExpr = this.visitExpr(prop.index);
-    return `(and (is-jsnum ${indexExpr}) `
-              + `(>= (numv ${indexExpr}) 0) `
-              + `(< (numv ${indexExpr}) (arrlength (arrv ${this.visitExpr(prop.array)}))))`;
+    return `(and (is-jsint ${indexExpr}) `
+              + `(>= (intv ${indexExpr}) 0) `
+              + `(< (intv ${indexExpr}) (arrlength (arrv ${this.visitExpr(prop.array)}))))`;
   }
 
   visitAccessTrigger (prop: Syntax.AccessTrigger): SMTInput {
@@ -310,7 +319,8 @@ export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars,
 
 ; Values in JavaScript
 (declare-datatypes () ((JSVal
-  (jsnum (numv Int))
+  (jsint (intv Int))
+  (jsreal (realv Real))
   (jsbool (boolv Bool))
   (jsstr (strv String))
   (jsnull)
@@ -324,20 +334,9 @@ ${[...regClasses].map(({ cls, fields }) =>
   : `    (jsobj_${cls} ${fields.map(field => `(${cls}-${field} JSVal)`).join(' ')})\n`
 ).join('')})))
 
-; Types in JavaScript
-(declare-datatypes () ((JSType (JSNum) (JSBool) (JSString) (JSUndefined) (JSObj) (JSFunction))))
-
-(define-fun _type ((x JSVal)) JSType
-  (ite (is-jsnum x) JSNum
-  (ite (is-jsbool x) JSBool
-  (ite (is-jsstr x) JSString
-  (ite (is-jsnull x) JSObj
-  (ite (is-jsundefined x) JSUndefined
-  (ite (is-jsfun x) JSFunction
-  JSObj)))))))
-
 (define-fun _tostring ((x JSVal)) String
-  (ite (is-jsnum x) (int.to.str (numv x))
+  (ite (is-jsint x) (int.to.str (intv x))
+  (ite (is-jsreal x) (int.to.str (to_int (realv x)))
   (ite (is-jsbool x) (ite (boolv x) "true" "false")
   (ite (is-jsstr x) (strv x)
   (ite (is-jsnull x) "null"
@@ -345,12 +344,20 @@ ${[...regClasses].map(({ cls, fields }) =>
   (ite (is-jsfun x) "function () { ... }"
 ${[...classes].map(({ cls }) =>
   `  (ite (is-jsobj_${cls} x) "[object ${cls}]"`).join('\n')}
-  "[object Object]"${[...classes].map(c => ')').join('')})))))))
+  "[object Object]"${[...classes].map(c => ')').join('')}))))))))
+
+(define-fun _toint ((x JSVal)) Int
+  (ite (is-jsint x) (intv x)
+  (ite (is-jsreal x) (to_int (realv x))
+  (ite (is-jsbool x) (ite (boolv x) 1 0)
+  (ite (is-jsstr x) (str.to.int (strv x))
+  -1)))))
 
 (define-fun _falsy ((x JSVal)) Bool
   (or (is-jsnull x)
       (is-jsundefined x)
-      (and (is-jsnum x) (= (numv x) 0))
+      (and (is-jsint x) (= (intv x) 0))
+      (and (is-jsreal x) (= (realv x) 0))
       (and (is-jsbool x) (not (boolv x)))
       (and (is-jsstr x) (= (strv x) ""))))
 
@@ -359,22 +366,25 @@ ${[...classes].map(({ cls }) =>
 
 ; typeof
 (define-fun _js-typeof ((x JSVal)) JSVal
-  (ite (is-jsnum x) (jsstr "number")
+  (ite (is-jsint x) (jsstr "number")
+  (ite (is-jsreal x) (jsstr "number")
   (ite (is-jsbool x) (jsstr "boolean")
   (ite (is-jsstr x) (jsstr "string")
   (ite (is-jsundefined x) (jsstr "undefined")
   (ite (is-jsfun x) (jsstr "function")
-  (jsstr "object")))))))
+  (jsstr "object"))))))))
 
 ; -
 (define-fun _js-negative ((x JSVal)) JSVal
-  (ite (is-jsnum x) (jsnum (- (numv x)))
-  jsundefined))
+  (ite (is-jsint x) (jsint (- (intv x)))
+  (ite (is-jsreal x) (jsreal (- (realv x)))
+  jsundefined)))
 
 ; +
 (define-fun _js-positive ((x JSVal)) JSVal
-  (ite (is-jsnum x) x
-  jsundefined))
+  (ite (is-jsint x) x
+  (ite (is-jsreal x) x
+  jsundefined)))
 
 ; !
 (define-fun _js-not ((x JSVal)) JSVal
@@ -382,7 +392,7 @@ ${[...classes].map(({ cls }) =>
 
 ; ~
 (define-fun _js-bnot ((x JSVal)) JSVal
-  (ite (is-jsnum x) (jsnum (bv2int (bvneg ((_ int2bv 32) (numv x)))))
+  (ite (is-jsint x) (jsint (bv2int (bvneg ((_ int2bv 32) (intv x)))))
   jsundefined))
 
 ; void
@@ -399,94 +409,113 @@ ${[...classes].map(({ cls }) =>
 
 ; <
 (define-fun _js_lt ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsbool (< (numv a) (numv b)))
-    (jsbool false)))
+  (ite (and (is-jsint a) (is-jsint b)) (jsbool (< (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsbool (< (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsbool (< (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsbool (< (realv a) (realv b)))
+  (jsbool false))))))
 
 ; <=
 (define-fun _js_leq ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsbool (<= (numv a) (numv b)))
-    (jsbool false)))
+  (ite (and (is-jsint a) (is-jsint b)) (jsbool (<= (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsbool (<= (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsbool (<= (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsbool (<= (realv a) (realv b)))
+  (jsbool false))))))
 
 ; >
 (define-fun _js_gt ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsbool (> (numv a) (numv b)))
-    (jsbool false)))
+  (ite (and (is-jsint a) (is-jsint b)) (jsbool (> (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsbool (> (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsbool (> (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsbool (> (realv a) (realv b)))
+  (jsbool false))))))
 
 ; >=
 (define-fun _js-geq ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsbool (>= (numv a) (numv b)))
-    (jsbool false)))
+  (ite (and (is-jsint a) (is-jsint b)) (jsbool (>= (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsbool (>= (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsbool (>= (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsbool (>= (realv a) (realv b)))
+  (jsbool false))))))
 
 ; +
 (define-fun _js-plus ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (+ (numv a) (numv b)))
-  (ite (and (is-jsstr a) (is-jsstr b))
-    (jsstr (str.++ (strv a) (strv b)))
-  jsundefined)))
+  (ite (and (is-jsint a) (is-jsint b)) (jsint (+ (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsreal (+ (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsreal (+ (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsreal (+ (realv a) (realv b)))
+  (ite (and (is-jsstr a) (is-jsstr b)) (jsstr (str.++ (strv a) (strv b)))
+  jsundefined))))))
 
 ; -
 (define-fun _js-minus ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (- (numv a) (numv b)))
-  jsundefined))
+  (ite (and (is-jsint a) (is-jsint b)) (jsint (- (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsreal (- (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsreal (- (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsreal (- (realv a) (realv b)))
+  jsundefined)))))
 
 ; *
 (define-fun _js-multiply ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (* (numv a) (numv b)))
-  jsundefined))
+  (ite (and (is-jsint a) (is-jsint b)) (jsint (* (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsreal (* (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsreal (* (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsreal (* (realv a) (realv b)))
+  jsundefined)))))
 
 ; /
 (define-fun _js-divide ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (div (numv a) (numv b)))
-  jsundefined))
+  (ite (and (is-jsint a) (is-jsint b))
+    (ite (is_int (/ (intv a) (intv b))) (jsint (/ (intv a) (intv b)))
+                                        (jsreal (/ (intv a) (intv b))))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsreal (/ (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsreal (/ (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsreal (/ (realv a) (realv b)))
+  jsundefined)))))
 
 ; %
 (define-fun _js-mod ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (rem (numv a) (numv b)))
-  jsundefined))
+  (ite (and (is-jsint a) (is-jsint b)) (jsint (rem (intv a) (intv b)))
+  (ite (and (is-jsint a) (is-jsreal b)) (jsreal (rem (intv a) (realv b)))
+  (ite (and (is-jsreal a) (is-jsint b)) (jsreal (rem (realv a) (intv b)))
+  (ite (and (is-jsreal a) (is-jsreal b)) (jsreal (rem (realv a) (realv b)))
+  jsundefined)))))
 
 ; <<
 (define-fun _js-lshift ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (bv2int (bvshl ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  (ite (and (is-jsint a) (is-jsint b))
+    (jsint (bv2int (bvshl ((_ int2bv 32) (intv a)) ((_ int2bv 32) (intv b)))))
   jsundefined))
 
 ; >>
 (define-fun _js-rshift ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (bv2int (bvashr ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  (ite (and (is-jsint a) (is-jsint b))
+    (jsint (bv2int (bvashr ((_ int2bv 32) (intv a)) ((_ int2bv 32) (intv b)))))
   jsundefined))
 
 ; >>>
 (define-fun _js-rzshift ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (bv2int (bvlshr ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  (ite (and (is-jsint a) (is-jsint b))
+    (jsint (bv2int (bvlshr ((_ int2bv 32) (intv a)) ((_ int2bv 32) (intv b)))))
   jsundefined))
 
 ; |
 (define-fun _js-bor ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (bv2int (bvor ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  (ite (and (is-jsint a) (is-jsint b))
+    (jsint (bv2int (bvor ((_ int2bv 32) (intv a)) ((_ int2bv 32) (intv b)))))
   jsundefined))
 
 ; ^
 (define-fun _js-bxor ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (bv2int (bvxor ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  (ite (and (is-jsint a) (is-jsint b))
+    (jsint (bv2int (bvxor ((_ int2bv 32) (intv a)) ((_ int2bv 32) (intv b)))))
   jsundefined))
 
 ; &
 (define-fun _js-band ((a JSVal) (b JSVal)) JSVal
-  (ite (and (is-jsnum a) (is-jsnum b))
-    (jsnum (bv2int (bvand ((_ int2bv 32) (numv a)) ((_ int2bv 32) (numv b)))))
+  (ite (and (is-jsint a) (is-jsint b))
+    (jsint (bv2int (bvand ((_ int2bv 32) (intv a)) ((_ int2bv 32) (intv b)))))
   jsundefined))
 
 ; Heap
@@ -531,17 +560,23 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
 (define-fun has ((obj JSVal) (prop JSVal)) Bool
   (or (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
       (and (is-jsstr obj) (= (_tostring prop) "length"))
-      (and (is-jsstr obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv obj))))
+      (and (is-jsstr obj) (is-jsint prop) (>= (intv prop) 0) (< (intv prop) (str.len (strv obj))))
+      (and (is-jsstr obj) (is-jsreal prop) (is_int (realv prop))
+                          (>= (realv prop) 0) (< (realv prop) (str.len (strv obj))))
       (and (is-jsstr obj) (>= (str.to.int (_tostring prop)) 0)
                           (< (str.to.int (_tostring prop)) (str.len (strv obj))))
 ${strClass.methods.map(method =>
 `      (and (is-jsstr obj) (= (_tostring prop) "${method}"))`).join('\n')}
       (and (is-jsobj_String obj) (= (_tostring prop) "length"))
-      (and (is-jsobj_String obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv (String-_str_ obj)))))
+      (and (is-jsobj_String obj) (is-jsint prop) (>= (intv prop) 0) (< (intv prop) (str.len (strv (String-_str_ obj)))))
+      (and (is-jsobj_String obj) (is-jsreal prop) (is_int (realv prop))
+                                 (>= (realv prop) 0) (< (realv prop) (str.len (strv (String-_str_ obj)))))
       (and (is-jsobj_String obj) (>= (str.to.int (_tostring prop)) 0)
                                  (< (str.to.int (_tostring prop)) (str.len (strv (String-_str_ obj)))))
       (and (is-jsobj_Array obj) (= (_tostring prop) "length"))
-      (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
+      (and (is-jsobj_Array obj) (is-jsint prop) (>= (intv prop) 0) (< (intv prop) (arrlength (arrv obj))))
+      (and (is-jsobj_Array obj) (is-jsreal prop) (is_int (realv prop))
+                                (>= (realv prop) 0) (< (realv prop) (arrlength (arrv obj))))
       (and (is-jsobj_Array obj) (>= (str.to.int (_tostring prop)) 0)
                                 (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
 ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }))).map(({ cls, field }) =>
@@ -553,27 +588,38 @@ ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, meth
 (define-fun field ((obj JSVal) (prop JSVal)) JSVal
   (ite (and (is-jsobj obj) (select (objproperties (objv obj)) (_tostring prop)))
        (objfield (objv obj) (_tostring prop))
-  (ite (and (is-jsstr obj) (= (_tostring prop) "length")) (jsnum (str.len (strv obj)))
-  (ite (and (is-jsstr obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (str.len (strv obj))))
-       (jsstr (str.at (strv obj) (numv prop)))
+  (ite (and (is-jsstr obj) (= (_tostring prop) "length")) (jsint (str.len (strv obj)))
+  (ite (and (is-jsstr obj) (is-jsint prop) (>= (intv prop) 0) (< (intv prop) (str.len (strv obj))))
+       (jsstr (str.at (strv obj) (intv prop)))
+  (ite (and (is-jsstr obj) (is-jsreal prop) (is_int (realv prop))
+       (>= (realv prop) 0) (< (realv prop) (str.len (strv obj))))
+       (jsstr (str.at (strv obj) (to_int (realv prop))))
   (ite (and (is-jsstr obj)
             (>= (str.to.int (_tostring prop)) 0)
             (< (str.to.int (_tostring prop)) (str.len (strv obj))))
        (jsstr (str.at (strv obj) (str.to.int (_tostring prop))))
 ${strClass.methods.map(method =>
 `  (ite (and (is-jsstr obj) (= (_tostring prop) "${method}")) v_String.${method}`).join('\n')}
-  (ite (and (is-jsobj_String obj) (= (_tostring prop) "length")) (jsnum (str.len (strv (String-_str_ obj))))
-  (ite (and (is-jsobj_String obj) (is-jsnum prop)
-            (>= (numv prop) 0)
-            (< (numv prop) (str.len (strv (String-_str_ obj)))))
-       (jsstr (str.at (strv (String-_str_ obj)) (numv prop)))
+  (ite (and (is-jsobj_String obj) (= (_tostring prop) "length")) (jsint (str.len (strv (String-_str_ obj))))
+  (ite (and (is-jsobj_String obj) (is-jsint prop)
+            (>= (intv prop) 0)
+            (< (intv prop) (str.len (strv (String-_str_ obj)))))
+       (jsstr (str.at (strv (String-_str_ obj)) (intv prop)))
+  (ite (and (is-jsobj_String obj) (is-jsreal prop) (is_int (realv prop))
+            (>= (realv prop) 0)
+            (< (realv prop) (str.len (strv (String-_str_ obj)))))
+       (jsstr (str.at (strv (String-_str_ obj)) (to_int (realv prop))))
   (ite (and (is-jsobj_String obj)
             (>= (str.to.int (_tostring prop)) 0)
             (< (str.to.int (_tostring prop)) (str.len (strv (String-_str_ obj)))))
        (jsstr (str.at (strv (String-_str_ obj)) (str.to.int (_tostring prop))))
-  (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsnum (arrlength (arrv obj)))
-  (ite (and (is-jsobj_Array obj) (is-jsnum prop) (>= (numv prop) 0) (< (numv prop) (arrlength (arrv obj))))
-       (arrelems (arrv obj) (numv prop))
+  (ite (and (is-jsobj_Array obj) (= (_tostring prop) "length")) (jsint (arrlength (arrv obj)))
+  (ite (and (is-jsobj_Array obj) (is-jsint prop)
+       (>= (intv prop) 0) (< (intv prop) (arrlength (arrv obj))))
+       (arrelems (arrv obj) (intv prop))
+  (ite (and (is-jsobj_Array obj) (is-jsreal prop) (is_int (realv prop))
+       (>= (realv prop) 0) (< (realv prop) (arrlength (arrv obj))))
+       (arrelems (arrv obj) (to_int (realv prop)))
   (ite (and (is-jsobj_Array obj)
             (>= (str.to.int (_tostring prop)) 0)
             (< (str.to.int (_tostring prop)) (arrlength (arrv obj))))
@@ -583,7 +629,7 @@ ${flatMap([...classes], ({ cls, fields }) => fields.map(field => ({ cls, field }
 ${flatMap([...classes], ({ cls, methods }) => methods.map(method => ({ cls, method }))).map(({ cls, method }) =>
 `  (ite (and (is-jsobj_${cls} obj) (= (_tostring prop) "${method}")) v_${cls}.${method}`).join('\n')}
   jsundefined
-${flatMap([strClass,...classes], ({ cls, fields, methods }) => fields.concat(methods).map(_ => ')')).join('')}))))))))))
+${flatMap([strClass,...classes], ({ fields, methods }) => fields.concat(methods).map(_ => ')')).join('')})))))))))))))
 
 ; Declarations
 ${[...heaps].map(h => `(declare-fun h_${h} () Heap)\n`).join('')}

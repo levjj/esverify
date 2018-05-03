@@ -461,11 +461,11 @@ describe('methods calling other methods', () => {
   verified('p: precondition this.n(4)');
   verified('p: (y >= 0)');
   verified('q: this has property "n"');
-  incorrect('q: precondition this.n(2)', ['_this_8', { _cls_: 'A', _args_: [0] }]);
-  incorrect('q: this has property "x"', ['_this_8', { _cls_: 'A', _args_: [0] }]);
-  incorrect('q: precondition this.x()', ['_this_8', { _cls_: 'A', _args_: [-1] }]);
+  incorrect('q: precondition this.n(2)', ['_this_13', { _cls_: 'A', _args_: [0] }]);
+  incorrect('q: this has property "x"', ['_this_13', { _cls_: 'A', _args_: [0] }]);
+  incorrect('q: precondition this.x()', ['_this_13', { _cls_: 'A', _args_: [-1] }]);
   verified('r: this has property "n"');
-  incorrect('r: precondition this.n(2)', ['_this_9', { _cls_: 'A', _args_: [0] }]);
+  incorrect('r: precondition this.n(2)', ['_this_14', { _cls_: 'A', _args_: [0] }]);
   verified('class invariant A');
   verified('a has property "m"');
   verified('precondition a.m(4)');

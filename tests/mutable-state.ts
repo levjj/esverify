@@ -11,7 +11,7 @@ describe('counter', () => {
 
   code(() => {
     let counter = 0;
-    invariant(typeof counter === 'number');
+    invariant(Number.isInteger(counter));
     invariant(counter >= 0);
 
     function increment () {
@@ -27,13 +27,13 @@ describe('counter', () => {
     }
   });
 
-  verified('initially: (typeof(counter) === "number")');
+  verified('initially: Number.isInteger(counter)');
   verified('initially: (counter >= 0)');
   verified('increment: (counter > old(counter))');
-  verified('increment: (typeof(counter) === "number")');
+  verified('increment: Number.isInteger(counter)');
   verified('increment: (counter >= 0)');
   verified('decrement: ((old(counter) > 0) ? (counter < old(counter)) : (counter === old(counter)))');
-  verified('decrement: (typeof(counter) === "number")');
+  verified('decrement: Number.isInteger(counter)');
   verified('decrement: (counter >= 0)');
 });
 
@@ -57,6 +57,7 @@ describe('loop', () => {
 
     while (i < 5) {
       invariant(i <= 5);
+      invariant(Number.isInteger(i));
       i++;
     }
 
@@ -64,7 +65,9 @@ describe('loop', () => {
   });
 
   verified('invariant on entry: (i <= 5)');
+  verified('invariant on entry: Number.isInteger(i)');
   verified('invariant maintained: (i <= 5)');
+  verified('invariant maintained: Number.isInteger(i)');
   verified('assert: (i === 5)');
 });
 
@@ -80,14 +83,14 @@ describe('loop with missing invariant', () => {
     assert(i === 5);
   });
 
-  incorrect('assert: (i === 5)', [{ name: 'i', heap: 2 }, 'number']);
+  incorrect('assert: (i === 5)', [{ name: 'i', heap: 2 }, false]);
 });
 
 describe('sum', () => {
 
   code(() => {
     function sumTo (n) {
-      requires(typeof n === 'number');
+      requires(Number.isInteger(n));
       requires(n >= 0);
       ensures(res => res === (n + 1) * n / 2);
 
@@ -96,6 +99,8 @@ describe('sum', () => {
       while (i < n) {
         invariant(i <= n);
         invariant(s === (i + 1) * i / 2);
+        invariant(Number.isInteger(i));
+        invariant(Number.isInteger(s));
         i++;
         s = s + i;
       }
@@ -105,8 +110,12 @@ describe('sum', () => {
 
   verified('sumTo: invariant on entry: (i <= n)');
   verified('sumTo: invariant on entry: (s === (((i + 1) * i) / 2))');
+  verified('sumTo: invariant on entry: Number.isInteger(i)');
+  verified('sumTo: invariant on entry: Number.isInteger(s)');
   verified('sumTo: invariant maintained: (i <= n)');
   verified('sumTo: invariant maintained: (s === (((i + 1) * i) / 2))');
+  verified('sumTo: invariant maintained: Number.isInteger(i)');
+  verified('sumTo: invariant maintained: Number.isInteger(s)');
   verified('sumTo: (res === (((n + 1) * n) / 2))');
 });
 
@@ -178,7 +187,7 @@ describe('global mutable variable with missing invariant', () => {
     }
   });
 
-  incorrect('f: (res > 22)', [{ name: 'x', heap: 3 }, 23], [{ name: 'x', heap: 4 }, 'number']);
-  incorrect('g: (res > 22)', [{ name: 'y', heap: 3 }, 42], [{ name: 'y', heap: 4 }, 22]);
+  incorrect('f: (res > 22)', [{ name: 'x', heap: 3 }, 23], [{ name: 'x', heap: 4 }, false]);
+  incorrect('g: (res > 22)', [{ name: 'y', heap: 3 }, 42], [{ name: 'y', heap: 4 }, 0]);
   verified('h: (res > 22)');
 });

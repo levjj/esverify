@@ -134,7 +134,7 @@ describe('post conditions global call', () => {
   verified('precondition inc(i)');
   verified('assert: (j >= 4)');
   verified('precondition inc2(i)');
-  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 8]);
+  unverified('assert: (k >= 5)', [{ name: 'k', heap: 4 }, 6]);
   // only inline one level, so post-cond of inc(inc(i)) not available
 });
 
@@ -161,7 +161,7 @@ describe('fibonacci', () => {
 
   code(() => {
     function fib (n) {
-      requires(typeof(n) === 'number');
+      requires(Number.isInteger(n));
       requires(n >= 0);
       ensures(res => res >= n);
       ensures(res => res >= 1);
@@ -181,7 +181,7 @@ describe('buggy fibonacci', () => {
 
   code(() => {
     function fib (n) {
-      requires(typeof(n) === 'number');
+      requires(Number.isInteger(n));
       requires(n >= 0);
       ensures(res => res >= n);
 
@@ -218,4 +218,58 @@ describe('function bug', () => {
   });
 
   verified('f: !spec(f, y => true, y => (y !== x))');
+});
+
+describe('integers', () => {
+
+  code(() => {
+    function f (i) {
+      requires(Number.isInteger(i));
+      ensures(res => Number.isInteger(res) && res > i && res <= i + 1);
+
+      return i + 1;
+    }
+
+    function g (i) {
+      requires(Number.isInteger(i));
+      requires(i === 9 / 2);
+      ensures(1 + 1 === 1);
+    }
+
+    function h (i) {
+      requires(Number.isInteger(i) && i > 1 && i < 4);
+      ensures(res => res > 2);
+    }
+  });
+
+  verified('f: ((Number.isInteger(res) && (res > i)) && (res <= (i + 1)))');
+  verified('g: ((1 + 1) === 1)');
+  incorrect('h: (res > 2)', ['i', 2]);
+});
+
+describe('reals', () => {
+
+  code(() => {
+    function f (i) {
+      requires(typeof i === 'number');
+      ensures(res => typeof res === 'number' && res > i && res < i + 1);
+
+      return i + 0.5;
+    }
+
+    function g (i) {
+      requires(typeof i === 'number');
+      requires(i === 9 / 2);
+      ensures(1 + 1 === 1);
+    }
+
+    function h (i) {
+      requires(typeof i === 'number' && i > 1 && i < 2);
+      ensures(res => res >= 1.5);
+    }
+  });
+
+  verified('f: (((typeof(res) === "number") && (res > i)) && (res < (i + 1)))');
+  incorrect('g: ((1 + 1) === 1)', ['i', 4.5]);
+  incorrect('h: (res >= 1.5)', ['i', 1.5]);
 });

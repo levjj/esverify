@@ -223,6 +223,36 @@ function expressionAsTerm (expr: JSyntax.Expression): Syntax.Term {
           loc: loc(expr)
         };
       }
+      if (expr.callee.type === 'MemberExpression' &&
+          expr.callee.object.type === 'Identifier' && expr.callee.object.name === 'Number' &&
+          !expr.callee.computed &&
+          expr.callee.property.type === 'Identifier' && expr.callee.property.name === 'isInteger' &&
+          expr.arguments.length === 1) {
+        const arg = expr.arguments[0];
+        if (arg.type === 'SpreadElement') {
+          throw unsupported(arg);
+        }
+        return {
+          type: 'IsIntegerTerm',
+          term: expressionAsTerm(arg),
+          loc: loc(expr)
+        };
+      }
+      if (expr.callee.type === 'MemberExpression' &&
+          expr.callee.object.type === 'Identifier' && expr.callee.object.name === 'Math' &&
+          !expr.callee.computed &&
+          expr.callee.property.type === 'Identifier' && expr.callee.property.name === 'trunc' &&
+          expr.arguments.length === 1) {
+        const arg = expr.arguments[0];
+        if (arg.type === 'SpreadElement') {
+          throw unsupported(arg);
+        }
+        return {
+          type: 'ToIntegerTerm',
+          term: expressionAsTerm(arg),
+          loc: loc(expr)
+        };
+      }
       if (expr.callee.type === 'Super') throw unsupported(expr.callee);
       if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
       return {
