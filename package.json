@@ -42,7 +42,7 @@
     "@types/esprima": "^4.0.1",
     "@types/estree": "0.0.38",
     "esprima": "^4.0.0",
-    "minimist": "^1.2.0"
+    "minimist2": "^1.0.2"
   },
   "devDependencies": {
     "@commitlint/cli": "^6.1.3",

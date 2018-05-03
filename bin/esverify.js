@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 var fs = require('fs');
-var minimist = require('minimist');
+var minimist = require('minimist2');
 var esverify = require('../build/main/index.js');
 
 function error(msg) {
@@ -33,7 +33,7 @@ var opts = minimist(process.argv.slice(2), {
   string: ['logformat', 'z3path', 'z3url', 'logsmt'],
   default: { quiet: false },
   alias: {r: 'remote', f: 'logformat', q: 'quiet', v: 'verbose', h: 'help' },
-  unknown: function(opt) { if (opt[0] == '-' && opt != '-') usage(true); }
+  unknown: function(opt) { return opt[0] == '-' && opt != '-' ? usage(true) : true; }
 });
 if (opts.version) {
   console.log(require('../package.json').version);
