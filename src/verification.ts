@@ -34,7 +34,7 @@ export default class VerificationCondition {
     this.prop = prop;
     this.loc = loc;
     this.description = description;
-    this.freeVars = freeVars;
+    this.freeVars = [...freeVars];
     this.testBody = body;
     this.inprocess = false;
     this.result = null;
