@@ -4,6 +4,7 @@
     "indent": [true, "spaces"],
     "semicolon": [true, "always"],
     "no-var-keyword": true,
+    "no-debugger": true,
     "no-parameter-reassignment": true,
     "max-line-length": [true, 120]
   }
