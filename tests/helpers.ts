@@ -8,7 +8,6 @@ import VerificationCondition from '../src/verification';
 
 declare const assert: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const every: (a: Array<any>, b: ((x: any) => boolean) | ((x: any, y: any) => boolean)) => boolean;
 declare const invariant: (x: boolean) => void;
 declare const old: (x: any) => any;
 declare const pure: () => boolean;

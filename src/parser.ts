@@ -380,28 +380,27 @@ function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
           loc: loc(expr)
         };
       }
-      if (expr.callee.type === 'Identifier' &&
-          expr.callee.name === 'every') {
-        if (expr.arguments.length !== 2) {
-          throw unsupported(expr, 'every(arr, inv) has two arguments');
+      if (expr.callee.type === 'MemberExpression' &&
+          !expr.callee.computed &&
+          expr.callee.object.type !== 'Super' &&
+          expr.callee.property.type === 'Identifier' &&
+          expr.callee.property.name === 'every') {
+        if (expr.arguments.length !== 1) {
+          throw unsupported(expr, 'arr.every(inv) has two arguments');
         }
-        const [callee, arg] = expr.arguments;
-        if (callee.type === 'SpreadElement') {
-          throw unsupported(callee);
+        const inv = expr.arguments[0];
+        if (inv.type !== 'ArrowFunctionExpression') {
+          throw unsupported(inv, 'arr.every(inv) requires inv to be an arrow function');
         }
-        if (arg.type !== 'ArrowFunctionExpression') {
-          throw unsupported(arg, 'every(arr, inv) requires inv to be an arrow function');
-        }
-        const inv: JSyntax.ArrowFunctionExpression = arg;
         if (inv.body.type === 'BlockStatement') {
-          throw unsupported(inv, 'every(arr, inv) requires inv to be an arrow function with an expression as body');
+          throw unsupported(inv, 'arr.every(inv) requires inv to be an arrow function with an expression as body');
         }
         if (inv.params.length < 1 || inv.params.length > 2 || inv.params.some((p, idx) => p.type !== 'Identifier')) {
-          throw unsupported(arg, 'every(arr, inv) requires inv to have one or two parameters');
+          throw unsupported(inv, 'arr.every(inv) requires inv to have one or two parameters');
         }
         return {
           type: 'EveryAssertion',
-          array: expressionAsTerm(callee),
+          array: expressionAsTerm(expr.callee.object),
           argument: patternAsIdentifier(inv.params[0]),
           indexArgument: inv.params.length > 1 ? patternAsIdentifier(inv.params[1]) : null,
           expression: expressionAsAssertion(inv.body),

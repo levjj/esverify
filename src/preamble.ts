@@ -133,7 +133,6 @@ export function generatePreamble (): Preamble {
 
 declare const requires: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const every: (a: Array<any>, b: ((x: any) => boolean) | ((x: any, y: any) => boolean)) => boolean;
 declare const pure: () => boolean;
 
 function preamble () {
@@ -216,7 +215,7 @@ function preamble () {
       requires(to < this.length);
 
       // @ts-ignore: indexing this
-      ensures(y => every(y, (ele, idx) => ele === this[idx + from]));
+      ensures(y => y.every((ele, idx) => ele === this[idx + from]));
       ensures(y => y.length === to - from);
       ensures(pure());
     }

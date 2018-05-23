@@ -2,7 +2,6 @@ import { code, incorrect, verified, unverified } from './helpers';
 
 declare const assert: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const every: (a: Array<any>, b: ((x: any) => boolean) | ((x: any, y: any) => boolean)) => boolean;
 declare const requires: (x: boolean) => void;
 
 describe('string concatenation', () => {

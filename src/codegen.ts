@@ -101,11 +101,11 @@ class Stringifier extends Visitor<string, string, string, string> {
 
   visitEveryAssertion (assertion: Syntax.EveryAssertion): string {
     if (assertion.indexArgument !== null) {
-      return `every(${this.visitTerm(assertion.array)}, ` +
+      return `${this.visitTerm(assertion.array)}.every(` +
                    `(${assertion.argument.name}, ${assertion.indexArgument.name}) => ` +
                    `${this.visitAssertion(assertion.expression)})`;
     } else {
-      return `every(${this.visitTerm(assertion.array)}, ` +
+      return `${this.visitTerm(assertion.array)}.every(` +
                    `${assertion.argument.name} => ${this.visitAssertion(assertion.expression)})`;
     }
   }

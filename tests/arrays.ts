@@ -2,7 +2,6 @@ import { code, incorrect, verified, unverified } from './helpers';
 
 declare const assert: (x: boolean) => void;
 declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const every: (a: Array<any>, b: ((x: any) => boolean) | ((x: any, y: any) => boolean)) => boolean;
 declare const requires: (x: boolean) => void;
 
 describe('simple arrays', () => {
@@ -77,13 +76,13 @@ describe('array invariants', () => {
 
   code(() => {
     function f_1 () {
-      ensures(res => every(res, e => e > 23));
+      ensures(res => res.every(e => e > 23));
 
       return [42, 69];
     }
 
     function f_2 (a: Array<number>) {
-      requires(every(a, e => e > 23));
+      requires(a.every(e => e > 23));
       requires(a.length >= 1);
       ensures(res => res > 12);
 
@@ -91,25 +90,25 @@ describe('array invariants', () => {
     }
 
     function f_3 (a: Array<number>) {
-      requires(every(a, e => e > 23));
+      requires(a.every(e => e > 23));
       requires(a.length >= 3);
       ensures(a[2] > 12);
     }
 
     function f_4 () {
-      ensures(res => every(res, (e, i) => e > i));
+      ensures(res => res.every((e, i) => e > i));
 
       return [1, 2, 3];
     }
 
     function g_1 () {
-      ensures(res => every(res, e => e > 23));
+      ensures(res => res.every(e => e > 23));
 
       return [42, 69, 4];
     }
 
     function g_2 (a: Array<number>) {
-      requires(every(a, e => e > 23));
+      requires(a.every(e => e > 23));
       requires(a.length >= 1);
       requires(a.length < 6);
       ensures(res => res > 42);
@@ -118,28 +117,28 @@ describe('array invariants', () => {
     }
 
     function g_3 (a: Array<number>) {
-      requires(every(a, e => e > 23));
+      requires(a.every(e => e > 23));
       requires(a.length === 0);
       ensures(a[2] > 12);
     }
 
     function g_4 () {
-      ensures(res => every(res, (e, i) => e > i));
+      ensures(res => res.every((e, i) => e > i));
 
       return [1, 2, 2];
     }
   });
 
-  verified('f_1: every(res, e => (e > 23))');
+  verified('f_1: res.every(e => (e > 23))');
   verified('f_2: a has property 0');
   verified('f_2: (res > 12)');
   verified('f_3: (a[2] > 12)');
-  verified('f_4: every(res, (e, i) => (e > i))');
-  incorrect('g_1: every(res, e => (e > 23))');
+  verified('f_4: res.every((e, i) => (e > i))');
+  incorrect('g_1: res.every(e => (e > 23))');
   verified('g_2: a has property 0');
   incorrect('g_2: (res > 42)', ['a', [24, 24]]);
   incorrect('g_3: (a[2] > 12)', ['a', []]);
-  incorrect('g_4: every(res, (e, i) => (e > i))');
+  incorrect('g_4: res.every((e, i) => (e > i))');
 });
 
 describe('array constructor', () => {
