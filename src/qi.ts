@@ -57,17 +57,29 @@ abstract class QuantifierTransformer extends Transformer {
   }
 
   freshLoc (prefered: Syntax.Location): Syntax.Location {
-    let n = prefered;
-    while (this.locs.has(n)) n = n + '_';
-    this.locs.add(n);
-    return n;
+    let name = prefered;
+    if (this.locs.has(name)) {
+      const m = name.match(/(.*)_(\d+)$/);
+      let idx = m ? +m[2] : 0;
+      name = m ? m[1] : name;
+      while (this.locs.has(`${name}_${idx}`)) idx++;
+      name = `${name}_${idx}`;
+    }
+    this.locs.add(name);
+    return name;
   }
 
   freshVar (prefered: Syntax.Variable): Syntax.Variable {
-    let n = prefered;
-    while (this.vars.has(n)) n = n + '_';
-    this.vars.add(n);
-    return n;
+    let name = prefered;
+    if (this.vars.has(name)) {
+      const m = name.match(/(.*)_(\d+)$/);
+      let idx = m ? +m[2] : 0;
+      name = m ? m[1] : name;
+      while (this.vars.has(`${name}_${idx}`)) idx++;
+      name = `${name}_${idx}`;
+    }
+    this.vars.add(name);
+    return name;
   }
 
   liftExistantials (prop: Syntax.ForAllCalls, newHeap: Syntax.HeapExpression = this.freshHeap(prop.heap)): Substituter {

@@ -46,6 +46,18 @@ describe('simple arrays', () => {
     assert(!(2 in a2));
     f(a2);
     a2[2];
+
+    function ff (a: Array<number>) {
+      requires(a instanceof Array);
+      requires(a.every(e => e > 3));
+      requires(a.length >= 2);
+      assert(a[0] > 2); // holds
+      assert(a[1] > 4); // does not hold
+      assert(a[2] > 0); // out of bounds
+    }
+
+    ff([5, 4]);
+    ff([5]); // precondition violated
   });
 
   verified('f: a has property 0');
