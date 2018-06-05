@@ -235,6 +235,56 @@ describe('map invariant', () => {
   verified('map: ((res === null) || ((res instanceof List) && (res.each === newEach)))');
 });
 
+describe('map invariant method', () => {
+  code(() => {
+    // custom linked list class with predicate and map function
+    class List {
+      head: any;
+      tail: List;
+      each: (element: any) => boolean;
+      constructor (head, tail, each) {
+        this.head = head; this.tail = tail; this.each = each;
+      }
+
+      invariant () {
+        // this.each is a predicate that is true for each element
+        return spec(this.each, (x) => true,
+                               (x, y) => pure() && typeof(y) === 'boolean') &&
+              (true && this.each)(this.head) &&
+              (this.tail === null ||
+                this.tail instanceof List && this.each === this.tail.each);
+      }
+
+      map (f, newEach) {
+        // new each neeeds to be a predicate
+        // (a pure function without precondition that returns a boolean)
+        requires(spec(newEach, (x) => true,
+                               (x, y) => pure() && typeof(y) === 'boolean'));
+        // the current predicate 'this.each' must satisfy the precondition of 'f'
+        // and the output of 'f' needs to satisfy the new predicate
+        requires(spec(f, (x) => (true && this.each)(x),
+                         (x, y) => pure() && newEach(y)));
+        ensures(res => res instanceof List && res.each === newEach);
+        ensures(pure());
+
+        return new List(
+          f(this.head),
+          this.tail === null ? null : this.tail.map(f, newEach),
+          newEach);
+      }
+    }
+  });
+
+  verified('map: this has property "head"');
+  verified('map: precondition f(this.head)');
+  verified('map: this has property "tail"');
+  verified('map: this.tail has property "map"');
+  verified('map: precondition this.tail.map(f, newEach)');
+  verified('map: class invariant List');
+  verified('map: ((res instanceof List) && (res.each === newEach))');
+  verified('map: pure()');
+});
+
 describe('promise', () => {
 
   code(() => {

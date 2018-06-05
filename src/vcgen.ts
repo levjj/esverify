@@ -422,8 +422,8 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     // remove 'this' name from scope again
     this.vars.delete(thisArg);
     // rename 'this' to the name reserved above in the generated propositions
-    const rP2 = replaceVar('this', thisArg, rP);
-    const sP2 = replaceVar('this', thisArg, sP);
+    const rP2 = assertion.hasThis ? replaceVar('this', thisArg, rP) : rP;
+    const sP2 = assertion.hasThis ? replaceVar('this', thisArg, sP) : sP;
     const sP3 = replaceResultWithCall(calleeA, this.heap + 1, thisArg, assertion.args, assertion.post.argument, sP2);
     const specP = transformSpec(calleeA, thisArg, assertion.args, rP2, sP3, this.heap + 1);
     const retName = assertion.post.argument === null
