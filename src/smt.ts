@@ -95,10 +95,16 @@ class SMTGenerator extends Visitor<SMTInput, SMTInput, SMTInput, SMTInput> {
   }
 
   visitConditionalExpression (expr: Syntax.ConditionalExpression): SMTInput {
-    const test = this.visitProp(expr.test);
-    const then = this.visitExpr(expr.consequent);
-    const elze = this.visitExpr(expr.alternate);
-    return `(ite ${test} ${then} ${elze})`;
+    if (expr.test.type === 'True') {
+      return this.visitExpr(expr.consequent);
+    } else if (expr.test.type === 'False') {
+      return this.visitExpr(expr.alternate);
+    } else {
+      const test = this.visitProp(expr.test);
+      const then = this.visitExpr(expr.consequent);
+      const elze = this.visitExpr(expr.alternate);
+      return `(ite ${test} ${then} ${elze})`;
+    }
   }
 
   visitCallExpression (expr: Syntax.CallExpression): SMTInput {
