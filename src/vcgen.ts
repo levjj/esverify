@@ -1108,6 +1108,8 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     // havoc heap
     this.heap++;
 
+    const startBody = this.testBody;
+
     // free mutable variables within the loop
     for (const fv of stmt.freeVars) {
       this.freeLoc(fv);
@@ -1115,7 +1117,6 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
     const startHeap = this.heap;
     const startProp = this.prop;
-    const startBody = this.testBody;
 
     // assume loop condition true and invariants true
     for (const inv of stmt.invariants) {
@@ -1140,7 +1141,18 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     // but we will ignore its effects
     this.heap = startHeap;
     this.prop = startProp;
-    this.testBody = startBody;
+    const whileBody = this.testBody[this.testBody.length - 1];
+    if (whileBody.type !== 'BlockStatement') {
+      throw new Error('expected while body to be single block statement');
+    }
+    this.testBody = startBody.concat([{
+      type: 'WhileStatement',
+      test: testEnterE,
+      body: whileBody,
+      invariants: stmt.invariants,
+      freeVars: stmt.freeVars,
+      loc: stmt.loc
+    }]);
 
     for (const inv of stmt.invariants) {
       const [invP,, invT] = this.assume(inv, this.heap, this.heap);

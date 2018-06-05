@@ -83,7 +83,7 @@ describe('loop with missing invariant', () => {
     assert(i === 5);
   });
 
-  incorrect('assert: (i === 5)', [{ name: 'i', heap: 2 }, false]);
+  unverified('assert: (i === 5)', [{ name: 'i', heap: 2 }, false]);
 });
 
 describe('sum', () => {
