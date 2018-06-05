@@ -4,7 +4,7 @@ import { Syntax, TestCode, Visitor, id, isValidAssignmentTarget, nullLoc, remove
          replaceVarBlock as replaceJSVarBlock, uniqueIdentifier } from './javascript';
 import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq, heapStore, implies, not, or,
          removePrefix, replaceResultWithCall, replaceVar, transformClassInvariant, transformEveryInvariant,
-         transformSpec, tru, truthy, und, Syntax as Logic } from './logic';
+         transformSpec, tru, truthy, und, Syntax as Logic, compareType } from './logic';
 import { eraseTriggersProp } from './qi';
 import { isMutable } from './scopes';
 import { flatMap } from './util';
@@ -195,6 +195,80 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string) {
     this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, and(this.prop, not(vc)),
                                             loc, desc, this.freeVars, this.testBody.concat(testBody)));
+  }
+
+  compareType (expr: Syntax.Expression, type: 'boolean' | 'number' | 'string'): Syntax.Expression {
+    return {
+      type: 'BinaryExpression',
+      operator: '===',
+      left: {
+        type: 'UnaryExpression',
+        operator: 'typeof',
+        argument: expr,
+        loc: expr.loc
+      },
+      right: {
+        type: 'Literal',
+        value: type,
+        loc: expr.loc
+      },
+      loc: expr.loc
+    };
+  }
+
+  compareTypePropAndTest (exprA: A, exprE: Syntax.Expression,
+                          type: 'boolean' | 'number' | 'string' | 'number or string' | 'int'):
+             [P, Syntax.Expression] {
+    switch (type) {
+      case 'boolean':
+        return [
+          compareType(exprA, 'boolean'),
+          this.compareType(exprE, 'boolean')
+        ];
+      case 'number':
+        return [
+          compareType(exprA, 'number'),
+          this.compareType(exprE, 'number')
+        ];
+      case 'string':
+        return [
+          compareType(exprA, 'string'),
+          this.compareType(exprE, 'string')
+        ];
+      case 'number or string':
+        return [
+          or(compareType(exprA, 'number'), compareType(exprA, 'string')),
+          {
+            type: 'LogicalExpression',
+            operator: '||',
+            left: this.compareType(exprE, 'number'),
+            right: this.compareType(exprE, 'string'),
+            loc: exprE.loc
+          }
+        ];
+      case 'int':
+        return [truthy({
+          type: 'IsIntegerExpression',
+          expression: exprA
+        }), {
+          type: 'CallExpression',
+          callee: {
+            type: 'MemberExpression',
+            object: id('Number', exprE.loc),
+            property: { type: 'Literal', value: 'isInteger', loc: exprE.loc },
+            loc: exprE.loc
+          },
+          args: [exprE],
+          loc: exprE.loc
+        }];
+    }
+  }
+
+  verifyType (expr: Syntax.Expression, exprA: A, exprE: Syntax.Expression, op: string,
+              type: 'boolean' | 'number' | 'string' | 'number or string' | 'int') {
+    const [prop, test] = this.compareTypePropAndTest(exprA, exprE, type);
+    const msg = op === 'if' ? 'if condition' : `operator ${op}`;
+    this.verify(prop, [this.check(test)], exprE.loc, `${msg} requires ${type}: ${stringifyExpression(expr)}`);
   }
 
   visitIdentifierTerm (term: Syntax.Identifier): [A, AccessTriggers, Syntax.Expression] {
@@ -633,6 +707,20 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
   visitUnaryExpression (expr: Syntax.UnaryExpression): [A, Syntax.Expression] {
     const [argumentA, argumentE] = this.visitExpression(expr.argument);
+    switch (expr.operator) {
+      case '-':
+        this.verifyType(expr, argumentA, argumentE, '-', 'number');
+        break;
+      case '+':
+        this.verifyType(expr, argumentA, argumentE, '+', 'number');
+        break;
+      case '!':
+        this.verifyType(expr, argumentA, argumentE, '!', 'boolean');
+        break;
+      case '~':
+        this.verifyType(expr, argumentA, argumentE, '~', 'number');
+        break;
+    }
     return [
       { type: 'UnaryExpression', operator: expr.operator, argument: argumentA },
       { type: 'UnaryExpression', operator: expr.operator, argument: argumentE, loc: expr.loc }];
@@ -641,6 +729,68 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   visitBinaryExpression (expr: Syntax.BinaryExpression): [A, Syntax.Expression] {
     const [leftA, leftE] = this.visitExpression(expr.left);
     const [rightA, rightE] = this.visitExpression(expr.right);
+    switch (expr.operator) {
+      case '<':
+        this.verifyType(expr, leftA, leftE, '<', 'number or string');
+        this.verifyType(expr, rightA, rightE, '<', 'number or string');
+        break;
+      case '<=':
+        this.verifyType(expr, leftA, leftE, '<=', 'number or string');
+        this.verifyType(expr, rightA, rightE, '<=', 'number or string');
+        break;
+      case '>':
+        this.verifyType(expr, leftA, leftE, '>', 'number or string');
+        this.verifyType(expr, rightA, rightE, '>', 'number or string');
+        break;
+      case '>=':
+        this.verifyType(expr, leftA, leftE, '>=', 'number or string');
+        this.verifyType(expr, rightA, rightE, '>=', 'number or string');
+        break;
+      case '<<':
+        this.verifyType(expr, leftA, leftE, '<<', 'int');
+        this.verifyType(expr, rightA, rightE, '<<', 'int');
+        break;
+      case '>>':
+        this.verifyType(expr, leftA, leftE, '>>', 'int');
+        this.verifyType(expr, rightA, rightE, '>>', 'int');
+        break;
+      case '>>>':
+        this.verifyType(expr, leftA, leftE, '>>>', 'int');
+        this.verifyType(expr, rightA, rightE, '>>>', 'int');
+        break;
+      case '+':
+        this.verifyType(expr, leftA, leftE, '+', 'number or string');
+        this.verifyType(expr, rightA, rightE, '+', 'number or string');
+        break;
+      case '-':
+        this.verifyType(expr, leftA, leftE, '-', 'number');
+        this.verifyType(expr, rightA, rightE, '-', 'number');
+        break;
+      case '*':
+        this.verifyType(expr, leftA, leftE, '*', 'number');
+        this.verifyType(expr, rightA, rightE, '*', 'number');
+        break;
+      case '/':
+        this.verifyType(expr, leftA, leftE, '/', 'number');
+        this.verifyType(expr, rightA, rightE, '/', 'number');
+        break;
+      case '%':
+        this.verifyType(expr, leftA, leftE, '%', 'int');
+        this.verifyType(expr, rightA, rightE, '%', 'int');
+        break;
+      case '|':
+        this.verifyType(expr, leftA, leftE, '|', 'int');
+        this.verifyType(expr, rightA, rightE, '|', 'int');
+        break;
+      case '^':
+        this.verifyType(expr, leftA, leftE, '^', 'int');
+        this.verifyType(expr, rightA, rightE, '^', 'int');
+        break;
+      case '&':
+        this.verifyType(expr, leftA, leftE, '&', 'int');
+        this.verifyType(expr, rightA, rightE, '&', 'int');
+        break;
+    }
     return [
       { type: 'BinaryExpression', operator: expr.operator, left: leftA, right: rightA },
       { type: 'BinaryExpression', operator: expr.operator, left: leftE, right: rightE, loc: expr.loc }];
@@ -921,6 +1071,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   visitIfStatement (stmt: Syntax.IfStatement): BreakCondition {
     const origBody = this.testBody;
     const [testA, testE] = this.visitExpression(stmt.test);
+    this.verifyType(stmt.test, testA, testE, 'if', 'boolean');
     this.testBody = this.testBody.concat({ type: 'ExpressionStatement', expression: testE, loc: stmt.test.loc });
     const [lHeap, lProp, lTC, lBC] = this.tryBlockStatement(truthy(testA), stmt.consequent);
     const [rHeap, rProp, rTC, rBC] = this.tryBlockStatement(falsy(testA), stmt.alternate);
@@ -967,12 +1118,12 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const startBody = this.testBody;
 
     // assume loop condition true and invariants true
-    let [testEnterA, testEnterE] = this.visitExpression(stmt.test);
-    this.have(truthy(testEnterA), [{ type: 'ExpressionStatement', expression: testEnterE, loc: stmt.test.loc }]);
     for (const inv of stmt.invariants) {
       const [invP,, invT] = this.assume(inv, this.heap, this.heap);
       this.have(invP, invT);
     }
+    let [testEnterA, testEnterE] = this.visitExpression(stmt.test);
+    this.have(truthy(testEnterA), [{ type: 'ExpressionStatement', expression: testEnterE, loc: stmt.test.loc }]);
 
     // internal verification conditions
     const bcBody = this.visitStatement(stmt.body);
@@ -991,13 +1142,13 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     this.prop = startProp;
     this.testBody = startBody;
 
-    // assume loop condition false and invariants true
-    const [testExitA, testExitE] = this.visitExpression(stmt.test);
-    this.have(falsy(testExitA), [{ type: 'ExpressionStatement', expression: testExitE, loc: stmt.test.loc }]);
     for (const inv of stmt.invariants) {
       const [invP,, invT] = this.assume(inv, this.heap, this.heap);
       this.have(invP, invT);
     }
+    // assume loop condition false and invariants true
+    const [testExitA, testExitE] = this.visitExpression(stmt.test);
+    this.have(falsy(testExitA), [{ type: 'ExpressionStatement', expression: testExitE, loc: stmt.test.loc }]);
     return and(truthy(testEnterA), bcBody);
   }
 

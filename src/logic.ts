@@ -1123,3 +1123,9 @@ export function transformEveryInvariant (array: A, elemName: string, index: stri
   };
   return and(instP, forAllP);
 }
+
+export function compareType (argument: A, type: 'boolean' | 'number' | 'string'): P {
+  return eq(
+    { type: 'UnaryExpression', operator: 'typeof', argument },
+    { type: 'Literal', value: type });
+}

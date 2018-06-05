@@ -23,11 +23,11 @@ describe('max()', () => {
   });
 
   it('finds a verification conditions', () => {
-    expect(vcs()).to.have.length(1);
+    expect(vcs()).to.have.length(4);
   });
 
   it('has a description', async () => {
-    expect(vcs()[0].description).to.be.eql('max: (res >= a)');
+    expect(vcs()[3].description).to.be.eql('max: (res >= a)');
   });
 
   verified('max: (res >= a)');
@@ -272,4 +272,37 @@ describe('reals', () => {
   verified('f: (((typeof(res) === "number") && (res > i)) && (res < (i + 1)))');
   incorrect('g: ((1 + 1) === 1)', ['i', 4.5]);
   incorrect('h: (res >= 1.5)', ['i', 1.5]);
+});
+
+describe('plus operator', () => {
+
+  code(() => {
+    const a = 23;
+    const b = 42;
+    const c = a + b;
+    assert(c === 65);
+
+    const s1 = 'Hello,';
+    const s2 = 'world!';
+    const s3 = s1 + s2;
+    assert(s3 === 'Hello,world!');
+
+    const x = a + s1;
+    const y = s2 + b;
+    // @ts-ignore: intentional error
+    const z = [] + { };
+  });
+
+  verified('operator + requires number or string: (a + b)');
+  verified('operator + requires number or string: (a + b)');
+  verified('assert: (c === 65)');
+  verified('operator + requires number or string: (s1 + s2)');
+  verified('operator + requires number or string: (s1 + s2)');
+  verified('assert: (s3 === "Hello,world!")');
+  verified('operator + requires number or string: (a + s1)');
+  verified('operator + requires number or string: (a + s1)');
+  verified('operator + requires number or string: (s2 + b)');
+  verified('operator + requires number or string: (s2 + b)');
+  incorrect('operator + requires number or string: ([] + {  })');
+  incorrect('operator + requires number or string: ([] + {  })');
 });
