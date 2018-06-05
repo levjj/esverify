@@ -421,7 +421,7 @@ describe('methods calling other methods', () => {
         return 1;
       }
       o () {
-        return this.n(4);
+        return this.n(7);
       }
       p () {
         requires(this.b >= 0);
@@ -455,7 +455,7 @@ describe('methods calling other methods', () => {
   verified('m: (y > 4)');
   verified('n: (y >= 1)');
   verified('o: this has property "n"');
-  verified('o: precondition this.n(4)');
+  verified('o: precondition this.n(7)');
   verified('p: this has property "b"');
   verified('p: this has property "n"');
   verified('p: precondition this.n(4)');

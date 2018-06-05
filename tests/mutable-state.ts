@@ -143,9 +143,9 @@ describe('pure functions', () => {
 
     function f () { ensures(pure()); x++; }
     function g () { ensures(pure()); return x + 1; }
-    function h1 () { /*empty*/ }
-    function h2a () { h1(); }
-    function h2b () { ensures(pure()); h1(); }
+    function h1 (y) { /*empty*/ }
+    function h2a () { h1(3); }
+    function h2b () { ensures(pure()); h1(4); }
     function h3a () { ensures(pure()); h2a(); }
     function h3b () { ensures(pure()); h2b(); }
   });

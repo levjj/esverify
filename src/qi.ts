@@ -1,5 +1,5 @@
 import { FreeVars, Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser, Vars, and, copy,
-         eq, eqExpr, eqHeap, eqProp, implies, tru } from './logic';
+         eqExpr, eqHeap, eqProp, implies, tru } from './logic';
 import { options } from './options';
 import { propositionToSMT } from './smt';
 
@@ -298,7 +298,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
       sub.replaceVar(a, trigger.args[idx]);
     });
     const replaced = sub.visitProp(prop.prop);
-    return implies(eq(prop.callee, trigger.callee), this.consumeFuel(replaced, trigger.fuel));
+    return this.consumeFuel(replaced, trigger.fuel);
   }
 
   instantiateAccessObject (prop: Syntax.ForAllAccessObject, trigger: Syntax.AccessTrigger) {
@@ -314,7 +314,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
     sub.replaceVar(prop.property, trigger.property);
     sub.replaceHeap(prop.heap, trigger.heap);
     const replaced = sub.visitProp(prop.prop);
-    return implies(eq(prop.object, trigger.object), this.consumeFuel(replaced, trigger.fuel));
+    return this.consumeFuel(replaced, trigger.fuel);
   }
 
   visitForAllCalls (prop: Syntax.ForAllCalls): P {
