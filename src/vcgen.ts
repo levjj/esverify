@@ -8,7 +8,7 @@ import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq,
 import { eraseTriggersProp } from './qi';
 import { isMutable } from './scopes';
 import { flatMap } from './util';
-import VerificationCondition from './verification';
+import VerificationCondition, { Assumption } from './verification';
 import { generatePreamble } from './preamble';
 
 export type BreakCondition = P;
@@ -31,8 +31,10 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   testBody: TestCode;
   assertionPolarity: boolean;
   simpleAssertion: boolean;
+  assumptions: Array<string>;
 
-  constructor (classes: Classes, oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, prop: P = tru) {
+  constructor (classes: Classes, oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, assumptions: Array<string>,
+               prop: P = tru) {
     super();
     this.classes = classes;
     this.oldHeap = oldHeap;
@@ -46,6 +48,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     this.testBody = [];
     this.assertionPolarity = true;
     this.simpleAssertion = true;
+    this.assumptions = assumptions;
   }
 
   have (p: P, t: TestCode = []): void {
@@ -193,8 +196,9 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   }
 
   verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string) {
-    this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, and(this.prop, not(vc)),
-                                            loc, desc, this.freeVars, this.testBody.concat(testBody)));
+    const assumptions: Array<Assumption> = this.assumptions.map((src: string): [string, P] => [src, tru]);
+    this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, this.prop, assumptions, vc,
+                                            loc, desc, this.freeVars, this.testBody, testBody));
   }
 
   compareType (expr: Syntax.Expression, type: 'boolean' | 'number' | 'string'): Syntax.Expression {
@@ -1064,6 +1068,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       this.verify(assertP, assertT, stmt.expression.loc, 'assert: ' + stringifyAssertion(stmt.expression));
     });
     const [assumeP,, assumeT] = this.assume(stmt.expression);
+    this.assumptions.push(stringifyAssertion(stmt.expression));
     this.have(assumeP, assumeT);
     return fls;
   }
@@ -1122,6 +1127,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     for (const inv of stmt.invariants) {
       const [invP,, invT] = this.assume(inv, this.heap, this.heap);
       this.have(invP, invT);
+      this.assumptions.push(stringifyAssertion(inv));
     }
     let [testEnterA, testEnterE] = this.visitExpression(stmt.test);
     this.have(truthy(testEnterA), [{ type: 'ExpressionStatement', expression: testEnterE, loc: stmt.test.loc }]);
@@ -1245,6 +1251,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       const [rP,, rT] = this.assume(r);
       startBody = startBody.concat(rT);
       this.have(rP, rT);
+      this.assumptions.push(stringifyAssertion(r));
     }
 
     const preBodyCode = this.testBody;
@@ -1321,12 +1328,13 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     return [removePrefix(preBodyProp, this.prop), blockStmt];
   }
 
-  createFunctionBodyInliner () {
+  createFunctionBodyInliner (): VCGenerator {
     return new VCGenerator(this.classes,
                            this.heap + 1,
                            this.heap + 1,
                            new Set([...this.locs]),
                            new Set([...this.vars]),
+                           [...this.assumptions],
                            this.prop);
   }
 
@@ -1584,6 +1592,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       });
       const [assumeP,, assumeT] = this.assume(inv);
       this.have(assumeP, assumeT);
+      this.assumptions.push(stringifyAssertion(inv));
     }
     return fls;
   }
@@ -1591,7 +1600,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
 export function vcgenProgram (prog: Syntax.Program): Array<VerificationCondition> {
   const { classes, heap, locs, vars, prop } = generatePreamble();
-  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, prop);
+  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], prop);
   vcgen.visitProgram(prog);
   return vcgen.vcs;
 }

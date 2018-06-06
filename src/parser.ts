@@ -287,7 +287,7 @@ function expressionAsTerm (expr: JSyntax.Expression): Syntax.Term {
   }
 }
 
-function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
+export function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
   switch (expr.type) {
     case 'UnaryExpression':
       if (expr.operator === '!') {

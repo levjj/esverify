@@ -1,10 +1,15 @@
 import { stringifyTestCode } from './codegen';
-import { Substituter, Syntax, nullLoc } from './javascript';
-import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars } from './logic';
+import { Substituter, Syntax, nullLoc, TestCode } from './javascript';
+import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars, not, and } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript } from './model';
 import { options } from './options';
 import { SMTInput, SMTOutput, vcToSMT } from './smt';
+import { parseScript } from 'esprima';
+import { expressionAsAssertion } from './parser';
+import { VCGenerator } from './vcgen';
+
+export type Assumption = [string, P];
 
 declare const console: { log: (s: string) => void };
 declare const require: (s: string) => any;
@@ -18,30 +23,34 @@ export default class VerificationCondition {
   locs: Locs;
   vars: Vars;
   prop: P;
+  assumptions: Array<Assumption>;
+  assertion: P;
   loc: Syntax.SourceLocation;
   freeVars: FreeVars;
-  testBody: Array<Syntax.Statement>;
+  testBody: TestCode;
+  testAssertion: TestCode;
   description: string;
-  inprocess: boolean;
   result: Message | null;
 
-  constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, loc: Syntax.SourceLocation,
-               description: string, freeVars: FreeVars, body: Array<Syntax.Statement>) {
+  constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, assumptions: Array<Assumption>,
+               assertion: P, loc: Syntax.SourceLocation, description: string, freeVars: FreeVars,
+               testBody: TestCode, testAssertion: TestCode) {
     this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap + 1).keys()]);
     this.locs = new Set([...locs]);
     this.vars = new Set([...vars]);
     this.prop = prop;
+    this.assumptions = assumptions;
+    this.assertion = assertion;
     this.loc = loc;
     this.description = description;
     this.freeVars = [...freeVars];
-    this.testBody = body;
-    this.inprocess = false;
+    this.testBody = testBody;
+    this.testAssertion = testAssertion;
     this.result = null;
   }
 
   async verify (): Promise<Message> {
-    this.inprocess = true;
     try {
       const smtin = this.prepareSMT();
       const smtout = await (options.remote ? this.solveRemote(smtin) : this.solveLocal(smtin));
@@ -52,8 +61,6 @@ export default class VerificationCondition {
     } catch (error) {
       if (error instanceof MessageException) return this.result = error.msg;
       return this.result = unexpected(error, this.loc, this.description);
-    } finally {
-      this.inprocess = false;
     }
   }
 
@@ -88,8 +95,35 @@ export default class VerificationCondition {
     }
   }
 
+  addAssumption (source: string): void {
+    const prog = parseScript(source, { loc: true });
+    if (prog.body.length !== 1) {
+      throw new Error('expected expression');
+    }
+    const exprStmt = prog.body[0];
+    if (exprStmt.type !== 'ExpressionStatement') {
+      throw new Error('expected expression');
+    }
+    const assumption = expressionAsAssertion(exprStmt.expression);
+    const maxHeap = Math.max(...this.heaps.values());
+    const assumptions = this.assumptions.map(([src]) => src);
+    const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
+                                  new Set([...this.locs]), new Set([...this.vars]), assumptions, this.prop);
+    const [assumptionP] = vcgen.assume(assumption);
+    this.assumptions.push([source, assumptionP]);
+  }
+
+  getAssumptions (): Array<string> {
+    return this.assumptions.map(([src]) => src);
+  }
+
+  removeAssumption (idx: number): void {
+    this.assumptions = this.assumptions.filter((_, i) => i !== idx);
+  }
+
   private prepareSMT (): SMTInput {
-    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, this.prop);
+    const prop = and(this.prop, ...this.assumptions.map(([,p]) => p), not(this.assertion));
+    const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, prop);
     if (options.verbose) {
       console.log('SMT Input:');
       console.log('------------');
@@ -106,7 +140,8 @@ export default class VerificationCondition {
       const und: Syntax.Literal = { type: 'Literal', value: undefined, loc: nullLoc() };
       sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, und, expr);
     });
-    const code = stringifyTestCode(this.testBody.map(s => sub.visitStatement(s)));
+    const testCode = this.testBody.concat(this.testAssertion);
+    const code = stringifyTestCode(testCode.map(s => sub.visitStatement(s)));
     if (!options.quiet && options.verbose) {
       console.log('Test Code:');
       console.log('------------');
