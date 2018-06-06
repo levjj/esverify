@@ -66,3 +66,17 @@ describe('assumptions', () => {
     expect(message.status).to.be.eql('verified');
   });
 });
+
+describe('assertion', () => {
+
+  code(example());
+
+  it('can be changed', async () => {
+    const vc = vcs()[0];
+    const vc2 = vc.assert('x >= 1 || x < 1');
+    expect(vc2.description).to.be.eql('x >= 1 || x < 1');
+    expect(vc2.getAssumptions()).to.have.length(1);
+    const message = await vc2.verify();
+    expect(message.status).to.be.eql('verified');
+  });
+});

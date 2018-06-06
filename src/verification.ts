@@ -110,7 +110,7 @@ export default class VerificationCondition {
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
                                   new Set([...this.locs]), new Set([...this.vars]), assumptions, this.prop);
     const [assumptionP] = vcgen.assume(assumption);
-    this.assumptions.push([source, assumptionP]);
+    this.assumptions = this.assumptions.concat([[source, assumptionP]]);
   }
 
   getAssumptions (): Array<string> {
@@ -119,6 +119,25 @@ export default class VerificationCondition {
 
   removeAssumption (idx: number): void {
     this.assumptions = this.assumptions.filter((_, i) => i !== idx);
+  }
+
+  assert (source: string): VerificationCondition {
+    const prog = parseScript(source, { loc: true });
+    if (prog.body.length !== 1) {
+      throw new Error('expected expression');
+    }
+    const exprStmt = prog.body[0];
+    if (exprStmt.type !== 'ExpressionStatement') {
+      throw new Error('expected expression');
+    }
+    const assertion = expressionAsAssertion(exprStmt.expression);
+    const maxHeap = Math.max(...this.heaps.values());
+    const assumptions = this.assumptions.map(([src]) => src);
+    const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
+                                  new Set([...this.locs]), new Set([...this.vars]), assumptions, this.prop);
+    const [assertionP, , assertionT] = vcgen.assert(assertion);
+    return new VerificationCondition(this.classes, maxHeap, this.locs, this.vars, this.prop, this.assumptions,
+                                     assertionP, this.loc, source, this.freeVars, this.testBody, assertionT);
   }
 
   private prepareSMT (): SMTInput {
