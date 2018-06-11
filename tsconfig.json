@@ -25,15 +25,8 @@
     "types": [],
     "typeRoots": ["node_modules/@types"]
   },
-  "files": [
-    "src/index.ts",
-    "src/javascript.ts",
-    "src/logic.ts",
-    "src/options.ts",
-    "src/smt.ts",
-    "src/util.ts",
-    "src/vcgen.ts",
-    "src/verification.ts"
+  "include": [
+    "src/*.ts"
   ],
   "compileOnSave": false
 }

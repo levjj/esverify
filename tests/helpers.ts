@@ -116,3 +116,69 @@ export const timeout: VerifiedFun = (() => {
   f.debug = (description: string): Mocha.ITest => helper('timeout', description, true, new Map());
   return f;
 })();
+
+function bisimulationHelper (description: string, fn: () => any, steps: number, debug: boolean) {
+  const testBody = () => {
+    const code = fn.toString().substring(14, fn.toString().length - 2);
+    const program = sourceAsJavaScript(code);
+    const interpreterOutputs: Array<any> = [];
+    let interpreterError: { error: any } | undefined;
+    const evalOutputs: Array<any> = [];
+    let evalError: { error: any } | undefined;
+    function log (out: any): void {
+      evalOutputs.push(out);
+      if (debug) console.log(out);
+    }
+    if (debug) console.log('\eval outputs:        ');
+    try {
+      /* tslint:disable:no-eval */
+      eval(code);
+    } catch (error) {
+      evalError = { error };
+    }
+    if (debug) console.log('\eval error:          ', evalError);
+    const interpreter = interpret(program);
+    interpreter.define('log', (out: any): void => {
+      interpreterOutputs.push(out);
+      if (debug) console.log(out);
+    }, 'const');
+    if (debug) console.log('\ninterpreter outputs:');
+    try {
+      interpreter.run();
+    } catch (error) {
+      interpreterError = { error };
+    }
+    if (debug) {
+      console.log('\ninterpreter error:  ', interpreterError);
+      console.log('\ninterpreter steps:  ', interpreter.steps, `(expected ${steps})`);
+    }
+    /* tslint:disable:no-unused-expression */
+    expect(interpreterOutputs).to.have.length(evalOutputs.length);
+    expect(interpreterOutputs).to.deep.eq(evalOutputs);
+    if (evalError === undefined) {
+      expect(interpreterError).to.be.undefined;
+    } else {
+      expect(typeof evalError.error).to.be.eq(typeof interpreterError.error);
+      expect(evalError.error.message).to.be.eq(interpreterError.error.message);
+    }
+    expect(interpreter.steps).to.eq(steps, 'expected number of steps');
+  };
+  if (debug) {
+    return it.only(`interprets ${description}`, testBody).timeout(60000);
+  } else {
+    return it(`interprets ${description}`, testBody);
+  }
+}
+
+interface BisimulationFun {
+  (description: string, code: () => any, steps: number): Mocha.ITest;
+  debug: (description: string, code: () => any, steps: number) => Mocha.ITest;
+}
+
+export const bisumulate: BisimulationFun = (() => {
+  const f: any = (description: string, code: () => any, steps: number): Mocha.ITest =>
+    bisimulationHelper(description, code, steps, false);
+  f.debug = (description: string, code: () => any, steps: number): Mocha.ITest =>
+    bisimulationHelper(description, code, steps, true);
+  return f;
+})();
