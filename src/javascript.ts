@@ -1038,3 +1038,14 @@ export function removeTestCodePrefix (prefix: TestCode, code: TestCode): TestCod
   }
   return code.slice(prefixLength);
 }
+
+export function copyId (id: Syntax.Identifier): Syntax.Identifier {
+  return {
+    type: 'Identifier',
+    name: id.name,
+    decl: id.decl,
+    isWrittenTo: id.isWrittenTo,
+    refs: id.refs,
+    loc: id.loc
+  };
+}

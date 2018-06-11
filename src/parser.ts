@@ -1,6 +1,6 @@
 import * as JSyntax from 'estree';
-import { Syntax, id } from './javascript';
-import { MessageException, unexpected } from './message';
+import { Syntax, id, copyId } from './javascript';
+import { MessageException, unexpected, ParseError } from './message';
 import { options } from './options';
 import { flatMap } from './util';
 
@@ -127,18 +127,18 @@ function checkDistinct (params: Array<JSyntax.Pattern>): void {
 }
 
 function assignUpdate (left: Syntax.Identifier, op: Syntax.BinaryOperator, right: JSyntax.Expression,
-                       stmt: JSyntax.Expression): Syntax.AssignmentExpression {
+                       expr: JSyntax.Expression): Syntax.AssignmentExpression {
   return {
     type: 'AssignmentExpression',
     left,
     right: {
       type: 'BinaryExpression',
-      left,
+      left: copyId(left),
       operator: op,
       right: expressionAsJavaScript(right),
-      loc: loc(stmt)
+      loc: loc(expr)
     },
-    loc: loc(stmt)
+    loc: loc(expr)
   };
 }
 
@@ -511,7 +511,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
             type: 'SequenceExpression',
             expressions: [
               assignUpdate(to, '+', one, expr),
-              { type: 'BinaryExpression', operator: '-', left: to, right: oneE, loc: loc(expr) }
+              { type: 'BinaryExpression', operator: '-', left: copyId(to), right: oneE, loc: loc(expr) }
             ],
             loc: loc(expr)
           };
@@ -520,7 +520,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
           type: 'SequenceExpression',
           expressions: [
             assignUpdate(to, '-', one, expr),
-            { type: 'BinaryExpression', operator: '+', left: to, right: oneE, loc: loc(expr) }
+            { type: 'BinaryExpression', operator: '+', left: copyId(to), right: oneE, loc: loc(expr) }
           ],
           loc: loc(expr)
         };
