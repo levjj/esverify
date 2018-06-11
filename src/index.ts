@@ -1,8 +1,6 @@
-import { parseScript } from 'esprima';
-import * as Syntax from 'estree';
 import { Message, MessageException, log, unexpected } from './message';
 import { Options, options, setOptions } from './options';
-import { programAsJavaScript } from './parser';
+import { sourceAsJavaScript } from './parser';
 import { resolveNames } from './scopes';
 import { vcgenProgram } from './vcgen';
 import VerificationCondition from './verification';
@@ -10,20 +8,10 @@ import VerificationCondition from './verification';
 export function verificationConditions (src: string, opts: Partial<Options> = {}):
                 Message | Array<VerificationCondition> {
   setOptions(opts);
-  let node: Syntax.Program;
   try {
-    node = parseScript(src, { loc: true });
-  } catch (e) {
-    const line: number = e.lineNumber || 0;
-    const column: number = 0;
-    const loc = { file: options.filename, start: { line, column }, end: { line, column: column + 1 } };
-    return { status: 'error', type: 'parse-error', loc, description: e.description || 'parse error' };
-  }
-  try {
-    const prog = programAsJavaScript(node);
+    const prog = sourceAsJavaScript(src);
     resolveNames(prog);
-    const vcs = vcgenProgram(prog);
-    return vcs;
+    return vcgenProgram(prog);
   } catch (e) {
     return e instanceof MessageException ? e.msg : unexpected(e);
   }

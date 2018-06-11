@@ -68,10 +68,10 @@ export class MessageException extends Error {
 }
 
 export function unexpected (error: Error,
-                           loc: Syntax.SourceLocation = {
-                             file: options.filename,
-                             start: { line: 0, column: 0 },
-                             end: { line: 0, column: 0 }},
+                            loc: Syntax.SourceLocation = {
+                              file: options.filename,
+                              start: { line: 0, column: 0 },
+                              end: { line: 0, column: 0 }},
                             description?: string): Message {
   return {
     status: 'error',

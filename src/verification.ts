@@ -5,8 +5,7 @@ import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript } from './model';
 import { options } from './options';
 import { SMTInput, SMTOutput, vcToSMT } from './smt';
-import { parseScript } from 'esprima';
-import { expressionAsAssertion } from './parser';
+import { sourceAsJavaScriptAssertion } from './parser';
 import { VCGenerator } from './vcgen';
 
 export type Assumption = [string, P];
@@ -96,15 +95,7 @@ export default class VerificationCondition {
   }
 
   addAssumption (source: string): void {
-    const prog = parseScript(source, { loc: true });
-    if (prog.body.length !== 1) {
-      throw new Error('expected expression');
-    }
-    const exprStmt = prog.body[0];
-    if (exprStmt.type !== 'ExpressionStatement') {
-      throw new Error('expected expression');
-    }
-    const assumption = expressionAsAssertion(exprStmt.expression);
+    const assumption = sourceAsJavaScriptAssertion(source);
     const maxHeap = Math.max(...this.heaps.values());
     const assumptions = this.assumptions.map(([src]) => src);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
@@ -122,15 +113,7 @@ export default class VerificationCondition {
   }
 
   assert (source: string): VerificationCondition {
-    const prog = parseScript(source, { loc: true });
-    if (prog.body.length !== 1) {
-      throw new Error('expected expression');
-    }
-    const exprStmt = prog.body[0];
-    if (exprStmt.type !== 'ExpressionStatement') {
-      throw new Error('expected expression');
-    }
-    const assertion = expressionAsAssertion(exprStmt.expression);
+    const assertion = sourceAsJavaScriptAssertion(source);
     const maxHeap = Math.max(...this.heaps.values());
     const assumptions = this.assumptions.map(([src]) => src);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,

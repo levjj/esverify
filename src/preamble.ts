@@ -1,8 +1,7 @@
 import { VCGenerator } from './vcgen';
 import { Classes, Heap, Locs, Vars, P, tru, copy, A } from './logic';
 import { Syntax, TestCode, nullLoc, id } from './javascript';
-import { parseScript } from 'esprima';
-import { programAsJavaScript } from './parser';
+import { sourceAsJavaScript } from './parser';
 import { resolveNames } from './scopes';
 
 export type GlobalDeclaration = { type: 'Var', decl: Syntax.VariableDeclaration }
@@ -114,7 +113,7 @@ export function generatePreamble (): Preamble {
   if (cachedPreamble === null) {
     let preambleSource = preamble.toString();
     preambleSource = preambleSource.substring(21, preambleSource.length - 1); // extract body from function
-    let preambleProgram: Syntax.Program = programAsJavaScript(parseScript(preambleSource, { loc: true }));
+    let preambleProgram: Syntax.Program = sourceAsJavaScript(preambleSource);
     resolveNames(preambleProgram, false);
     const vcgen = new PreambleGenrator(new Set(), 0, 0, new Set(), new Set(), [], tru);
     vcgen.visitProgram(preambleProgram);

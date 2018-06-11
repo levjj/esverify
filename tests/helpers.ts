@@ -4,6 +4,8 @@ import { FreeVar } from '../src/logic';
 import { log } from '../src/message';
 import { plainToJSVal } from '../src/model';
 import { setOptions } from '../src/options';
+import { sourceAsJavaScript } from '../src/parser';
+import { interpret } from '../src/tracing';
 import VerificationCondition from '../src/verification';
 
 declare const assert: (x: boolean) => void;

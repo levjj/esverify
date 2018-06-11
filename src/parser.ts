@@ -3,8 +3,9 @@ import { Syntax, id, copyId } from './javascript';
 import { MessageException, unexpected, ParseError } from './message';
 import { options } from './options';
 import { flatMap } from './util';
+import { parseScript } from 'esprima';
 
-function unsupported (node: JSyntax.Node, description: string = 'unsupported syntax'): MessageException {
+function unsupported (node: JSyntax.Node, description: string = 'syntax'): MessageException {
   return new MessageException({
     status: 'error',
     type: 'unsupported',
@@ -287,7 +288,7 @@ function expressionAsTerm (expr: JSyntax.Expression): Syntax.Term {
   }
 }
 
-export function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
+function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
   switch (expr.type) {
     case 'UnaryExpression':
       if (expr.operator === '!') {
@@ -921,7 +922,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
   }
 }
 
-export function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
+function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
   let stmts: Array<JSyntax.Statement> = [];
   for (const s of program.body) {
     if (s.type === 'ImportDeclaration' ||
@@ -939,4 +940,44 @@ export function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
     invariants: findInvariants(stmts)
   };
   return prog;
+}
+
+function parseSource (source: string): JSyntax.Program {
+  try {
+    return parseScript(source, { loc: true });
+  } catch (e) {
+    const line: number = e.lineNumber || 0;
+    const column: number = 0;
+    const loc = { file: options.filename, start: { line, column }, end: { line, column: column + 1 } };
+    const err: ParseError = { status: 'error', type: 'parse-error', loc, description: e.description || 'parse error' };
+    throw new MessageException(err);
+  }
+}
+
+export function sourceAsJavaScript (source: string): Syntax.Program {
+  return programAsJavaScript(parseSource(source));
+}
+
+export function sourceAsJavaScriptExpression (source: string): Syntax.Expression {
+  const node = parseSource(source);
+  if (node.body.length !== 1) {
+    throw unsupported(node, 'expected expression');
+  }
+  const firstStatement = node.body[0];
+  if (firstStatement.type !== 'ExpressionStatement') {
+    throw unsupported(node, 'expected expression');
+  }
+  return expressionAsJavaScript(firstStatement.expression);
+}
+
+export function sourceAsJavaScriptAssertion (source: string): Syntax.Assertion {
+  const node = parseSource(source);
+  if (node.body.length !== 1) {
+    throw unsupported(node, 'expected expression');
+  }
+  const firstStatement = node.body[0];
+  if (firstStatement.type !== 'ExpressionStatement') {
+    throw unsupported(node, 'expected expression');
+  }
+  return expressionAsAssertion(firstStatement.expression);
 }

@@ -145,7 +145,7 @@ export namespace Syntax {
                                            alternate: Expression;
                                            loc: SourceLocation; }
   export interface AssignmentExpression { type: 'AssignmentExpression';
-                                          left: Expression;
+                                          left: Identifier | MemberExpression;
                                           right: Expression;
                                           loc: SourceLocation; }
   export interface SequenceExpression { type: 'SequenceExpression';
@@ -273,6 +273,14 @@ export namespace Syntax {
   export type Program = { body: Array<Statement>,
                           invariants: Array<Assertion> };
 
+}
+
+export function eqSourceLocation (loc1: Syntax.SourceLocation, loc2: Syntax.SourceLocation): boolean {
+  return loc1.file === loc2.file &&
+         loc1.start.line === loc2.start.line &&
+         loc1.start.column === loc2.start.column &&
+         loc1.end.line === loc2.end.line &&
+         loc1.end.column === loc2.end.column;
 }
 
 export type TestCode = ReadonlyArray<Syntax.Statement>;
@@ -660,7 +668,12 @@ export class Substituter extends Visitor<Syntax.Term, Syntax.Assertion, Syntax.E
   visitAssignmentExpression (expr: Syntax.AssignmentExpression): Syntax.Expression {
     return {
       type: 'AssignmentExpression',
-      left: expr.left,
+      left: expr.left.type === 'Identifier' ? expr.left : {
+        type: 'MemberExpression',
+        object: this.visitExpression(expr.left.object),
+        property: this.visitExpression(expr.left.property),
+        loc: expr.left.loc
+      },
       right: this.visitExpression(expr.right),
       loc: expr.loc
     };
@@ -921,109 +934,8 @@ export function replaceVarBlock (varName: string, substA: Syntax.Term, substE: S
   return sub.visitBlockStatement(block);
 }
 
-/**
- * Given a term, determines whether it is a valid left-hand side of an assignment.
- */
-class ValidAssignmentTargetChecker extends Visitor<boolean, void, void, void> {
-
-  visitIdentifierTerm (term: Syntax.Identifier): boolean { return true; }
-
-  visitOldIdentifierTerm (term: Syntax.OldIdentifier): boolean { return false; }
-
-  visitLiteralTerm (term: Syntax.Literal): boolean { return false; }
-
-  visitUnaryTerm (term: Syntax.UnaryTerm): boolean { return false; }
-
-  visitBinaryTerm (term: Syntax.BinaryTerm): boolean { return false; }
-
-  visitLogicalTerm (term: Syntax.LogicalTerm): boolean { return false; }
-
-  visitConditionalTerm (term: Syntax.ConditionalTerm): boolean { return false; }
-
-  visitCallTerm (term: Syntax.CallTerm): boolean { return false; }
-
-  visitMemberTerm (term: Syntax.MemberTerm): boolean {
-    return this.visitTerm(term.object) && term.property.type === 'Literal';
-  }
-
-  visitIsIntegerTerm (term: Syntax.IsIntegerTerm): boolean { return false; }
-
-  visitToIntegerTerm (term: Syntax.ToIntegerTerm): boolean { return false; }
-
-  visitTermAssertion (assertion: Syntax.Term): void { /* empty */ }
-
-  visitPureAssertion (assertion: Syntax.PureAssertion): void { /* empty */ }
-
-  visitSpecAssertion (assertion: Syntax.SpecAssertion): void { /* empty */ }
-
-  visitEveryAssertion (assertion: Syntax.EveryAssertion): void { /* empty */ }
-
-  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): void { /* empty */ }
-
-  visitInAssertion (assertion: Syntax.InAssertion): void { /* empty */ }
-
-  visitUnaryAssertion (assertion: Syntax.UnaryAssertion): void { /* empty */ }
-
-  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): void { /* empty */ }
-
-  visitIdentifier (expr: Syntax.Identifier): void { /* empty */ }
-
-  visitLiteral (expr: Syntax.Literal): void { /* empty */ }
-
-  visitUnaryExpression (expr: Syntax.UnaryExpression): void { /* empty */ }
-
-  visitBinaryExpression (expr: Syntax.BinaryExpression): void { /* empty */ }
-
-  visitLogicalExpression (expr: Syntax.LogicalExpression): void { /* empty */ }
-
-  visitConditionalExpression (expr: Syntax.ConditionalExpression): void { /* empty */ }
-
-  visitAssignmentExpression (expr: Syntax.AssignmentExpression): void { /* empty */ }
-
-  visitSequenceExpression (expr: Syntax.SequenceExpression): void { /* empty */ }
-
-  visitCallExpression (expr: Syntax.CallExpression): void { /* empty */ }
-
-  visitNewExpression (expr: Syntax.NewExpression): void { /* empty */ }
-
-  visitArrayExpression (expr: Syntax.ArrayExpression): void { /* empty */ }
-
-  visitObjectExpression (expr: Syntax.ObjectExpression): void { /* empty */ }
-
-  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): void { /* empty */ }
-
-  visitInExpression (expr: Syntax.InExpression): void { /* empty */ }
-
-  visitMemberExpression (expr: Syntax.MemberExpression): void { /* empty */ }
-
-  visitFunctionExpression (expr: Syntax.FunctionExpression): void { /* empty */ }
-
-  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): void { /* empty */ }
-
-  visitBlockStatement (stmt: Syntax.BlockStatement): void { /* empty */ }
-
-  visitExpressionStatement (stmt: Syntax.ExpressionStatement): void { /* empty */ }
-
-  visitAssertStatement (stmt: Syntax.AssertStatement): void { /* empty */ }
-
-  visitIfStatement (stmt: Syntax.IfStatement): void { /* empty */ }
-
-  visitReturnStatement (stmt: Syntax.ReturnStatement): void { /* empty */ }
-
-  visitWhileStatement (stmt: Syntax.WhileStatement): void { /* empty */ }
-
-  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): void { /* empty */ }
-
-  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): void { /* empty */ }
-
-  visitClassDeclaration (stmt: Syntax.ClassDeclaration): void { /* empty */ }
-
-  visitProgram (prog: Syntax.Program): void { /* empty */ }
-}
-
-export function isValidAssignmentTarget (term: Syntax.Term): boolean {
-  const visitor = new ValidAssignmentTargetChecker();
-  return visitor.visitTerm(term);
+export function isValidAssignmentTarget (e: Syntax.Expression): e is (Syntax.Identifier | Syntax.MemberExpression) {
+  return e.type === 'Identifier' || e.type === 'MemberExpression';
 }
 
 export function uniqueIdentifier (loc: Syntax.SourceLocation): number {

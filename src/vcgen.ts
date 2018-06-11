@@ -524,7 +524,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       loc: assertion.loc
     };
     const specT: Array<Syntax.Statement> = [];
-    if (this.simpleAssertion && isValidAssignmentTarget(assertion.callee)) {
+    if (this.simpleAssertion && isValidAssignmentTarget(calleeE)) {
       if (rT.length + sT.length > 0) {
         specT.push({
           type: 'ExpressionStatement',
