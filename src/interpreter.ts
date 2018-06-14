@@ -105,6 +105,8 @@ function isSpecWrappedFunction (f: any): f is SpecWrappedFunction {
   return typeof f === 'function' && '_mapping' in f;
 }
 
+enum StepResult { NOP, STEP, DONE, SET }
+
 abstract class BaseStackFrame {
   scope: Scope;
   pc: Syntax.Expression | Syntax.Statement | null;
@@ -224,7 +226,7 @@ class SpecStackFrame extends BaseStackFrame {
   }
 
   name (): string {
-    return `<spec of ${this.func._orig.name === null ? 'anonymous' : this.func._orig.name}>`;
+    return `<spec of ${this.func._orig.name || 'anonymous'}>`;
   }
 
   entry (interpreter: InterpreterVisitor): StepResult {
@@ -278,8 +280,6 @@ interface MethodCallExpression {
 function isMethodCall (expr: Syntax.CallExpression): expr is MethodCallExpression {
   return expr.callee.type === 'MemberExpression';
 }
-
-enum StepResult { NOP, STEP, DONE, SET }
 
 export interface Annotation {
   file: string;
