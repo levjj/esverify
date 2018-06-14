@@ -1,6 +1,8 @@
 import { bisumulate } from './helpers';
 
-declare const log: (out: any) => void;
+declare function log (out: any): void;
+declare function assert (x: boolean): void;
+declare function spec<X,Y> (f: (X) => Y, id: number, r: (rx: X) => [X], s: (sx: X, sy: Y) => Y): (X) => Y;
 
 describe('interpreter', () => {
 
@@ -291,4 +293,34 @@ describe('interpreter', () => {
     const bm = b.method;
     log(bm());
   }, 112);
+
+  bisumulate('assert', () => {
+    assert(1 < 3);
+    assert(Number.isInteger(23));
+    assert(0 > 23);
+  }, 15);
+
+  bisumulate('spec, unwrapped call', () => {
+    function f (x) { log(x); return x; }
+    const f2 = spec(f, 23, x => { assert(x > 0); return [x]; }, (x, y) => { assert(y > 0); return y; });
+    log(f(-2));
+  }, 19);
+
+  bisumulate('spec, valid call', () => {
+    function f (x) { log(x); return x; }
+    const f2 = spec(f, 23, x => { assert(x > 0); return [x]; }, (x, y) => { assert(y > 0); return y; });
+    log(f2(2));
+  }, 37);
+
+  bisumulate('spec, violate pre', () => {
+    function f (x) { log(x); return 23; }
+    const f2 = spec(f, 23, x => { assert(x > 0); return [x]; }, (x, y) => { assert(y > 0); return y; });
+    log(f2(-2));
+  }, 17);
+
+  bisumulate('spec, violate post', () => {
+    function f (x) { log(x); return -4; }
+    const f2 = spec(f, 23, x => { assert(x > 0); return [x]; }, (x, y) => { assert(y > 0); return y; });
+    log(f2(2));
+  }, 32);
 });

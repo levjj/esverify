@@ -1,14 +1,8 @@
-import { Syntax, Visitor, eqSourceLocation, nullLoc } from './javascript';
+import { Syntax, Visitor, eqSourceLocation, nullLoc, eqEndPosition, compEndPosition,
+         findSourceLocation } from './javascript';
 import { sourceAsJavaScriptExpression } from './parser';
 
-export function assertionFailed (): Error {
-  return new Error('assertion failed');
-}
-
-export function init<E extends Error> (err: E): E {
-  err.stack = `${err.constructor.name}: ${err.message}`;
-  return err;
-}
+declare const console: { log: (s: string) => void };
 
 class Scope {
 
@@ -22,7 +16,7 @@ class Scope {
 
   define (name: string, val: any, kind: 'let' | 'const'): void {
     if (this.bindings.some(([n]) => n === name)) {
-      throw init(new SyntaxError(`Identifier '${name}' has already been declared`));
+      throw new SyntaxError(`Identifier '${name}' has already been declared`);
     }
     this.bindings.push([name, val, kind]);
   }
@@ -34,7 +28,7 @@ class Scope {
     } else if (this.parent) {
       return this.parent.lookup(name);
     } else {
-      throw init(new ReferenceError(`${name} is not defined`));
+      throw new ReferenceError(`${name} is not defined`);
     }
   }
 
@@ -42,13 +36,13 @@ class Scope {
     const idx = this.bindings.findIndex(([n]) => n === name);
     if (idx >= 0) {
       if (this.bindings[idx][2] === 'const') {
-        throw init(new TypeError('Assignment to constant variable.'));
+        throw new TypeError('Assignment to constant variable.');
       }
       this.bindings[idx][1] = val;
     } else if (this.parent) {
       this.parent.assign(name, val);
     } else {
-      throw init(new ReferenceError(`ReferenceError: ${name} is not defined`));
+      throw new ReferenceError(`ReferenceError: ${name} is not defined`);
     }
   }
 
@@ -57,8 +51,6 @@ class Scope {
     return this.parent ? [bindings].concat(this.parent.asArray()) : [bindings];
   }
 }
-
-declare const console: { log: (s: string) => void };
 
 function globalScope (): Scope {
   const scope = new Scope();
@@ -70,6 +62,28 @@ function globalScope (): Scope {
   scope.define('parseInt', parseInt, 'const');
   scope.define('Math', Math, 'const');
   scope.define('Number', Number, 'const');
+
+  scope.define('assert', function assert (p: any) { if (!p) throw new Error('assertion failed'); }, 'const');
+  scope.define('spec', function spec (f: any, id: any, req: any, ens: any) {
+    if (f._mapping) {
+      f._mapping[id] = [req, ens];
+      return f;
+    } else {
+      const mapping = { [id]: [req, ens] };
+      const wrapped: any = function (this: any, ...args: any[]) {
+        return Object.values(mapping).reduceRight(function (cont, [req, ens]) {
+          return function (this: any, ...args2: any[]) {
+            const args3 = req.apply(this, args2);
+            return ens.apply(this, args3.concat([cont.apply(this, args3)]));
+          };
+        }, f).apply(this, args);
+      };
+      wrapped._mapping = mapping;
+      wrapped._orig = f;
+      return wrapped;
+    }
+  }, 'const');
+
   return scope;
 }
 
@@ -80,6 +94,15 @@ interface InterpreterFunction extends Function {
 
 function isInterpreterFunction (f: any): f is InterpreterFunction {
   return typeof f === 'function' && 'scope' in f && 'node' in f;
+}
+
+interface SpecWrappedFunction extends Function {
+  _mapping: { [id: number]: [InterpreterFunction, InterpreterFunction] };
+  _orig: Function;
+}
+
+function isSpecWrappedFunction (f: any): f is SpecWrappedFunction {
+  return typeof f === 'function' && '_mapping' in f;
 }
 
 abstract class BaseStackFrame {
@@ -129,8 +152,6 @@ abstract class BaseStackFrame {
     this.iteration++;
   }
 
-  abstract name (): string;
-
   toString (): string {
     return `${this.name()} (${this.loc().file}:${this.loc().start.line}:${this.loc().start.column})`;
   }
@@ -138,6 +159,11 @@ abstract class BaseStackFrame {
   asTuple (): [string, Syntax.SourceLocation, number] {
     return [this.toString(), this.loc(), this.iteration];
   }
+
+  abstract name (): string;
+
+  abstract entry (interpreter: InterpreterVisitor): StepResult;
+
 }
 
 class ProgramStackFrame extends BaseStackFrame {
@@ -151,18 +177,9 @@ class ProgramStackFrame extends BaseStackFrame {
   name (): string {
     return '<program>';
   }
-}
 
-class EvaluationStackFrame extends BaseStackFrame {
-  expression: Syntax.Expression;
-
-  constructor (expression: Syntax.Expression, scope: Scope) {
-    super(scope);
-    this.expression = expression;
-  }
-
-  name (): string {
-    return '<eval>';
+  entry (interpreter: InterpreterVisitor): StepResult {
+    return interpreter.visitProgram(this.program);
   }
 }
 
@@ -177,9 +194,79 @@ class FunctionStackFrame extends BaseStackFrame {
   name (): string {
     return this.func.node.id === null ? '<anonymous>' : this.func.node.id.name;
   }
+
+  entry (interpreter: InterpreterVisitor): StepResult {
+    const res = interpreter.visitBlockStatement(this.func.node.body);
+    if (res === StepResult.DONE) {
+      interpreter.ret(undefined);
+    }
+    return StepResult.STEP;
+  }
 }
 
-type StackFrame = ProgramStackFrame | FunctionStackFrame | EvaluationStackFrame;
+class SpecStackFrame extends BaseStackFrame {
+  func: SpecWrappedFunction;
+  thisArg: any;
+  args: Array<any>;
+  preCheckers: Array<InterpreterFunction>;
+  functionCalled: boolean;
+  postCheckers: Array<InterpreterFunction>;
+
+  constructor (func: SpecWrappedFunction, thisArg: any, args: Array<any>) {
+    super(new Scope());
+    this.func = func;
+    this.thisArg = thisArg;
+    this.args = args;
+    this.operandStack.push(args);
+    this.preCheckers = Object.values(func._mapping).map(([req]) => req);
+    this.functionCalled = false;
+    this.postCheckers = Object.values(func._mapping).map(([, ens]) => ens);
+  }
+
+  name (): string {
+    return `<spec of ${this.func._orig.name === null ? 'anonymous' : this.func._orig.name}>`;
+  }
+
+  entry (interpreter: InterpreterVisitor): StepResult {
+    const nextPreCheck = this.preCheckers.shift();
+    if (nextPreCheck !== undefined) {
+      this.args = this.operandStack.pop();
+      interpreter.call(nextPreCheck, this.thisArg, this.args);
+    } else if (!this.functionCalled) {
+      this.args = this.operandStack.pop();
+      interpreter.call(this.func._orig, this.thisArg, this.args);
+      this.functionCalled = true;
+    } else {
+      const prevResult = this.operandStack.pop();
+      const nextPostCheck = this.postCheckers.shift();
+      if (nextPostCheck !== undefined) {
+        interpreter.call(nextPostCheck, this.thisArg, this.args.concat([prevResult]));
+      } else {
+        interpreter.ret(prevResult);
+      }
+    }
+    return StepResult.STEP;
+  }
+}
+
+class EvaluationStackFrame extends BaseStackFrame {
+  expression: Syntax.Expression;
+
+  constructor (expression: Syntax.Expression, scope: Scope) {
+    super(new Scope(scope));
+    this.expression = expression;
+  }
+
+  name (): string {
+    return '<eval>';
+  }
+
+  entry (interpreter: InterpreterVisitor): StepResult {
+    return interpreter.visitExpression(this.expression);
+  }
+}
+
+type StackFrame = ProgramStackFrame | FunctionStackFrame | SpecStackFrame | EvaluationStackFrame;
 
 interface MethodCallExpression {
   type: 'CallExpression';
@@ -194,24 +281,34 @@ function isMethodCall (expr: Syntax.CallExpression): expr is MethodCallExpressio
 
 enum StepResult { NOP, STEP, DONE, SET }
 
-export interface Tracer {
+export interface Annotation {
+  file: string;
+  position: Syntax.Position;
+  variableName: string;
+  values: Array<any>;
+}
+
+export interface Interpreter {
   steps: number;
+  annotations: Array<Annotation>;
   loc (): Syntax.SourceLocation;
   iteration (): number;
   callstack (): Array<[string, Syntax.SourceLocation, number]>;
   scopes (): Array<Array<[string, any]>>;
-  goto (loc: Syntax.SourceLocation, iteration: number): void;
+  goto (pos: Syntax.Position, iteration: number): void;
+  restart (): void;
   stepInto (): void;
   stepOver (): void;
+  stepOut (): void;
   run (): void;
   define (name: string, val: any, kind: 'let' | 'const'): void;
-  eval (source: string): any;
+  eval (source: string, bindings: Array<[string, any]>): any;
 }
 
-class Interpreter extends Visitor<void, void, StepResult, StepResult> implements Tracer {
-
+class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> implements Interpreter {
   program: Syntax.Program;
   steps: number;
+  annotations: Array<Annotation>;
   private stack: Array<StackFrame>;
   private breakpoint: [Syntax.SourceLocation, number] | null;
 
@@ -219,6 +316,7 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
     super();
     this.program = program;
     this.steps = 0;
+    this.annotations = [];
     this.stack = [new ProgramStackFrame(program)];
     this.breakpoint = null;
     this.visitProgram(program); // set initial PC
@@ -244,8 +342,13 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
     return this.frame().scopes();
   }
 
-  goto (loc: Syntax.SourceLocation, iteration: number = 0): void {
+  restart (): void {
     this.reset();
+  }
+
+  goto (pos: Syntax.Position, iteration: number = 0): void {
+    this.reset();
+    const loc = findSourceLocation(this.program, pos);
     this.breakpoint = [loc, iteration];
     this.run();
     if (!eqSourceLocation(loc, this.loc()) || iteration !== this.iteration()) {
@@ -257,13 +360,44 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
     this.frame().define(name, val, kind);
   }
 
-  eval (source: string): any {
+  eval (source: string, optBindings: Array<[string, any]> = []): any {
     const expression = sourceAsJavaScriptExpression(source);
     this.stack.push(new EvaluationStackFrame(expression, this.frame().scope));
-    return this.stepOut();
+    for (const [varname, value] of optBindings) {
+      this.frame().define(varname, value, 'let');
+    }
+    while (true) {
+      const res = this.step();
+      if (res === StepResult.DONE) {
+        const retVal = this.popOp();
+        this.stack.pop();
+        return retVal;
+      }
+    }
   }
 
   // --- other methods
+
+  annotate (loc: Syntax.SourceLocation, variableName: string, value: any): any {
+    // find index of annotation
+    const idx = this.annotations.findIndex(({ file, position }) =>
+      eqEndPosition(loc, { file, start: position, end: position }));
+    if (idx >= 0) {
+      this.annotations[idx].values.push(value);
+    } else {
+      // no such annotation yet
+      // find index of first annotation that is not earlier
+      const idx = this.annotations.findIndex(({ file, position }) =>
+        !compEndPosition(loc, { file, start: position, end: position }));
+      const annotation = { file: loc.file, position: loc.end, variableName, values: [value] };
+      if (idx >= 0) {
+        this.annotations.splice(idx, 0, annotation);
+      } else {
+        // no annotation found that are later, so append
+        this.annotations.push(annotation);
+      }
+    }
+  }
 
   frame (): StackFrame {
     return this.stack[this.stack.length - 1];
@@ -291,6 +425,49 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
 
   popOp (): any {
     return this.frame().operandStack.pop();
+  }
+
+  call (callee: any, thisArg: any, args: Array<any>): void {
+    if (isSpecWrappedFunction(callee)) {
+      const prevPC = this.pc();
+      const newFrame = new SpecStackFrame(callee, thisArg, args);
+      this.stack.push(newFrame);
+      this.setPC(prevPC);
+    } else if (isInterpreterFunction(callee)) {
+      const newFrame = new FunctionStackFrame(callee);
+      newFrame.define('this', thisArg, 'const');
+      for (let i = 0; i < callee.node.params.length; i++) {
+        const argVal = i < args.length ? args[i] : undefined;
+        newFrame.define(callee.node.params[i].name, argVal, 'let');
+        this.annotate(callee.node.params[i].loc, callee.node.params[i].name, argVal);
+      }
+      this.stack.push(newFrame);
+      this.visitBlockStatement(callee.node.body);
+    } else if (callee instanceof Function) {
+      const calleeFunction: Function = callee;
+      this.pushOp(calleeFunction.apply(thisArg, args));
+    } else {
+      throw new TypeError('is not a function');
+    }
+  }
+
+  ret (retValue: any): void {
+    if (this.stack.length < 2) {
+      throw new SyntaxError('Illegal return statement');
+    }
+    this.stack.pop();
+    this.pushOp(retValue);
+  }
+
+  closure (func: Syntax.Function): InterpreterFunction {
+    const interpreter = this;
+    const f: any = function (this: any, ...args: any[]): any {
+      interpreter.call(f, this, args);
+      return interpreter.stepOut();
+    };
+    f.node = func;
+    f.scope = this.frame().scope;
+    return f;
   }
 
   // ---- Interpreter does not evaluate assertions ----
@@ -666,24 +843,6 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
     }
   }
 
-  call (callee: any, thisArg: any, args: Array<any>): void {
-    if (isInterpreterFunction(callee)) {
-      const newFrame = new FunctionStackFrame(callee);
-      newFrame.define('this', thisArg, 'const');
-      for (let i = 0; i < callee.node.params.length; i++) {
-        const argVal = i < args.length ? args[i] : undefined;
-        newFrame.define(callee.node.params[i].name, argVal, 'let');
-      }
-      this.stack.push(newFrame);
-      this.visitBlockStatement(callee.node.body);
-    } else if (callee instanceof Function) {
-      const calleeFunction: Function = callee;
-      this.pushOp(calleeFunction.apply(thisArg, args));
-    } else {
-      throw init(new TypeError('is not a function'));
-    }
-  }
-
   visitMethodCallExpression (expr: MethodCallExpression): StepResult {
     if (this.seeking()) {
       return this.visitExpression(expr.callee.object);
@@ -981,17 +1140,6 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
     }
   }
 
-  closure (func: Syntax.Function): InterpreterFunction {
-    const interpreter = this;
-    const f: any = function (this: any, ...args: any[]): any {
-      interpreter.call(f, this, args);
-      return interpreter.stepOut();
-    };
-    f.node = func;
-    f.scope = this.frame().scope;
-    return f;
-  }
-
   visitFunctionExpression (expr: Syntax.FunctionExpression): StepResult {
     if (this.seeking()) {
       this.setPC(expr);
@@ -1009,7 +1157,9 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
     if (this.seeking()) {
       return this.visitExpression(stmt.init);
     } else if (this.pc() === stmt) {
-      this.frame().define(stmt.id.name, this.popOp(), stmt.kind);
+      const val = this.popOp();
+      this.frame().define(stmt.id.name, val, stmt.kind);
+      this.annotate(stmt.id.loc, stmt.id.name, val);
       this.clearPC();
       return StepResult.DONE;
     } else {
@@ -1099,11 +1249,7 @@ class Interpreter extends Visitor<void, void, StepResult, StepResult> implements
       return this.visitExpression(stmt.argument);
     } else if (this.pc() === stmt) {
       const retValue = this.popOp();
-      if (this.stack.length < 2) {
-        throw init(new SyntaxError('Illegal return statement'));
-      }
-      this.stack.pop();
-      this.pushOp(retValue);
+      this.ret(retValue);
       return StepResult.STEP;
     } else {
       const initRes = this.visitExpression(stmt.argument);
@@ -1217,6 +1363,7 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
 
   reset (): void {
     this.steps = 0;
+    this.annotations = [];
     this.stack = [new ProgramStackFrame(this.program)];
     this.breakpoint = null;
     this.visitProgram(this.program);
@@ -1225,14 +1372,9 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
   step (): StepResult {
     const frame = this.frame();
     try {
-      if (frame instanceof ProgramStackFrame) {
-        return this.visitProgram(frame.program);
-      } else if (frame instanceof FunctionStackFrame) {
-        return this.visitBlockStatement(frame.func.node.body);
-      } else {
-        return this.visitExpression(frame.expression);
-      }
+      return frame.entry(this);
     } catch (e) {
+      e.stack = `${e.constructor.name}: ${e.message}`;
       for (let i = this.stack.length - 1; i >= 0; i--) {
         e.stack += `\n    at ${this.stack[i].toString()}`;
       }
@@ -1279,6 +1421,6 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
   }
 }
 
-export function interpret (program: Syntax.Program): Tracer {
-  return new Interpreter(program);
+export function interpret (program: Syntax.Program): Interpreter {
+  return new InterpreterVisitor(program);
 }
