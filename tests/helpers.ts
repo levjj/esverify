@@ -5,16 +5,9 @@ import { log } from '../src/message';
 import { plainToJSVal } from '../src/model';
 import { setOptions } from '../src/options';
 import { sourceAsJavaScript } from '../src/parser';
-import { interpret } from '../src/tracing';
+import { interpret } from '../src/interpreter';
 import VerificationCondition from '../src/verification';
-
-declare const assert: (x: boolean) => void;
-declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const invariant: (x: boolean) => void;
-declare const old: (x: any) => any;
-declare const pure: () => boolean;
-declare const requires: (x: boolean) => void;
-declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any, sy: any) => boolean) => boolean;
+import { TEST_PREAMBLE } from '../src/codegen';
 
 let savedVCs: Array<VerificationCondition>;
 
@@ -120,7 +113,7 @@ export const timeout: VerifiedFun = (() => {
 function bisimulationHelper (description: string, fn: () => any, steps: number, debug: boolean) {
   const testBody = () => {
     const code = fn.toString().substring(14, fn.toString().length - 2);
-    const program = sourceAsJavaScript(code);
+    const program = sourceAsJavaScript(code, false);
     const interpreterOutputs: Array<any> = [];
     let interpreterError: { error: any } | undefined;
     const evalOutputs: Array<any> = [];
@@ -132,7 +125,7 @@ function bisimulationHelper (description: string, fn: () => any, steps: number, 
     if (debug) console.log('\eval outputs:        ');
     try {
       /* tslint:disable:no-eval */
-      eval(code);
+      eval(TEST_PREAMBLE + code);
     } catch (error) {
       evalError = { error };
     }

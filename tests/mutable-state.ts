@@ -1,11 +1,11 @@
 import { code, incorrect, unverified, verified } from './helpers';
 
-declare const assert: (x: boolean) => void;
-declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const invariant: (x: boolean) => void;
-declare const old: (x: any) => any;
-declare const pure: () => boolean;
-declare const requires: (x: boolean) => void;
+declare function assert (x: boolean): void;
+declare function invariant (x: boolean): void;
+declare function ensures (x: boolean | ((y: any) => boolean)): void;
+declare function requires (x: boolean): void;
+declare function pure (): boolean;
+declare function old<T> (x: T): T;
 
 describe('counter', () => {
 

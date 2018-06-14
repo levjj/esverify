@@ -2,10 +2,9 @@ import { expect } from 'chai';
 import { code, incorrect, unverified, verified } from './helpers';
 import { verificationConditions } from '../src';
 
-declare const assert: (x: boolean) => void;
-declare const ensures: (x: boolean | ((y: any) => boolean)) => void;
-declare const requires: (x: boolean) => void;
-declare const spec: (f: any, r: (rx: any) => boolean, s: (sx: any, sy: any) => boolean) => boolean;
+declare function assert (x: boolean): void;
+declare function ensures (x: boolean | ((y: any) => boolean)): void;
+declare function requires (x: boolean): void;
 
 describe('undefined identifier', () => {
 
