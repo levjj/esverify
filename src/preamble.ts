@@ -84,6 +84,7 @@ class PreambleGenrator extends VCGenerator {
                                 new Set([...this.locs]),
                                 new Set([...this.vars]),
                                 [],
+                                [],
                                 this.prop);
   }
 
@@ -115,7 +116,7 @@ export function generatePreamble (): Preamble {
     preambleSource = preambleSource.substring(21, preambleSource.length - 1); // extract body from function
     let preambleProgram: Syntax.Program = sourceAsJavaScript(preambleSource);
     resolveNames(preambleProgram, false);
-    const vcgen = new PreambleGenrator(new Set(), 0, 0, new Set(), new Set(), [], tru);
+    const vcgen = new PreambleGenrator(new Set(), 0, 0, new Set(), new Set(), [], [], tru);
     vcgen.visitProgram(preambleProgram);
     const { classes, heap, locs, vars, prop } = vcgen;
     cachedPreamble = { classes, heap, locs, vars, prop };

@@ -1,12 +1,14 @@
 import { stringifyTestCode } from './codegen';
-import { Substituter, Syntax, nullLoc, TestCode } from './javascript';
+import { Substituter, Syntax, nullLoc, TestCode, eqSourceLocation, compEndPosition } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars, not, and } from './logic';
 import { Message, MessageException, unexpected } from './message';
-import { Model, valueToJavaScript } from './model';
+import { Model, valueToJavaScript, valueToPlain } from './model';
 import { options } from './options';
 import { SMTInput, SMTOutput, vcToSMT } from './smt';
 import { sourceAsJavaScriptAssertion } from './parser';
 import { VCGenerator } from './vcgen';
+import { Interpreter, interpret } from './interpreter';
+import { generatePreamble } from './preamble';
 
 export type Assumption = [string, P];
 
@@ -29,11 +31,16 @@ export default class VerificationCondition {
   testBody: TestCode;
   testAssertion: TestCode;
   description: string;
+  heapHints: Array<[Syntax.SourceLocation, Heap]>;
+  watches: Array<string>;
+
+  model: Model | null;
+  interpreter: Interpreter | null;
   result: Message | null;
 
   constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, assumptions: Array<Assumption>,
                assertion: P, loc: Syntax.SourceLocation, description: string, freeVars: FreeVars,
-               testBody: TestCode, testAssertion: TestCode) {
+               testBody: TestCode, testAssertion: TestCode, heapHints: Array<[Syntax.SourceLocation, Heap]>) {
     this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap + 1).keys()]);
     this.locs = new Set([...locs]);
@@ -46,50 +53,73 @@ export default class VerificationCondition {
     this.freeVars = [...freeVars];
     this.testBody = testBody;
     this.testAssertion = testAssertion;
+    this.heapHints = heapHints;
+    this.watches = [];
+
+    this.model = null;
+    this.interpreter = null;
     this.result = null;
   }
 
   async verify (): Promise<Message> {
     try {
+      this.model = null;
+      this.interpreter = null;
+      this.result = null;
       const smtin = this.prepareSMT();
       const smtout = await (options.remote ? this.solveRemote(smtin) : this.solveLocal(smtin));
       const modelOrMessage = this.processSMTOutput(smtout);
-      return this.result = modelOrMessage instanceof Model
-        ? this.runTest(modelOrMessage)
-        : modelOrMessage;
+      if (modelOrMessage instanceof Model) {
+        this.model = modelOrMessage;
+        return this.result = this.runTest();
+      } else {
+        return this.result = modelOrMessage;
+      }
     } catch (error) {
       if (error instanceof MessageException) return this.result = error.msg;
       return this.result = unexpected(error, this.loc, this.description);
     }
   }
 
-  runTest (model: Model | undefined): Message {
-    if (model === undefined) {
-      if (!this.result) throw new Error('no model available');
-      if (this.result.status === 'verified' || this.result.status === 'unknown' || this.result.status === 'timeout' ||
-         (this.result.status === 'error' && this.result.type !== 'incorrect')) {
-        throw new Error('no model available');
+  runTest (): Message {
+    const code = this.testSource();
+    try {
+      /* tslint:disable:no-eval */
+      eval(code);
+      return { status: 'unverified', description: this.description, loc: this.loc, model: this.getModel() };
+    } catch (e) {
+      if (e instanceof Error && (e instanceof TypeError || e.message === 'assertion failed')) {
+        return {
+          status: 'error',
+          type: 'incorrect',
+          description: this.description,
+          loc: this.loc,
+          model: this.getModel(),
+          error: e
+        };
+      } else {
+        return unexpected(e, this.loc, this.description);
       }
-      return this.runTest(this.result.model);
-    } else {
-      const code = this.testCode(model);
-      try {
-        /* tslint:disable:no-eval */
-        eval(code);
-        return { status: 'unverified', description: this.description, loc: this.loc, model };
-      } catch (e) {
-        if (e instanceof Error && (e instanceof TypeError || e.message === 'assertion failed')) {
-          return {
-            status: 'error',
-            type: 'incorrect',
-            description: this.description,
-            loc: this.loc,
-            model,
-            error: e
-          };
-        } else {
-          return unexpected(e, this.loc, this.description);
-        }
+    }
+  }
+
+  runWithInterpreter (): Message {
+    const interpreter = this.getInterpreter();
+    try {
+      interpreter.run();
+      return { status: 'unverified', description: this.description, loc: this.loc, model: this.getModel() };
+    } catch (e) {
+      if (e instanceof Error && (e instanceof TypeError || e.message === 'assertion failed')) {
+        return {
+          status: 'error',
+          type: 'incorrect',
+          description: this.description,
+          loc: this.loc,
+          model: this.getModel(),
+          error: e
+        };
+      } else {
+        return unexpected(e, this.loc, this.description);
       }
     }
   }
@@ -99,7 +129,8 @@ export default class VerificationCondition {
     const maxHeap = Math.max(...this.heaps.values());
     const assumptions = this.assumptions.map(([src]) => src);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
-                                  new Set([...this.locs]), new Set([...this.vars]), assumptions, this.prop);
+                                  new Set([...this.locs]), new Set([...this.vars]), assumptions, this.heapHints,
+                                  this.prop);
     const [assumptionP] = vcgen.assume(assumption);
     this.assumptions = this.assumptions.concat([[source, assumptionP]]);
   }
@@ -117,10 +148,92 @@ export default class VerificationCondition {
     const maxHeap = Math.max(...this.heaps.values());
     const assumptions = this.assumptions.map(([src]) => src);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
-                                  new Set([...this.locs]), new Set([...this.vars]), assumptions, this.prop);
+                                  new Set([...this.locs]), new Set([...this.vars]), assumptions,
+                                  this.heapHints, this.prop);
     const [assertionP, , assertionT] = vcgen.assert(assertion);
     return new VerificationCondition(this.classes, maxHeap, this.locs, this.vars, this.prop, this.assumptions,
-                                     assertionP, this.loc, source, this.freeVars, this.testBody, assertionT);
+                                     assertionP, this.loc, source, this.freeVars, this.testBody, assertionT,
+                                     this.heapHints);
+  }
+
+  steps (): number {
+    return this.getInterpreter().steps;
+  }
+
+  pc (): Syntax.SourceLocation {
+    return this.getInterpreter().loc();
+  }
+
+  iteration (): number {
+    return this.getInterpreter().iteration();
+  }
+
+  callstack (): Array<[string, Syntax.SourceLocation, number]> {
+    return this.getInterpreter().callstack();
+  }
+
+  getWatches (): Array<Array<[string, any, any]>> {
+    const heap = this.guessCurrentHeap();
+    const scopes: Array<Array<[string, any, any]>> = this.getInterpreter().scopes().map(scope =>
+      scope.map(([varname, dynamicValue]): [string, any, any] => {
+        const staticValue = this.modelValue(varname, heap);
+        return [varname, dynamicValue, staticValue];
+      })
+    );
+    scopes.push(this.watches.map((watchSource: string): [string, any, any] => {
+      let dynamicValue: any = '<<error>>';
+      let staticValue: any = '<<error>>';
+      try {
+        dynamicValue = this.getInterpreter().eval(watchSource, []);
+        staticValue = this.getInterpreter().eval(watchSource, this.currentBindingsFromModel());
+      } catch (e) { /* ignore errors */ }
+      return [watchSource, dynamicValue, staticValue];
+    }));
+    return scopes;
+  }
+
+  addWatch (source: string): void {
+    this.watches.push(source);
+  }
+
+  restart (): void {
+    this.getInterpreter().restart();
+    this.stepToSource();
+  }
+
+  goto (pos: Syntax.Position, iteration: number = 0): void {
+    this.getInterpreter().goto(pos, iteration);
+    this.stepToSource();
+  }
+
+  stepInto (): void {
+    this.getInterpreter().stepInto();
+    this.stepToSource();
+  }
+
+  stepOver (): void {
+    this.getInterpreter().stepOver();
+    this.stepToSource();
+  }
+
+  stepOut (): void {
+    this.getInterpreter().stepOut();
+    this.stepToSource();
+  }
+
+  getAnnotations (): Array<[string, Syntax.Position, Array<any>, any]> {
+    return this.getInterpreter().annotations
+    .filter(annotation => annotation.file === options.filename)
+    .map((annotation): [string, Syntax.Position, Array<any>, any] => {
+      const loc = { file: annotation.file, start: annotation.position, end: annotation.position };
+      const heap = this.guessCurrentHeap(loc);
+      const staticValue = this.modelValue(annotation.variableName, heap);
+      return [annotation.file, annotation.position, annotation.values, staticValue];
+    });
+  }
+
+  getResult (): Message | null {
+    return this.result;
   }
 
   private prepareSMT (): SMTInput {
@@ -133,38 +246,6 @@ export default class VerificationCondition {
       console.log('------------');
     }
     return smt;
-  }
-
-  private testCode (model: Model): string {
-    const sub: Substituter = new Substituter();
-    this.freeVars.forEach(freeVar => {
-      const expr = valueToJavaScript(model.valueOf(freeVar));
-      const und: Syntax.Literal = { type: 'Literal', value: undefined, loc: nullLoc() };
-      sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, und, expr);
-    });
-    const testCode = this.testBody.concat(this.testAssertion);
-    const code = stringifyTestCode(testCode.map(s => sub.visitStatement(s)));
-    if (!options.quiet && options.verbose) {
-      console.log('Test Code:');
-      console.log('------------');
-      console.log(code);
-      console.log('------------');
-    }
-    return code;
-  }
-
-  private processSMTOutput (out: SMTOutput): Model | Message {
-    if (out && out.startsWith('sat')) {
-      return new Model(out);
-    } else if (out && out.startsWith('unsat')) {
-      return { status: 'verified', description: this.description, loc: this.loc };
-    } else if (out && out.startsWith('unknown')) {
-      return { status: 'unknown', description: this.description, loc: this.loc };
-    } else if (out && out.startsWith('timeout')) {
-      return { status: 'timeout', description: this.description, loc: this.loc };
-    } else {
-      return unexpected(new Error('unexpected: ' + out), this.loc);
-    }
   }
 
   private solveLocal (smt: SMTInput): Promise<SMTOutput> {
@@ -236,5 +317,111 @@ export default class VerificationCondition {
       console.log('------------');
     }
     return smtout;
+  }
+
+  private processSMTOutput (out: SMTOutput): Model | Message {
+    if (out && out.startsWith('sat')) {
+      return new Model(out);
+    } else if (out && out.startsWith('unsat')) {
+      return { status: 'verified', description: this.description, loc: this.loc };
+    } else if (out && out.startsWith('unknown')) {
+      return { status: 'unknown', description: this.description, loc: this.loc };
+    } else if (out && out.startsWith('timeout')) {
+      return { status: 'timeout', description: this.description, loc: this.loc };
+    } else {
+      return unexpected(new Error('unexpected: ' + out), this.loc);
+    }
+  }
+
+  private getModel (): Model {
+    if (!this.model) throw new Error('no model available');
+    return this.model;
+  }
+
+  private testCode (): TestCode {
+    const sub: Substituter = new Substituter();
+    this.freeVars.forEach(freeVar => {
+      const expr = valueToJavaScript(this.getModel().valueOf(freeVar));
+      const und: Syntax.Literal = { type: 'Literal', value: undefined, loc: nullLoc() };
+      sub.replaceVar(`__free__${typeof freeVar === 'string' ? freeVar : freeVar.name}`, und, expr);
+    });
+    const testCode = this.testBody.concat(this.testAssertion);
+    return testCode.map(s => sub.visitStatement(s));
+  }
+
+  private testSource (): string {
+    const code = stringifyTestCode(this.testCode());
+    if (!options.quiet && options.verbose) {
+      console.log('Test Code:');
+      console.log('------------');
+      console.log(code);
+      console.log('------------');
+    }
+    return code;
+  }
+
+  private getInterpreter (): Interpreter {
+    if (!this.interpreter) {
+      const prog: Syntax.Program = {
+        body: [...this.testCode()],
+        invariants: []
+      };
+      this.interpreter = interpret(prog);
+      this.stepToSource();
+    }
+    return this.interpreter;
+  }
+
+  private stepToSource (): void {
+    const interpreter = this.getInterpreter();
+    while (interpreter.loc().file !== options.filename) {
+      interpreter.stepInto();
+    }
+  }
+
+  private guessCurrentHeap (loc: Syntax.SourceLocation = this.pc()): Heap {
+    // find index of heap hint
+    const idx = this.heapHints.findIndex(([loc2]) => eqSourceLocation(loc, loc2));
+    if (idx >= 0) {
+      return this.heapHints[idx][1];
+    } else {
+      // no exact match found in heap hints
+      // find index of first heap hint that is not earlier
+      const idx = this.heapHints.findIndex(([loc2]) => !compEndPosition(loc, loc2));
+      if (idx >= 0) {
+        return this.heapHints[idx][1];
+      } else if (this.heapHints.length > 0) {
+        // no heap hint found that is later, so use last
+        return this.heapHints[this.heapHints.length - 1][1];
+      } else {
+        throw new Error('unable to guess current heap');
+      }
+    }
+  }
+
+  private modelValue (varname: string, currentHeap: Heap): any {
+    const model = this.getModel();
+    if (model.mutableVariables().has(varname)) {
+      try {
+        return valueToPlain(model.valueOf({ name: varname, heap: currentHeap }));
+      } catch (e) {
+        return undefined;
+      }
+    } else {
+      return valueToPlain(model.valueOf(varname));
+    }
+  }
+
+  private currentBindingsFromModel (): Array<[string, any]> {
+    const model = this.getModel();
+    const heap = this.guessCurrentHeap();
+    const bindings: Array<[string, any]> = [];
+    for (const varname of model.variables()) {
+      if (generatePreamble().vars.has(varname) || generatePreamble().locs.has(varname)) {
+        continue;
+      }
+      bindings.push([varname, this.modelValue(varname, heap)]);
+    }
+    return bindings;
   }
 }

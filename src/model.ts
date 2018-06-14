@@ -4,6 +4,7 @@ import { MessageException } from './message';
 import { options } from './options';
 import { SMTOutput } from './smt';
 import { SExpr, matchSExpr, parseSExpr } from './util';
+import { stringifyExpression } from './codegen';
 
 export namespace JSVal {
   export interface Num { type: 'num'; v: number; }
@@ -92,6 +93,31 @@ export function valueToJavaScript (val: JSVal): Syntax.Expression {
   }
 }
 
+export function valueToPlain (val: JSVal): any {
+  switch (val.type) {
+    case 'num':
+    case 'bool':
+    case 'str':
+      return val.v;
+    case 'null':
+      return null;
+    case 'undefined':
+      return undefined;
+    case 'fun':
+      /* tslint:disable:no-eval */
+      return eval(`(() => ${stringifyExpression(val.body)})()`);
+    case 'obj':
+      const obj: { [key: string]: any } = {};
+      Object.keys(val.v).forEach(key => obj[key] = valueToPlain(val.v[key]));
+      return obj;
+    case 'obj-cls':
+      // FIXME: use class instance
+      return `new ${val.cls}(${val.args.map(arg => valueToPlain(arg)).join(', ')})`;
+    case 'arr':
+      return val.elems.map(elem => valueToPlain(elem));
+  }
+}
+
 export class Model {
 
   private arrLengths: ArrLengths | null = null;
@@ -138,6 +164,10 @@ export class Model {
 
   public variables (): Vars {
     return new Set([...Object.keys(this.vars), ...Object.keys(this.locs)]);
+  }
+
+  public mutableVariables (): Vars {
+    return new Set([...Object.keys(this.locs)]);
   }
 
   private parseDefinition (data: SExpr) {

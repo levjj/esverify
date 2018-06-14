@@ -1,7 +1,8 @@
 import { stringifyAssertion, stringifyExpression } from './codegen';
 import { Syntax, TestCode, Visitor, id, isValidAssignmentTarget, nullLoc, removeTestCodePrefix,
          replaceVarAssertion as replaceJSVarAssertion, replaceVarFunction as replaceJSVarFunction,
-         replaceVarBlock as replaceJSVarBlock, uniqueIdentifier } from './javascript';
+         replaceVarBlock as replaceJSVarBlock, uniqueIdentifier, eqSourceLocation,
+         compEndPosition } from './javascript';
 import { A, Classes, FreeVars, Heap, Locs, P, Vars, and, eq, falsy, fls, heapEq, heapStore, implies, not, or,
          removePrefix, replaceResultWithCall, replaceVar, transformClassInvariant, transformEveryInvariant,
          transformSpec, tru, truthy, und, Syntax as Logic, compareType } from './logic';
@@ -32,9 +33,10 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   assertionPolarity: boolean;
   simpleAssertion: boolean;
   assumptions: Array<string>;
+  heapHints: Array<[Syntax.SourceLocation, Heap]>;
 
   constructor (classes: Classes, oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, assumptions: Array<string>,
-               prop: P = tru) {
+               heapHints: Array<[Syntax.SourceLocation, Heap]>, prop: P = tru) {
     super();
     this.classes = classes;
     this.oldHeap = oldHeap;
@@ -49,6 +51,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     this.assertionPolarity = true;
     this.simpleAssertion = true;
     this.assumptions = assumptions;
+    this.heapHints = heapHints;
   }
 
   have (p: P, t: TestCode = []): void {
@@ -150,8 +153,8 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     return `_this_${i}`;
   }
 
-  testVar (loc: Syntax.SourceLocation): Syntax.Identifier {
-    return id(`_tmp_${uniqueIdentifier(loc)}`, loc);
+  testVar (loc: Syntax.SourceLocation): string {
+    return `_tmp_${uniqueIdentifier(loc)}`;
   }
 
   smtPlaceholder (name: string) {
@@ -198,7 +201,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string) {
     const assumptions: Array<Assumption> = this.assumptions.map((src: string): [string, P] => [src, tru]);
     this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, this.prop, assumptions, vc,
-                                            loc, desc, this.freeVars, this.testBody, testBody));
+                                            loc, desc, this.freeVars, this.testBody, testBody, this.heapHints));
   }
 
   compareType (expr: Syntax.Expression, type: 'boolean' | 'number' | 'string'): Syntax.Expression {
@@ -273,6 +276,32 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const [prop, test] = this.compareTypePropAndTest(exprA, exprE, type);
     const msg = op === 'if' ? 'if condition' : `operator ${op}`;
     this.verify(prop, [this.check(test)], exprE.loc, `${msg} requires ${type}: ${stringifyExpression(expr)}`);
+  }
+
+  heapHint (loc: Syntax.SourceLocation): void {
+    // find index of heap hint
+    const idx = this.heapHints.findIndex(([loc2]) => eqSourceLocation(loc, loc2));
+    if (idx >= 0) {
+      this.heapHints[idx][1] = this.heap;
+    } else {
+      // no such hint yet
+      // find index of first heap hint that is not earlier
+      const idx = this.heapHints.findIndex(([loc2]) => !compEndPosition(loc, loc2));
+      if (idx >= 0) {
+        this.heapHints.splice(idx, 0, [loc, this.heap]);
+      } else {
+        // no heap hint found that is later, so append
+        this.heapHints.push([loc, this.heap]);
+      }
+    }
+  }
+
+  visitTerm (term: Syntax.Term): [A, AccessTriggers, Syntax.Expression] {
+    try {
+      return super.visitTerm(term);
+    } finally {
+      this.heapHint(term.loc);
+    }
   }
 
   visitIdentifierTerm (term: Syntax.Identifier): [A, AccessTriggers, Syntax.Expression] {
@@ -428,6 +457,14 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     }];
   }
 
+  visitAssertion (assertion: Syntax.Assertion): [P, AccessTriggers, Syntax.Expression, TestCode] {
+    try {
+      return super.visitAssertion(assertion);
+    } finally {
+      this.heapHint(assertion.loc);
+    }
+  }
+
   visitTermAssertion (term: Syntax.Term): [P, AccessTriggers, Syntax.Expression, TestCode] {
     const [termA, termTriggers, termE] = this.visitTerm(term);
     return [truthy(termA), termTriggers, termE, []];
@@ -502,7 +539,8 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     // rename 'this' to the name reserved above in the generated propositions
     const rP2 = assertion.hasThis ? replaceVar('this', thisArg, rP) : rP;
     const sP2 = assertion.hasThis ? replaceVar('this', thisArg, sP) : sP;
-    const sP3 = replaceResultWithCall(calleeA, this.heap + 1, thisArg, assertion.args, assertion.post.argument, sP2);
+    const sP3 = replaceResultWithCall(calleeA, this.heap + 1, thisArg, assertion.args,
+                                      assertion.post.argument && assertion.post.argument.name, sP2);
     const specP = transformSpec(calleeA, thisArg, assertion.args, rP2, sP3, this.heap + 1);
     const retName = assertion.post.argument === null
       ? id(`_res_${uniqueIdentifier(assertion.loc)}`)
@@ -694,6 +732,14 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
         }
         return [or(leftP, rightP), leftTriggers.concat(rightTriggers), retE, []];
       }
+    }
+  }
+
+  visitExpression (expr: Syntax.Expression): [A, Syntax.Expression] {
+    try {
+      return super.visitExpression(expr);
+    } finally {
+      this.heapHint(expr.loc);
     }
   }
 
@@ -1007,6 +1053,14 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     }
   }
 
+  visitStatement (stmt: Syntax.Statement): BreakCondition {
+    try {
+      return super.visitStatement(stmt);
+    } finally {
+      this.heapHint(stmt.loc);
+    }
+  }
+
   tryStatement (pre: P, stmt: Syntax.Statement): [Heap, P, TestCode, BreakCondition] {
     return this.tryPre(pre, () => {
       return this.visitStatement(stmt);
@@ -1038,6 +1092,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       this.have(heapStore(this.heap, stmt.id.name, initA), testCode);
       this.heap++;
     }
+    this.heapHint(stmt.id.loc);
     return fls;
   }
 
@@ -1218,6 +1273,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       args.push(p.name);
       this.vars.add(p.name);
       this.freeVar(p.name);
+      this.heapHint(p.loc);
     }
     for (const fv of f.freeVars) {
       this.freeLoc(fv);
@@ -1298,7 +1354,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
         loc: f.loc
       }, {
         type: 'VariableDeclaration',
-        id: id(this.resVar, f.loc),
+        id: id(this.resVar),
         init: {
           type: 'CallExpression',
           callee: id(funcName),
@@ -1335,6 +1391,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
                            new Set([...this.locs]),
                            new Set([...this.vars]),
                            [...this.assumptions],
+                           this.heapHints,
                            this.prop);
   }
 
@@ -1358,11 +1415,13 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
     const pre: Array<[P, AccessTriggers, TestCode]> = fun.requires.map(req =>
       this.assert(req, this.heap + 1, this.heap + 1));
-    const retVar: Syntax.Identifier = this.testVar(fun.loc);
+    const retVar = this.testVar(fun.loc);
     const post: Array<[P, AccessTriggers, TestCode]> = fun.ensures.map(ens => {
-      const ens2 = ens.argument !== null
-        ? replaceJSVarAssertion(ens.argument.name, retVar, retVar, ens.expression)
-        : ens.expression;
+      let ens2 = ens.expression;
+      if (ens.argument !== null) {
+        ens2 = replaceJSVarAssertion(ens.argument.name,
+                                     id(retVar, ens.argument.loc), id(retVar, ens.argument.loc), ens2);
+      }
       return this.assume(ens2, this.heap + 1, inliner.heap);
     });
 
@@ -1375,7 +1434,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const inlinedSpec = transformSpec(funcName, thisArg, args, preP, postP,
                                       this.heap + 1, inliner.heap, existsLocs, existsVars);
 
-    return [flatMap(pre, ([,,c]) => c), flatMap(post, ([,,c]) => c), inlinedBlock, inlinedSpec, retVar];
+    return [flatMap(pre, ([,,c]) => c), flatMap(post, ([,,c]) => c), inlinedBlock, inlinedSpec, id(retVar)];
   }
 
   visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): BreakCondition {
@@ -1600,7 +1659,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
 export function vcgenProgram (prog: Syntax.Program): Array<VerificationCondition> {
   const { classes, heap, locs, vars, prop } = generatePreamble();
-  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], prop);
+  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], prop);
   vcgen.visitProgram(prog);
   return vcgen.vcs;
 }

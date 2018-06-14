@@ -1036,11 +1036,11 @@ export function replaceVar (v: string, subst: A, prop: P): P {
 }
 
 export function replaceResultWithCall (callee: A, heap: Heap, thisArg: Syntax.Variable, args: Array<Syntax.Variable>,
-                                       result: { name: string } | null, post: P): P {
-  if (!result) return post;
+                                       result: string | null, post: P): P {
+  if (result === null) return post;
     // replace result argument with orig. function invocation
   const sub = new Substituter();
-  sub.replaceVar(result.name, { type: 'CallExpression', callee, heap, thisArg, args });
+  sub.replaceVar(result, { type: 'CallExpression', callee, heap, thisArg, args });
   return sub.visitProp(post);
 }
 
