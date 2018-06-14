@@ -128,7 +128,7 @@ function checkDistinct (params: Array<JSyntax.Pattern>): void {
 }
 
 function assignUpdate (left: Syntax.Identifier, op: Syntax.BinaryOperator, right: JSyntax.Expression,
-                       expr: JSyntax.Expression): Syntax.AssignmentExpression {
+                       expr: JSyntax.Expression, withAssertions: boolean): Syntax.AssignmentExpression {
   return {
     type: 'AssignmentExpression',
     left,
@@ -136,7 +136,7 @@ function assignUpdate (left: Syntax.Identifier, op: Syntax.BinaryOperator, right
       type: 'BinaryExpression',
       left: copyId(left),
       operator: op,
-      right: expressionAsJavaScript(right),
+      right: expressionAsJavaScript(right, withAssertions),
       loc: loc(expr)
     },
     loc: loc(expr)
@@ -415,7 +415,7 @@ function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
   }
 }
 
-function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
+function expressionAsJavaScript (expr: JSyntax.Expression, withAssertions: boolean): Syntax.Expression {
   switch (expr.type) {
     case 'Identifier':
       if (expr.name === 'undefined') {
@@ -434,14 +434,14 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
     case 'SequenceExpression':
       return {
         type: 'SequenceExpression',
-        expressions: expr.expressions.map(expressionAsJavaScript),
+        expressions: expr.expressions.map(e => expressionAsJavaScript(e, withAssertions)),
         loc: loc(expr)
       };
     case 'UnaryExpression':
       return {
         type: 'UnaryExpression',
         operator: unaryOp(expr),
-        argument: expressionAsJavaScript(expr.argument),
+        argument: expressionAsJavaScript(expr.argument, withAssertions),
         loc: loc(expr)
       };
     case 'BinaryExpression': {
@@ -451,7 +451,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         }
         return {
           type: 'InstanceOfExpression',
-          left: expressionAsJavaScript(expr.left),
+          left: expressionAsJavaScript(expr.left, withAssertions),
           right: patternAsIdentifier(expr.right),
           loc: loc(expr)
         };
@@ -459,16 +459,16 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       if (expr.operator === 'in') {
         return {
           type: 'InExpression',
-          property: expressionAsJavaScript(expr.left),
-          object: expressionAsJavaScript(expr.right),
+          property: expressionAsJavaScript(expr.left, withAssertions),
+          object: expressionAsJavaScript(expr.right, withAssertions),
           loc: loc(expr)
         };
       }
       return {
         type: 'BinaryExpression',
         operator: binaryOp(expr),
-        left: expressionAsJavaScript(expr.left),
-        right: expressionAsJavaScript(expr.right),
+        left: expressionAsJavaScript(expr.left, withAssertions),
+        right: expressionAsJavaScript(expr.right, withAssertions),
         loc: loc(expr)
       };
     }
@@ -480,20 +480,20 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
           return {
             type: 'AssignmentExpression',
             left: to,
-            right: expressionAsJavaScript(expr.right),
+            right: expressionAsJavaScript(expr.right, withAssertions),
             loc: loc(expr)
           };
-        case '+=': return assignUpdate(to, '+', expr.right, expr);
-        case '-=': return assignUpdate(to, '-', expr.right, expr);
-        case '*=': return assignUpdate(to, '*', expr.right, expr);
-        case '/=': return assignUpdate(to, '/', expr.right, expr);
-        case '%=': return assignUpdate(to, '%', expr.right, expr);
-        case '<<=': return assignUpdate(to, '<<', expr.right, expr);
-        case '>>=': return assignUpdate(to, '>>', expr.right, expr);
-        case '>>>=': return assignUpdate(to, '>>>', expr.right, expr);
-        case '|=': return assignUpdate(to, '|', expr.right, expr);
-        case '^=': return assignUpdate(to, '^', expr.right, expr);
-        case '&=': return assignUpdate(to, '&', expr.right, expr);
+        case '+=': return assignUpdate(to, '+', expr.right, expr, withAssertions);
+        case '-=': return assignUpdate(to, '-', expr.right, expr, withAssertions);
+        case '*=': return assignUpdate(to, '*', expr.right, expr, withAssertions);
+        case '/=': return assignUpdate(to, '/', expr.right, expr, withAssertions);
+        case '%=': return assignUpdate(to, '%', expr.right, expr, withAssertions);
+        case '<<=': return assignUpdate(to, '<<', expr.right, expr, withAssertions);
+        case '>>=': return assignUpdate(to, '>>', expr.right, expr, withAssertions);
+        case '>>>=': return assignUpdate(to, '>>>', expr.right, expr, withAssertions);
+        case '|=': return assignUpdate(to, '|', expr.right, expr, withAssertions);
+        case '^=': return assignUpdate(to, '^', expr.right, expr, withAssertions);
+        case '&=': return assignUpdate(to, '&', expr.right, expr, withAssertions);
         default: throw unsupported(expr);
       }
     case 'UpdateExpression': {
@@ -503,15 +503,15 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       const oneE: Syntax.Literal = { type: 'Literal', value: 1, loc: loc(expr) };
       if (expr.prefix) {
         if (expr.operator === '++') {
-          return assignUpdate(to, '+', one, expr);
+          return assignUpdate(to, '+', one, expr, withAssertions);
         }
-        return assignUpdate(to, '-', one, expr);
+        return assignUpdate(to, '-', one, expr, withAssertions);
       } else {
         if (expr.operator === '++') {
           return {
             type: 'SequenceExpression',
             expressions: [
-              assignUpdate(to, '+', one, expr),
+              assignUpdate(to, '+', one, expr, withAssertions),
               { type: 'BinaryExpression', operator: '-', left: copyId(to), right: oneE, loc: loc(expr) }
             ],
             loc: loc(expr)
@@ -520,7 +520,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         return {
           type: 'SequenceExpression',
           expressions: [
-            assignUpdate(to, '-', one, expr),
+            assignUpdate(to, '-', one, expr, withAssertions),
             { type: 'BinaryExpression', operator: '+', left: copyId(to), right: oneE, loc: loc(expr) }
           ],
           loc: loc(expr)
@@ -531,16 +531,16 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       return {
         type: 'LogicalExpression',
         operator: expr.operator === '||' ? '||' : '&&',
-        left: expressionAsJavaScript(expr.left),
-        right: expressionAsJavaScript(expr.right),
+        left: expressionAsJavaScript(expr.left, withAssertions),
+        right: expressionAsJavaScript(expr.right, withAssertions),
         loc: loc(expr)
       };
     case 'ConditionalExpression':
       return {
         type: 'ConditionalExpression',
-        test: expressionAsJavaScript(expr.test),
-        consequent: expressionAsJavaScript(expr.consequent),
-        alternate: expressionAsJavaScript(expr.alternate),
+        test: expressionAsJavaScript(expr.test, withAssertions),
+        consequent: expressionAsJavaScript(expr.consequent, withAssertions),
+        alternate: expressionAsJavaScript(expr.alternate, withAssertions),
         loc: loc(expr)
       };
     case 'CallExpression':
@@ -552,7 +552,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
             if (expr.type === 'SpreadElement') {
               throw unsupported(expr);
             } else {
-              return expressionAsJavaScript(expr);
+              return expressionAsJavaScript(expr, withAssertions);
             }
           }),
           loc: loc(expr)
@@ -561,12 +561,12 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       if (expr.arguments.length > 9) throw unsupported(expr, 'more than 9 arguments not supported yet');
       return {
         type: 'CallExpression',
-        callee: expressionAsJavaScript(expr.callee),
+        callee: expressionAsJavaScript(expr.callee, withAssertions),
         args: expr.arguments.map(expr => {
           if (expr.type === 'SpreadElement') {
             throw unsupported(expr);
           } else {
-            return expressionAsJavaScript(expr);
+            return expressionAsJavaScript(expr, withAssertions);
           }
         }),
         loc: loc(expr)
@@ -580,7 +580,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
             if (expr.type === 'SpreadElement') {
               throw unsupported(expr);
             } else {
-              return expressionAsJavaScript(expr);
+              return expressionAsJavaScript(expr, withAssertions);
             }
           }),
           loc: loc(expr)
@@ -594,7 +594,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
           if (expr.type === 'SpreadElement') {
             throw unsupported(expr);
           } else {
-            return expressionAsJavaScript(expr);
+            return expressionAsJavaScript(expr, withAssertions);
           }
         }),
         loc: loc(expr)
@@ -606,7 +606,7 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
           if (expr.type === 'SpreadElement') {
             throw unsupported(expr);
           } else {
-            return expressionAsJavaScript(expr);
+            return expressionAsJavaScript(expr, withAssertions);
           }
         }),
         loc: loc(expr)
@@ -623,12 +623,12 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         if (property.key.type === 'Identifier') {
           return {
             key: patternAsIdentifier(property.key).name,
-            value: expressionAsJavaScript(property.value)
+            value: expressionAsJavaScript(property.value, withAssertions)
           };
         } else if (property.key.type === 'Literal') {
           return {
             key: literalAsIdentifier(property.key).name,
-            value: expressionAsJavaScript(property.value)
+            value: expressionAsJavaScript(property.value, withAssertions)
           };
         } else {
           throw unsupported(property.key);
@@ -644,14 +644,14 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
       if (expr.object.type === 'Super') throw unsupported(expr.object);
       let property: Syntax.Expression;
       if (expr.computed) {
-        property = expressionAsJavaScript(expr.property);
+        property = expressionAsJavaScript(expr.property, withAssertions);
       } else {
         if (expr.property.type !== 'Identifier') throw unsupported(expr.property);
         property = { type: 'Literal', value: expr.property.name, loc: loc(expr.property) };
       }
       return {
         type: 'MemberExpression',
-        object: expressionAsJavaScript(expr.object),
+        object: expressionAsJavaScript(expr.object, withAssertions),
         property,
         loc: loc(expr)
       };
@@ -670,8 +670,10 @@ function expressionAsJavaScript (expr: JSyntax.Expression): Syntax.Expression {
         ensures: findPostConditions(body),
         body: {
           type: 'BlockStatement',
-          body: flatMap(withoutPseudoCalls('requires',
-                        withoutPseudoCalls('ensures', body)), statementAsJavaScript),
+          body: withAssertions
+            ? flatMap(withoutPseudoCalls('requires',
+                      withoutPseudoCalls('ensures', body)), stmt => statementAsJavaScript(stmt, true))
+            : flatMap(body, stmt => statementAsJavaScript(stmt, false)),
           loc: loc(expr.body)
         },
         freeVars: [],
@@ -770,7 +772,7 @@ function findClassInvariant (clsDef: JSyntax.ClassDeclaration): JSyntax.Expressi
   return invStmt.argument;
 }
 
-function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement> {
+function statementAsJavaScript (stmt: JSyntax.Statement, withAssertions: boolean): Array<Syntax.Statement> {
   function assert (cond: boolean) { if (!cond) throw unsupported(stmt); }
   switch (stmt.type) {
     case 'EmptyStatement':
@@ -783,7 +785,9 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
           type: 'VariableDeclaration',
           kind: stmt.kind === 'let' ? 'let' : 'const',
           id: patternAsIdentifier(decl.id),
-          init: decl.init ? expressionAsJavaScript(decl.init) : { type: 'Literal', value: undefined, loc: loc(stmt) },
+          init: decl.init
+            ? expressionAsJavaScript(decl.init, withAssertions)
+            : { type: 'Literal', value: undefined, loc: loc(stmt) },
           loc: loc(stmt)
         };
         return d;
@@ -791,11 +795,12 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
     case 'BlockStatement':
       return [{
         type: 'BlockStatement',
-        body: flatMap(stmt.body, statementAsJavaScript),
+        body: flatMap(stmt.body, s => statementAsJavaScript(s, withAssertions)),
         loc: loc(stmt)
       }];
     case 'ExpressionStatement':
-      if (stmt.expression.type === 'CallExpression' &&
+      if (withAssertions &&
+          stmt.expression.type === 'CallExpression' &&
           stmt.expression.callee.type === 'Identifier' &&
           stmt.expression.callee.name === 'assert' &&
           stmt.expression.arguments.length === 1) {
@@ -804,23 +809,27 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
           return [{ type: 'AssertStatement', expression: expressionAsAssertion(arg), loc: loc(stmt) }];
         }
       }
-      return [{ type: 'ExpressionStatement', expression: expressionAsJavaScript(stmt.expression), loc: loc(stmt) }];
+      return [{
+        type: 'ExpressionStatement',
+        expression: expressionAsJavaScript(stmt.expression, withAssertions),
+        loc: loc(stmt)
+      }];
     case 'IfStatement':
       return [{
         type: 'IfStatement',
-        test: expressionAsJavaScript(stmt.test),
+        test: expressionAsJavaScript(stmt.test, withAssertions),
         consequent: {
           type: 'BlockStatement',
           body: stmt.consequent.type === 'BlockStatement'
-                ? flatMap(stmt.consequent.body, statementAsJavaScript)
-                : statementAsJavaScript(stmt.consequent),
+                ? flatMap(stmt.consequent.body, s => statementAsJavaScript(s, withAssertions))
+                : statementAsJavaScript(stmt.consequent, withAssertions),
           loc: loc(stmt.consequent)
         },
         alternate: {
           type: 'BlockStatement',
           body: stmt.alternate ? (stmt.alternate.type === 'BlockStatement'
-                ? flatMap(stmt.alternate.body, statementAsJavaScript)
-                : statementAsJavaScript(stmt.alternate)) : [],
+                ? flatMap(stmt.alternate.body, s => statementAsJavaScript(s, withAssertions))
+                : statementAsJavaScript(stmt.alternate, withAssertions)) : [],
           loc: loc(stmt.alternate || stmt)
         },
         loc: loc(stmt)
@@ -830,10 +839,10 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
       return [{
         type: 'WhileStatement',
         invariants: findInvariants(stmts),
-        test: expressionAsJavaScript(stmt.test),
+        test: expressionAsJavaScript(stmt.test, withAssertions),
         body: {
           type: 'BlockStatement',
-          body: flatMap(withoutPseudoCalls('invariant', stmts), statementAsJavaScript),
+          body: flatMap(withoutPseudoCalls('invariant', stmts), s => statementAsJavaScript(s, withAssertions)),
           loc: loc(stmt.body)
         },
         freeVars: [],
@@ -844,7 +853,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
     case 'ReturnStatement':
       return [{
         type: 'ReturnStatement',
-        argument: stmt.argument ? expressionAsJavaScript(stmt.argument)
+        argument: stmt.argument ? expressionAsJavaScript(stmt.argument, withAssertions)
                                 : { type: 'Literal', value: undefined, loc: loc(stmt) },
         loc: loc(stmt)
       }];
@@ -863,8 +872,10 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
         ensures: findPostConditions(body),
         body: {
           type: 'BlockStatement',
-          body: flatMap(withoutPseudoCalls('requires',
-                        withoutPseudoCalls('ensures', body)), statementAsJavaScript),
+          body: withAssertions
+            ? flatMap(withoutPseudoCalls('requires',
+                      withoutPseudoCalls('ensures', body)), s => statementAsJavaScript(s, true))
+            : flatMap(body, s => statementAsJavaScript(s, false)),
           loc: loc(stmt.body)
         },
         freeVars: [],
@@ -899,8 +910,10 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
           ensures: findPostConditions(func.body.body),
           body: {
             type: 'BlockStatement',
-            body: flatMap(withoutPseudoCalls('requires',
-                          withoutPseudoCalls('ensures', func.body.body)), statementAsJavaScript),
+            body: withAssertions
+              ? flatMap(withoutPseudoCalls('requires',
+                        withoutPseudoCalls('ensures', func.body.body)), s => statementAsJavaScript(s, true))
+              : flatMap(func.body.body, s => statementAsJavaScript(s, false)),
             loc: loc(stmt.body)
           },
           freeVars: [],
@@ -922,7 +935,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement): Array<Syntax.Statement
   }
 }
 
-function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
+function programAsJavaScript (program: JSyntax.Program, withAssertions: boolean): Syntax.Program {
   let stmts: Array<JSyntax.Statement> = [];
   for (const s of program.body) {
     if (s.type === 'ImportDeclaration' ||
@@ -934,7 +947,10 @@ function programAsJavaScript (program: JSyntax.Program): Syntax.Program {
     }
     stmts.push(s);
   }
-  const body = flatMap(withoutPseudoCalls('invariant', stmts), statementAsJavaScript);
+  if (!withAssertions) {
+    return { body: flatMap(stmts, stmt => statementAsJavaScript(stmt, false)), invariants: [] };
+  }
+  const body = flatMap(withoutPseudoCalls('invariant', stmts), s => statementAsJavaScript(s, true));
   const prog: Syntax.Program = {
     body,
     invariants: findInvariants(stmts)
@@ -954,11 +970,11 @@ function parseSource (source: string): JSyntax.Program {
   }
 }
 
-export function sourceAsJavaScript (source: string): Syntax.Program {
-  return programAsJavaScript(parseSource(source));
+export function sourceAsJavaScript (source: string, withAssertions: boolean = true): Syntax.Program {
+  return programAsJavaScript(parseSource(source), withAssertions);
 }
 
-export function sourceAsJavaScriptExpression (source: string): Syntax.Expression {
+export function sourceAsJavaScriptExpression (source: string, withAssertions: boolean = true): Syntax.Expression {
   const node = parseSource(source);
   if (node.body.length !== 1) {
     throw unsupported(node, 'expected expression');
@@ -967,7 +983,7 @@ export function sourceAsJavaScriptExpression (source: string): Syntax.Expression
   if (firstStatement.type !== 'ExpressionStatement') {
     throw unsupported(node, 'expected expression');
   }
-  return expressionAsJavaScript(firstStatement.expression);
+  return expressionAsJavaScript(firstStatement.expression, withAssertions);
 }
 
 export function sourceAsJavaScriptAssertion (source: string): Syntax.Assertion {
