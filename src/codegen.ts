@@ -343,6 +343,7 @@ function spec (f, id, req, ens) {
       }, f).apply(this, args);
     };
     wrapped._mapping = mapping;
+    wrapped._orig = f;
     return wrapped;
   }
 }
