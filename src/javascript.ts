@@ -1,5 +1,3 @@
-import { options } from './options';
-
 export namespace Syntax {
   /* tslint:disable:ter-indent */
 
@@ -283,6 +281,18 @@ export function eqSourceLocation (loc1: Syntax.SourceLocation, loc2: Syntax.Sour
          loc1.end.column === loc2.end.column;
 }
 
+export function eqEndPosition (loc1: Syntax.SourceLocation, loc2: Syntax.SourceLocation): boolean {
+  return loc1.file === loc2.file &&
+         loc1.end.line === loc2.end.line &&
+         loc1.end.column === loc2.end.column;
+}
+
+export function compEndPosition (loc1: Syntax.SourceLocation, loc2: Syntax.SourceLocation): boolean {
+  return loc1.file < loc2.file ||
+         loc1.end.line < loc2.end.line ||
+         loc1.end.column < loc2.end.column;
+}
+
 export type TestCode = ReadonlyArray<Syntax.Statement>;
 
 export abstract class Visitor<T,A,E,S> {
@@ -405,7 +415,7 @@ export abstract class Visitor<T,A,E,S> {
 }
 
 export function nullLoc (): Syntax.SourceLocation {
-  return { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
+  return { file: '<null>', start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
 }
 
 export function id (name: string, loc: Syntax.SourceLocation = nullLoc(), isWrittenTo: boolean = false):
@@ -418,6 +428,220 @@ export function id (name: string, loc: Syntax.SourceLocation = nullLoc(), isWrit
     isWrittenTo,
     loc
   };
+}
+
+class Traverser extends Visitor<void, void, void, void> {
+
+  visitIdentifierTerm (term: Syntax.Identifier): void { /* empty */ }
+
+  visitOldIdentifierTerm (term: Syntax.OldIdentifier): void {
+    this.visitIdentifier(term.id);
+  }
+
+  visitLiteralTerm (term: Syntax.Literal): void { /* empty */ }
+
+  visitUnaryTerm (term: Syntax.UnaryTerm): void {
+    this.visitTerm(term.argument);
+  }
+
+  visitBinaryTerm (term: Syntax.BinaryTerm): void {
+    this.visitTerm(term.left);
+    this.visitTerm(term.right);
+  }
+
+  visitLogicalTerm (term: Syntax.LogicalTerm): void {
+    this.visitTerm(term.left);
+    this.visitTerm(term.right);
+  }
+
+  visitConditionalTerm (term: Syntax.ConditionalTerm): void {
+    this.visitTerm(term.test);
+    this.visitTerm(term.consequent);
+    this.visitTerm(term.alternate);
+  }
+
+  visitCallTerm (term: Syntax.CallTerm): void {
+    this.visitTerm(term.callee);
+    term.args.forEach(e => this.visitTerm(e));
+  }
+
+  visitMemberTerm (term: Syntax.MemberTerm): void {
+    this.visitTerm(term.object);
+    this.visitTerm(term.property);
+  }
+
+  visitIsIntegerTerm (term: Syntax.IsIntegerTerm): void {
+    this.visitTerm(term.term);
+  }
+
+  visitToIntegerTerm (term: Syntax.ToIntegerTerm): void {
+    this.visitTerm(term.term);
+  }
+
+  visitTermAssertion (assertion: Syntax.Term): void {
+    this.visitTerm(assertion);
+  }
+
+  visitPureAssertion (assertion: Syntax.PureAssertion): void { /* empty */ }
+
+  visitPostCondition (post: Syntax.PostCondition): void {
+    this.visitAssertion(post.expression);
+  }
+
+  visitSpecAssertion (assertion: Syntax.SpecAssertion): void {
+    this.visitTerm(assertion.callee);
+    this.visitAssertion(assertion.pre);
+    this.visitPostCondition(assertion.post);
+  }
+
+  visitEveryAssertion (assertion: Syntax.EveryAssertion): void {
+    this.visitTerm(assertion.array);
+    this.visitAssertion(assertion.expression);
+  }
+
+  visitInstanceOfAssertion (assertion: Syntax.InstanceOfAssertion): void {
+    this.visitTerm(assertion.left);
+  }
+
+  visitInAssertion (assertion: Syntax.InAssertion): void {
+    this.visitTerm(assertion.property);
+    this.visitTerm(assertion.object);
+  }
+
+  visitUnaryAssertion (assertion: Syntax.UnaryAssertion): void {
+    this.visitAssertion(assertion.argument);
+  }
+
+  visitBinaryAssertion (assertion: Syntax.BinaryAssertion): void {
+    this.visitAssertion(assertion.left);
+    this.visitAssertion(assertion.right);
+  }
+
+  visitIdentifier (expr: Syntax.Identifier): void { /* empty */ }
+
+  visitLiteral (expr: Syntax.Literal): void { /* empty */ }
+
+  visitUnaryExpression (expr: Syntax.UnaryExpression): void {
+    this.visitExpression(expr.argument);
+  }
+
+  visitBinaryExpression (expr: Syntax.BinaryExpression): void {
+    this.visitExpression(expr.left);
+    this.visitExpression(expr.right);
+  }
+
+  visitLogicalExpression (expr: Syntax.LogicalExpression): void {
+    this.visitExpression(expr.left);
+    this.visitExpression(expr.right);
+  }
+
+  visitConditionalExpression (expr: Syntax.ConditionalExpression): void {
+    this.visitExpression(expr.test);
+    this.visitExpression(expr.consequent);
+    this.visitExpression(expr.alternate);
+  }
+
+  visitAssignmentExpression (expr: Syntax.AssignmentExpression): void {
+    this.visitExpression(expr.left);
+    this.visitExpression(expr.right);
+  }
+
+  visitSequenceExpression (expr: Syntax.SequenceExpression): void {
+    expr.expressions.forEach(e => this.visitExpression(e));
+  }
+
+  visitCallExpression (expr: Syntax.CallExpression): void {
+    this.visitExpression(expr.callee);
+    expr.args.forEach(e => this.visitExpression(e));
+  }
+
+  visitNewExpression (expr: Syntax.NewExpression): void {
+    expr.args.forEach(e => this.visitExpression(e));
+  }
+
+  visitArrayExpression (expr: Syntax.ArrayExpression): void {
+    expr.elements.forEach(e => this.visitExpression(e));
+  }
+
+  visitObjectExpression (expr: Syntax.ObjectExpression): void {
+    expr.properties.forEach(({ value }) => this.visitExpression(value));
+  }
+
+  visitInstanceOfExpression (expr: Syntax.InstanceOfExpression): void {
+    this.visitExpression(expr.left);
+  }
+
+  visitInExpression (expr: Syntax.InExpression): void {
+    this.visitExpression(expr.property);
+    this.visitExpression(expr.object);
+  }
+
+  visitMemberExpression (expr: Syntax.MemberExpression): void {
+    this.visitExpression(expr.object);
+    this.visitExpression(expr.property);
+  }
+
+  visitFunctionExpression (expr: Syntax.FunctionExpression): void {
+    expr.requires.forEach(req => this.visitAssertion(req));
+    expr.ensures.forEach(ens => this.visitPostCondition(ens));
+    this.visitBlockStatement(expr.body);
+  }
+
+  visitVariableDeclaration (stmt: Syntax.VariableDeclaration): void {
+    this.visitExpression(stmt.init);
+  }
+
+  visitBlockStatement (stmt: Syntax.BlockStatement): void {
+    stmt.body.forEach(s => this.visitStatement(s));
+  }
+
+  visitExpressionStatement (stmt: Syntax.ExpressionStatement): void {
+     this.visitExpression(stmt.expression);
+  }
+
+  visitAssertStatement (stmt: Syntax.AssertStatement): void {
+    this.visitAssertion(stmt.expression);
+  }
+
+  visitIfStatement (stmt: Syntax.IfStatement): void {
+    this.visitExpression(stmt.test);
+    this.visitBlockStatement(stmt.consequent);
+    this.visitBlockStatement(stmt.alternate);
+  }
+
+  visitReturnStatement (stmt: Syntax.ReturnStatement): void {
+    this.visitExpression(stmt.argument);
+  }
+
+  visitWhileStatement (stmt: Syntax.WhileStatement): void {
+    stmt.invariants.forEach(inv => this.visitAssertion(inv));
+    this.visitExpression(stmt.test);
+    this.visitBlockStatement(stmt.body);
+  }
+
+  visitDebuggerStatement (stmt: Syntax.DebuggerStatement): void { /* empty */ }
+
+  visitFunctionDeclaration (stmt: Syntax.FunctionDeclaration): void {
+    stmt.requires.forEach(req => this.visitAssertion(req));
+    stmt.ensures.forEach(ens => this.visitPostCondition(ens));
+    this.visitBlockStatement(stmt.body);
+  }
+
+  visitMethodDeclaration (stmt: Syntax.MethodDeclaration): void {
+    stmt.requires.forEach(req => this.visitAssertion(req));
+    stmt.ensures.forEach(ens => this.visitPostCondition(ens));
+    this.visitBlockStatement(stmt.body);
+  }
+
+  visitClassDeclaration (stmt: Syntax.ClassDeclaration): void {
+    this.visitAssertion(stmt.invariant);
+    stmt.methods.forEach(method => this.visitMethodDeclaration(method));
+  }
+
+  visitProgram (prog: Syntax.Program): void {
+    prog.invariants.forEach(a => this.visitAssertion(a));
+    prog.body.forEach(s => this.visitStatement(s));
+  }
 }
 
 /**
@@ -960,4 +1184,62 @@ export function copyId (id: Syntax.Identifier): Syntax.Identifier {
     refs: id.refs,
     loc: id.loc
   };
+}
+
+class SourceLocationFinder extends Traverser {
+
+  position: Syntax.Position;
+  bestSourceLocation: Syntax.SourceLocation | null;
+
+  constructor (position: Syntax.Position) {
+    super();
+    this.position = position;
+    this.bestSourceLocation = null;
+  }
+
+  matchLocation (loc: Syntax.SourceLocation): void {
+    if (loc.start.line > this.position.line) return;
+    if (loc.start.line === this.position.line && loc.start.column > this.position.column) return;
+    if (loc.end.line < this.position.line) return;
+    if (loc.end.line === this.position.line && loc.end.column < this.position.column) return;
+    if (this.bestSourceLocation === null) {
+      this.bestSourceLocation = loc;
+    } else {
+      const prevScore = (this.bestSourceLocation.end.line - this.bestSourceLocation.start.line) * 120
+       + this.bestSourceLocation.end.column - this.bestSourceLocation.start.column;
+      const newScore = (loc.end.line - loc.start.line) * 120 + loc.end.column - loc.start.column;
+      if (newScore <= prevScore) {
+        this.bestSourceLocation = loc;
+      }
+    }
+  }
+
+  visitTerm (term: Syntax.Term): void {
+    this.matchLocation(term.loc);
+    super.visitTerm(term);
+  }
+
+  visitAssertion (assertion: Syntax.Assertion): void {
+    this.matchLocation(assertion.loc);
+    super.visitAssertion(assertion);
+  }
+
+  visitExpression (expression: Syntax.Expression): void {
+    this.matchLocation(expression.loc);
+    super.visitExpression(expression);
+  }
+
+  visitStatement (stmt: Syntax.Statement): void {
+    this.matchLocation(stmt.loc);
+    super.visitStatement(stmt);
+  }
+}
+
+export function findSourceLocation (prog: Syntax.Program, position: Syntax.Position): Syntax.SourceLocation {
+  const visitor = new SourceLocationFinder(position);
+  visitor.visitProgram(prog);
+  if (visitor.bestSourceLocation === null) {
+    throw new Error('could not find any source location');
+  }
+  return visitor.bestSourceLocation;
 }
