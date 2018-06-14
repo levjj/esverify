@@ -327,9 +327,7 @@ export function stringifyExpression (expr: Syntax.Expression): string {
   return (new Stringifier()).visitExpression(expr);
 }
 
-export function stringifyTestCode (body: Array<Syntax.Statement>): string {
-  const stringifier = new Stringifier();
-  return `function assert (p) { if (!p) throw new Error("assertion failed"); }
+export const TEST_PREAMBLE = `function assert (p) { if (!p) throw new Error("assertion failed"); }
 function spec (f, id, req, ens) {
   if (f._mapping) {
     f._mapping[id] = [req, ens];
@@ -348,6 +346,11 @@ function spec (f, id, req, ens) {
     return wrapped;
   }
 }
+`;
+
+export function stringifyTestCode (body: ReadonlyArray<Syntax.Statement>): string {
+  const stringifier = new Stringifier();
+  return `${TEST_PREAMBLE}
 
 ${body.map(s => stringifier.visitStatement(s)).join('\n')}`;
 }
