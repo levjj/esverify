@@ -295,6 +295,9 @@ export function compEndPosition (loc1: Syntax.SourceLocation, loc2: Syntax.Sourc
 
 export type TestCode = ReadonlyArray<Syntax.Statement>;
 
+export type Position = Syntax.Position;
+export type SourceLocation = Syntax.SourceLocation;
+
 export abstract class Visitor<T,A,E,S> {
 
   abstract visitIdentifierTerm (term: Syntax.Identifier): T;

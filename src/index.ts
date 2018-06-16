@@ -5,6 +5,11 @@ import { resolveNames } from './scopes';
 import { vcgenProgram } from './vcgen';
 import VerificationCondition from './verification';
 
+export { default as VerificationCondition } from './verification';
+export { Message } from './message';
+export { Position, SourceLocation } from './javascript';
+export { Options } from './options';
+
 export function verificationConditions (src: string, opts: Partial<Options> = {}):
                 Message | Array<VerificationCondition> {
   setOptions(opts);
