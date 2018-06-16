@@ -1,3 +1,4 @@
+// Mutable Variables: Counter
 let counter = 0;
 invariant(Number.isInteger(counter));
 invariant(counter >= 0);

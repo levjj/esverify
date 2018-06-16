@@ -1,3 +1,4 @@
+// Loops: sumTo
 function sumTo (n) {
   requires(Number.isInteger(n));
   requires(n >= 0);

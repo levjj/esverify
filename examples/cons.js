@@ -1,3 +1,4 @@
+// Closures
 function cons(x) {
   function f () { return x; }
   return f;

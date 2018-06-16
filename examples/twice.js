@@ -1,3 +1,4 @@
+// Higher-order Functions: twice
 function inc (n) {
   requires(Number.isInteger(n));
   ensures(res => Number.isInteger(res) && res > n);

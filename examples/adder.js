@@ -1,3 +1,4 @@
+// Simple Classes: Adder
 class Adder {
   constructor (base) {
     this.base = base;

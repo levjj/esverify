@@ -1,3 +1,4 @@
+// Pure Functions and Mutation
 let x = 0;
 
 function f() { ensures(pure()); x++; }       // not actually pure

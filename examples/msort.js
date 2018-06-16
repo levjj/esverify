@@ -1,3 +1,4 @@
+// Merge Sort
 class IntList {
   constructor (head, tail) {
     this.head = head;

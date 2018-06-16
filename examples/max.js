@@ -1,3 +1,4 @@
+// Simple Example: max
 // This is a live demo, simply edit the code and click "verify" above!
 
 function max(a, b) {

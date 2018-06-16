@@ -1,3 +1,4 @@
+// Custom List Class: map and length
 class List {
   constructor (head, tail) { this.head = head; this.tail = tail; }
   invariant () { return this.tail === null || this.tail instanceof List; }
