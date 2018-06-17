@@ -20,7 +20,7 @@
     "pretty": true,
     "preserveConstEnums": true,
     "removeComments": false,
-    "sourceMap": true,
+    "sourceMap": false,
     "lib": ["es2017"],
     "types": [],
     "typeRoots": ["node_modules/@types"]
