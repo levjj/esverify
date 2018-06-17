@@ -155,13 +155,14 @@ type msg = {
 
 ## Interactive Tools
 
-More tool support will be coming soon.
-
 A simple [web-based editor](https://github.com/levjj/esverify-editor)
 is available online at [esverify.org/try](http://esverify.org/try).
 
 Additionally, there is a [Vim Plugin](https://github.com/levjj/esverify-vim)
-which displays verification results inline.
+and an [Emacs Plugin](https://github.com/SohumB/flycheck-esverify)
+which display verification results inline.
+
+More tool support will be coming soon.
 
 ## License
 
