@@ -27,5 +27,5 @@ const defaultOptions: Readonly<Options> = {
 export let options: Readonly<Options> = defaultOptions; // global singleton options object
 
 export function setOptions (opts: Partial<Options>) {
-  options = Object.assign({}, defaultOptions, opts);
+  options = Object.assign({}, options, opts);
 }
