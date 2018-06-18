@@ -5,7 +5,7 @@ export interface Options {
   z3url: string;
   qi: boolean;
   timeout: number;
-  logformat: 'simple' | 'colored';
+  logformat: 'simple' | 'colored' | 'html';
   quiet: boolean;
   verbose: boolean;
   logsmt: string;

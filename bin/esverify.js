@@ -19,7 +19,7 @@ function usage (err) {
   console.log('  --noqi                  Disables quantifier instantiations');
   console.log('  -t, --timeout SECS      Sets timeout in seconds for z3');
   console.log('                          (default timeout is 10s, 0 disables timeout)');
-  console.log('  -f, --logformat FORMAT  Format can be either "simple" or "colored"');
+  console.log('  -f, --logformat FORMAT  Format can be either "simple", "colored" or "html"');
   console.log('                          (default format is "colored")');
   console.log('  -q, --quiet             Suppresses output');
   console.log('  -v, --verbose           Prints SMT input, output and test code');

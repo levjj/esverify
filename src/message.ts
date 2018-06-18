@@ -48,8 +48,37 @@ function formatColored (msg: Message): string {
   }
 }
 
-function format (msg: Message): string {
-  return options.logformat === 'colored' ? formatColored(msg) : formatSimple(msg);
+function formatHTML (msg: Message, withLocation: boolean): string {
+  function boldColored (color: string, text: string): string {
+    return `<b style="color:#${color}">${text}</b>`;
+  }
+  function escape (text: string): string {
+    const charToReplace: { [c: string]: string } = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;'
+    };
+    return text.replace(/[&<>]/g, c => charToReplace[c] || c);
+  }
+  const loc = withLocation ? `[${msg.loc.file}:${msg.loc.start.line}:${msg.loc.start.column}] ` : '';
+  if (msg.status === 'verified') {
+    return `${loc}${boldColored('32b643', 'verified')} ${escape(msg.description)}`;
+  } else if (msg.status === 'unverified' || msg.status === 'unknown' || msg.status === 'timeout') {
+    return `${loc}${boldColored('ffb700', msg.status)} ${escape(msg.description)}`;
+  } else {
+    return `${loc}${boldColored('e85600', msg.type)} ${escape(msg.description)}`;
+  }
+}
+
+export function format (msg: Message, withLocation: boolean = true): string {
+  switch (options.logformat) {
+    case 'simple':
+      return formatSimple(msg);
+    case 'colored':
+      return formatColored(msg);
+    case 'html':
+      return formatHTML(msg, withLocation);
+  }
 }
 
 export function log (msg: Message): void {
