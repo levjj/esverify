@@ -81,6 +81,10 @@ export default class VerificationCondition {
     }
   }
 
+  hasModel (): boolean {
+    return this.model !== null;
+  }
+
   runTest (): Message {
     const code = this.testSource();
     try {
