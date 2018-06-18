@@ -221,14 +221,13 @@ export default class VerificationCondition {
     this.stepToSource();
   }
 
-  getAnnotations (): Array<[string, Syntax.Position, Array<any>, any]> {
+  getAnnotations (): Array<[Syntax.SourceLocation, Array<any>, any]> {
     return this.getInterpreter().annotations
-    .filter(annotation => annotation.file === options.filename)
-    .map((annotation): [string, Syntax.Position, Array<any>, any] => {
-      const loc = { file: annotation.file, start: annotation.position, end: annotation.position };
-      const heap = this.guessCurrentHeap(loc);
+    .filter(annotation => annotation.location.file === options.filename)
+    .map((annotation): [Syntax.SourceLocation, Array<any>, any] => {
+      const heap = this.guessCurrentHeap(annotation.location);
       const staticValue = this.modelValue(annotation.variableName, heap);
-      return [annotation.file, annotation.position, annotation.values, staticValue];
+      return [annotation.location, annotation.values, staticValue];
     });
   }
 

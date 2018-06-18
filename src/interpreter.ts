@@ -282,8 +282,7 @@ function isMethodCall (expr: Syntax.CallExpression): expr is MethodCallExpressio
 }
 
 export interface Annotation {
-  file: string;
-  position: Syntax.Position;
+  location: Syntax.SourceLocation;
   variableName: string;
   values: Array<any>;
 }
@@ -380,16 +379,14 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
 
   annotate (loc: Syntax.SourceLocation, variableName: string, value: any): any {
     // find index of annotation
-    const idx = this.annotations.findIndex(({ file, position }) =>
-      eqEndPosition(loc, { file, start: position, end: position }));
+    const idx = this.annotations.findIndex(({ location }) => eqEndPosition(loc, location));
     if (idx >= 0) {
       this.annotations[idx].values.push(value);
     } else {
       // no such annotation yet
       // find index of first annotation that is not earlier
-      const idx = this.annotations.findIndex(({ file, position }) =>
-        !compEndPosition(loc, { file, start: position, end: position }));
-      const annotation = { file: loc.file, position: loc.end, variableName, values: [value] };
+      const idx = this.annotations.findIndex(({ location }) => !compEndPosition(loc, location));
+      const annotation = { location: loc, variableName, values: [value] };
       if (idx >= 0) {
         this.annotations.splice(idx, 0, annotation);
       } else {
