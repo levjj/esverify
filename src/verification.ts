@@ -1,5 +1,6 @@
 import { stringifyTestCode } from './codegen';
-import { Substituter, Syntax, nullLoc, TestCode, eqSourceLocation, compEndPosition } from './javascript';
+import { Substituter, Syntax, nullLoc, TestCode, eqSourceLocation, compEndPosition, id,
+         replaceVarAssertion } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars, not, and } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript, valueToPlain } from './model';
@@ -32,6 +33,7 @@ export default class VerificationCondition {
   private testAssertion: TestCode;
   private description: string;
   private heapHints: Array<[Syntax.SourceLocation, Heap]>;
+  private aliases: { [from: string]: string };
   private watches: Array<string>;
 
   private model: Model | null;
@@ -40,7 +42,8 @@ export default class VerificationCondition {
 
   constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, assumptions: Array<Assumption>,
                assertion: P, loc: Syntax.SourceLocation, description: string, freeVars: FreeVars,
-               testBody: TestCode, testAssertion: TestCode, heapHints: Array<[Syntax.SourceLocation, Heap]>) {
+               testBody: TestCode, testAssertion: TestCode, heapHints: Array<[Syntax.SourceLocation, Heap]>,
+               aliases: { [from: string]: string }) {
     this.classes = new Set([...classes]);
     this.heaps = new Set([...Array(heap + 1).keys()]);
     this.locs = new Set([...locs]);
@@ -54,6 +57,7 @@ export default class VerificationCondition {
     this.testBody = testBody;
     this.testAssertion = testAssertion;
     this.heapHints = heapHints;
+    this.aliases = aliases;
     this.watches = [];
 
     this.model = null;
@@ -142,7 +146,11 @@ export default class VerificationCondition {
   }
 
   addAssumption (source: string): void {
-    const assumption = sourceAsJavaScriptAssertion(source);
+    let assumption = sourceAsJavaScriptAssertion(source);
+    for (const aliasedVar in this.aliases) {
+      const replacement = this.aliases[aliasedVar];
+      assumption = replaceVarAssertion(aliasedVar, id(replacement), id(replacement), assumption);
+    }
     const maxHeap = Math.max(...this.heaps.values());
     const assumptions = this.assumptions.map(([src]) => src);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
@@ -161,7 +169,11 @@ export default class VerificationCondition {
   }
 
   assert (source: string): VerificationCondition {
-    const assertion = sourceAsJavaScriptAssertion(source);
+    let assertion = sourceAsJavaScriptAssertion(source);
+    for (const aliasedVar in this.aliases) {
+      const replacement = this.aliases[aliasedVar];
+      assertion = replaceVarAssertion(aliasedVar, id(replacement), id(replacement), assertion);
+    }
     const maxHeap = Math.max(...this.heaps.values());
     const assumptions = this.assumptions.map(([src]) => src);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
@@ -170,7 +182,7 @@ export default class VerificationCondition {
     const [assertionP, , assertionT] = vcgen.assert(assertion);
     return new VerificationCondition(this.classes, maxHeap, this.locs, this.vars, this.prop, this.assumptions,
                                      assertionP, this.loc, source, this.freeVars, this.testBody, assertionT,
-                                     this.heapHints);
+                                     this.heapHints, this.aliases);
   }
 
   steps (): number {

@@ -198,10 +198,12 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     }]);
   }
 
-  verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string) {
+  verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string,
+          aliases: { [from: string]: string } = {}) {
     const assumptions: Array<Assumption> = this.assumptions.map((src: string): [string, P] => [src, tru]);
-    this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, this.prop, assumptions, vc,
-                                            loc, desc, this.freeVars, this.testBody, testBody, this.heapHints));
+    this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, this.prop, assumptions,
+                                            vc, loc, desc, this.freeVars, this.testBody, testBody,
+                                            this.heapHints, aliases));
   }
 
   compareType (expr: Syntax.Expression, type: 'boolean' | 'number' | 'string'): Syntax.Expression {
@@ -1371,9 +1373,10 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       const ens2 = ens.argument !== null
           ? replaceJSVarAssertion(ens.argument.name, id(this.resVar), id(this.resVar), ens.expression)
           : ens.expression;
+      const aliases: { [from: string]: string } = ens.argument !== null ? { [ens.argument.name]: this.resVar } : {};
       const [ensP, ensTriggers, ensT] = this.assert(ens2);
       this.tryPre(and(...ensTriggers), () => {
-        this.verify(ensP, ensT, ens.loc, stringifyAssertion(ens.expression));
+        this.verify(ensP, ensT, ens.loc, stringifyAssertion(ens.expression), aliases);
       });
     }
     this.vcs.forEach(vc => {
