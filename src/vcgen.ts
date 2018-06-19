@@ -200,7 +200,8 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
   verify (vc: P, testBody: TestCode, loc: Syntax.SourceLocation, desc: string,
           aliases: { [from: string]: string } = {}) {
-    const assumptions: Array<Assumption> = this.assumptions.map((src: string): [string, P] => [src, tru]);
+    const assumptions: Array<Assumption> = this.assumptions.map((source: string): Assumption =>
+      ({ source, prop: tru, canBeDeleted: false }));
     this.vcs.push(new VerificationCondition(this.classes, this.heap, this.locs, this.vars, this.prop, assumptions,
                                             vc, loc, desc, this.freeVars, this.testBody, testBody,
                                             this.heapHints, aliases));

@@ -47,21 +47,48 @@ describe('verification', () => {
 
 describe('assumptions', () => {
 
-  code(example());
+  code(example(), true);
 
   it('are added automatically', async () => {
     const vc = vcs()[0];
     expect(vc.getAssumptions()).to.have.length(1);
-    expect(vc.getAssumptions()[0]).to.be.eql('Number.isInteger(x)');
+    expect(vc.getAssumptions()[0]).to.be.deep.eq(['Number.isInteger(x)', false]);
   });
 
   it('can be added', async () => {
     const vc = vcs()[0];
     vc.addAssumption('x > 4');
     expect(vc.getAssumptions()).to.have.length(2);
-    expect(vc.getAssumptions()[1]).to.be.eql('x > 4');
+    expect(vc.getAssumptions()[1]).to.be.deep.eq(['x > 4', true]);
     const message = await vc.verify();
     expect(message.status).to.be.eql('verified');
+  });
+
+  it('can be removed', async () => {
+    const vc = vcs()[0];
+    vc.addAssumption('x > 4');
+    let message = await vc.verify();
+    expect(message.status).to.be.eql('verified');
+    vc.removeAssumption(1);
+    expect(vc.getAssumptions()).to.have.length(1);
+    message = await vc.verify();
+    expect(message.status).to.be.eql('error');
+    if (message.status !== 'error') { throw new Error(); }
+    expect(message.type).to.be.eql('incorrect');
+  });
+
+  it('cannot be removed if non-existing', async () => {
+    const vc = vcs()[0];
+    expect(() => {
+      vc.removeAssumption(2);
+    }).to.throw('no such assumption');
+  });
+
+  it('cannot be removed if builtin', async () => {
+    const vc = vcs()[0];
+    expect(() => {
+      vc.removeAssumption(0);
+    }).to.throw('cannot remove built-in assumptions');
   });
 });
 
@@ -108,7 +135,7 @@ describe('trace', () => {
 
 describe('watches', () => {
 
-  code(example());
+  code(example(), true);
 
   it('can be queried', async () => {
     const vc = vcs()[0];
@@ -148,7 +175,7 @@ describe('watches', () => {
 
 describe('execution', () => {
 
-  code(example());
+  code(example(), true);
 
   it('can be stepped', async () => {
     const vc = vcs()[0];

@@ -15,8 +15,8 @@ export function vcs (): Array<VerificationCondition> {
   return savedVCs;
 }
 
-export function code (fn: () => any) {
-  before(() => {
+export function code (fn: () => any, each: boolean = false) {
+  const setUp = () => {
     const code = fn.toString();
     const t = verificationConditions(code.substring(14, code.length - 2));
     if (!(t instanceof Array)) {
@@ -25,7 +25,12 @@ export function code (fn: () => any) {
       throw new Error('failed to find verification conditions');
     }
     savedVCs = t;
-  });
+  };
+  if (each) {
+    beforeEach(setUp);
+  } else {
+    before(setUp);
+  }
 }
 
 function helper (expected: 'verified' | 'unverified' | 'incorrect' | 'timeout', description: string,
@@ -34,9 +39,9 @@ function helper (expected: 'verified' | 'unverified' | 'incorrect' | 'timeout', 
     /* tslint:disable:no-unused-expression */
     if (debug) {
       setOptions({ quiet: false, verbose: true, timeout: 60 });
-      console.log(savedVCs.map(vc => vc.description).join('\n'));
+      console.log(savedVCs.map(vc => vc.getDescription()).join('\n'));
     }
-    const vc = savedVCs.find(v => v.description === description);
+    const vc = savedVCs.find(v => v.getDescription() === description);
     expect(vc).to.be.ok;
     const res = await vc.verify();
     if (res.status === 'error' && debug) console.log(res);

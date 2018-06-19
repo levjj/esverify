@@ -11,7 +11,7 @@ import { VCGenerator } from './vcgen';
 import { Interpreter, interpret } from './interpreter';
 import { generatePreamble } from './preamble';
 
-export type Assumption = [string, P];
+export type Assumption = Readonly<{source: string, prop: P, canBeDeleted: boolean}>;
 
 declare const console: { log: (s: string) => void };
 declare const require: (s: string) => any;
@@ -152,20 +152,23 @@ export default class VerificationCondition {
       assumption = replaceVarAssertion(aliasedVar, id(replacement), id(replacement), assumption);
     }
     const maxHeap = Math.max(...this.heaps.values());
-    const assumptions = this.assumptions.map(([src]) => src);
+    const assumptions = this.assumptions.map(({ source }) => source);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
                                   new Set([...this.locs]), new Set([...this.vars]), assumptions, this.heapHints,
                                   this.prop);
     const [assumptionP] = vcgen.assume(assumption);
-    this.assumptions = this.assumptions.concat([[source, assumptionP]]);
+    this.assumptions = this.assumptions.concat([{ source, prop: assumptionP, canBeDeleted: true }]);
   }
 
-  getAssumptions (): Array<string> {
-    return this.assumptions.map(([src]) => src);
+  getAssumptions (): Array<[string, boolean]> {
+    return this.assumptions.map(({ source, canBeDeleted }): [string, boolean] => [source, canBeDeleted]);
   }
 
   removeAssumption (idx: number): void {
-    this.assumptions = this.assumptions.filter((_, i) => i !== idx);
+    const assumptionToRemove = idx < this.assumptions.length ? this.assumptions[idx] : undefined;
+    if (assumptionToRemove === undefined) throw new Error('no such assumption');
+    if (!assumptionToRemove.canBeDeleted) throw new Error('cannot remove built-in assumptions');
+    this.assumptions = this.assumptions.filter(a => a !== assumptionToRemove);
   }
 
   assert (source: string): VerificationCondition {
@@ -175,7 +178,7 @@ export default class VerificationCondition {
       assertion = replaceVarAssertion(aliasedVar, id(replacement), id(replacement), assertion);
     }
     const maxHeap = Math.max(...this.heaps.values());
-    const assumptions = this.assumptions.map(([src]) => src);
+    const assumptions = this.assumptions.map(({ source }) => source);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
                                   new Set([...this.locs]), new Set([...this.vars]), assumptions,
                                   this.heapHints, this.prop);
@@ -265,7 +268,7 @@ export default class VerificationCondition {
   }
 
   private prepareSMT (): SMTInput {
-    const prop = and(this.prop, ...this.assumptions.map(([,p]) => p), not(this.assertion));
+    const prop = and(this.prop, ...this.assumptions.map(({ prop }) => prop), not(this.assertion));
     const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, prop);
     if (options.verbose) {
       console.log('SMT Input:');
