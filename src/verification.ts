@@ -123,10 +123,11 @@ export default class VerificationCondition {
     const interpreter = this.getInterpreter();
     try {
       interpreter.run();
-      return { status: 'unverified', description: this.description, loc: this.loc, model: this.getModel() };
+      this.result = { status: 'unverified', description: this.description, loc: this.loc, model: this.getModel() };
+      return this.result;
     } catch (e) {
       if (e instanceof Error && (e instanceof TypeError || e.message === 'assertion failed')) {
-        return {
+        return this.result = {
           status: 'error',
           type: 'incorrect',
           description: this.description,
@@ -135,7 +136,7 @@ export default class VerificationCondition {
           error: e
         };
       } else {
-        return unexpected(e, this.loc, this.description);
+        return this.result = unexpected(e, this.loc, this.description);
       }
     }
   }
