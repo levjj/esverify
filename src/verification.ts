@@ -85,6 +85,10 @@ export default class VerificationCondition {
     return this.description;
   }
 
+  getLocation (): Syntax.SourceLocation {
+    return this.loc;
+  }
+
   setDescription (description: string): void {
     this.description = description;
   }
