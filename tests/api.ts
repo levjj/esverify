@@ -22,7 +22,7 @@ describe('description', () => {
     const verificationConditions = vcs();
     expect(verificationConditions).to.have.length(1);
     const vc = verificationConditions[0];
-    expect(vc.description).to.be.eql('f: (y > 3)');
+    expect(vc.getDescription()).to.be.eql('f: (y > 3)');
   });
 });
 
@@ -72,7 +72,7 @@ describe('assertion', () => {
   it('can be changed', async () => {
     const vc = vcs()[0];
     const vc2 = vc.assert('x >= 1 || x < 1');
-    expect(vc2.description).to.be.eql('x >= 1 || x < 1');
+    expect(vc2.getDescription()).to.be.eql('x >= 1 || x < 1');
     expect(vc2.getAssumptions()).to.have.length(1);
     const message = await vc2.verify();
     expect(message.status).to.be.eql('verified');

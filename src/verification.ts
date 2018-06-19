@@ -19,24 +19,24 @@ declare const fetch: (s: string, opts: any) => Promise<any>;
 let checkedLocalZ3Version: boolean = false;
 
 export default class VerificationCondition {
-  classes: Classes;
-  heaps: Heaps;
-  locs: Locs;
-  vars: Vars;
-  prop: P;
-  assumptions: Array<Assumption>;
-  assertion: P;
-  loc: Syntax.SourceLocation;
-  freeVars: FreeVars;
-  testBody: TestCode;
-  testAssertion: TestCode;
-  description: string;
-  heapHints: Array<[Syntax.SourceLocation, Heap]>;
-  watches: Array<string>;
+  private classes: Classes;
+  private heaps: Heaps;
+  private locs: Locs;
+  private vars: Vars;
+  private prop: P;
+  private assumptions: Array<Assumption>;
+  private assertion: P;
+  private loc: Syntax.SourceLocation;
+  private freeVars: FreeVars;
+  private testBody: TestCode;
+  private testAssertion: TestCode;
+  private description: string;
+  private heapHints: Array<[Syntax.SourceLocation, Heap]>;
+  private watches: Array<string>;
 
-  model: Model | null;
-  interpreter: Interpreter | null;
-  result: Message | null;
+  private model: Model | null;
+  private interpreter: Interpreter | null;
+  private result: Message | null;
 
   constructor (classes: Classes, heap: Heap, locs: Locs, vars: Vars, prop: P, assumptions: Array<Assumption>,
                assertion: P, loc: Syntax.SourceLocation, description: string, freeVars: FreeVars,
@@ -79,6 +79,14 @@ export default class VerificationCondition {
       if (error instanceof MessageException) return this.result = error.msg;
       return this.result = unexpected(error, this.loc, this.description);
     }
+  }
+
+  getDescription (): string {
+    return this.description;
+  }
+
+  setDescription (description: string): void {
+    this.description = description;
   }
 
   hasModel (): boolean {

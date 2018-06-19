@@ -1377,7 +1377,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       });
     }
     this.vcs.forEach(vc => {
-      vc.description = (f.id ? f.id.name : 'func') + ': ' + vc.description;
+      vc.setDescription((f.id ? f.id.name : 'func') + ': ' + vc.getDescription());
     });
 
     // remove context and preconditions from prop for purpose of inlining
@@ -1406,7 +1406,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const renamedFunc = replaceJSVarFunction('this', id(thisArg), id(thisArg), fun);
     let [inlinedP, inlinedBlock] = inliner.visitFunctionBody(renamedFunc, funcName, thisArg);
     inlinedBlock = replaceJSVarBlock(thisArg, id('this'), id('this'), inlinedBlock);
-    inliner.vcs.forEach(vc => vc.description = vc.description.replace(thisArg, 'this'));
+    inliner.vcs.forEach(vc => vc.setDescription(vc.getDescription().replace(thisArg, 'this')));
     this.vcs = this.vcs.concat(inliner.vcs);
     const existsLocs = new Set([...inliner.locs].filter(l => !this.locs.has(l)));
     const existsVars = new Set([...inliner.vars].filter(v => {
