@@ -27,7 +27,7 @@ describe('max()', () => {
   });
 
   it('has a description', async () => {
-    expect(vcs()[3].description).to.be.eql('max: (res >= a)');
+    expect(vcs()[3].getDescription()).to.be.eql('max: (res >= a)');
   });
 
   verified('max: (res >= a)');
@@ -293,16 +293,16 @@ describe('plus operator', () => {
     const z = [] + { };
   });
 
-  verified('operator + requires number or string: (a + b)');
-  verified('operator + requires number or string: (a + b)');
+  verified('operator + requires number or string: b');
+  verified('operator + requires number or string: b');
   verified('assert: (c === 65)');
-  verified('operator + requires number or string: (s1 + s2)');
-  verified('operator + requires number or string: (s1 + s2)');
+  verified('operator + requires number or string: s1');
+  verified('operator + requires number or string: s2');
   verified('assert: (s3 === "Hello,world!")');
-  verified('operator + requires number or string: (a + s1)');
-  verified('operator + requires number or string: (a + s1)');
-  verified('operator + requires number or string: (s2 + b)');
-  verified('operator + requires number or string: (s2 + b)');
-  incorrect('operator + requires number or string: ([] + {  })');
-  incorrect('operator + requires number or string: ([] + {  })');
+  verified('operator + requires number or string: a');
+  verified('operator + requires number or string: s1');
+  verified('operator + requires number or string: s2');
+  verified('operator + requires number or string: b');
+  incorrect('operator + requires number or string: []');
+  incorrect('operator + requires number or string: {  }');
 });

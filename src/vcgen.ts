@@ -278,7 +278,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
               type: 'boolean' | 'number' | 'string' | 'number or string' | 'int') {
     const [prop, test] = this.compareTypePropAndTest(exprA, exprE, type);
     const msg = op === 'if' ? 'if condition' : `operator ${op}`;
-    this.verify(prop, [this.check(test)], exprE.loc, `${msg} requires ${type}: ${stringifyExpression(expr)}`);
+    this.verify(prop, [this.check(test)], expr.loc, `${msg} requires ${type}: ${stringifyExpression(expr)}`);
   }
 
   heapHint (loc: Syntax.SourceLocation): void {
@@ -762,16 +762,16 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const [argumentA, argumentE] = this.visitExpression(expr.argument);
     switch (expr.operator) {
       case '-':
-        this.verifyType(expr, argumentA, argumentE, '-', 'number');
+        this.verifyType(expr.argument, argumentA, argumentE, '-', 'number');
         break;
       case '+':
-        this.verifyType(expr, argumentA, argumentE, '+', 'number');
+        this.verifyType(expr.argument, argumentA, argumentE, '+', 'number');
         break;
       case '!':
-        this.verifyType(expr, argumentA, argumentE, '!', 'boolean');
+        this.verifyType(expr.argument, argumentA, argumentE, '!', 'boolean');
         break;
       case '~':
-        this.verifyType(expr, argumentA, argumentE, '~', 'number');
+        this.verifyType(expr.argument, argumentA, argumentE, '~', 'number');
         break;
     }
     return [
@@ -784,64 +784,64 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const [rightA, rightE] = this.visitExpression(expr.right);
     switch (expr.operator) {
       case '<':
-        this.verifyType(expr, leftA, leftE, '<', 'number or string');
-        this.verifyType(expr, rightA, rightE, '<', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '<', 'number or string');
+        this.verifyType(expr.right, rightA, rightE, '<', 'number or string');
         break;
       case '<=':
-        this.verifyType(expr, leftA, leftE, '<=', 'number or string');
-        this.verifyType(expr, rightA, rightE, '<=', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '<=', 'number or string');
+        this.verifyType(expr.right, rightA, rightE, '<=', 'number or string');
         break;
       case '>':
-        this.verifyType(expr, leftA, leftE, '>', 'number or string');
-        this.verifyType(expr, rightA, rightE, '>', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '>', 'number or string');
+        this.verifyType(expr.right, rightA, rightE, '>', 'number or string');
         break;
       case '>=':
-        this.verifyType(expr, leftA, leftE, '>=', 'number or string');
-        this.verifyType(expr, rightA, rightE, '>=', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '>=', 'number or string');
+        this.verifyType(expr.right, rightA, rightE, '>=', 'number or string');
         break;
       case '<<':
-        this.verifyType(expr, leftA, leftE, '<<', 'int');
-        this.verifyType(expr, rightA, rightE, '<<', 'int');
+        this.verifyType(expr.left, leftA, leftE, '<<', 'int');
+        this.verifyType(expr.right, rightA, rightE, '<<', 'int');
         break;
       case '>>':
-        this.verifyType(expr, leftA, leftE, '>>', 'int');
-        this.verifyType(expr, rightA, rightE, '>>', 'int');
+        this.verifyType(expr.left, leftA, leftE, '>>', 'int');
+        this.verifyType(expr.right, rightA, rightE, '>>', 'int');
         break;
       case '>>>':
-        this.verifyType(expr, leftA, leftE, '>>>', 'int');
-        this.verifyType(expr, rightA, rightE, '>>>', 'int');
+        this.verifyType(expr.left, leftA, leftE, '>>>', 'int');
+        this.verifyType(expr.right, rightA, rightE, '>>>', 'int');
         break;
       case '+':
-        this.verifyType(expr, leftA, leftE, '+', 'number or string');
-        this.verifyType(expr, rightA, rightE, '+', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '+', 'number or string');
+        this.verifyType(expr.right, rightA, rightE, '+', 'number or string');
         break;
       case '-':
-        this.verifyType(expr, leftA, leftE, '-', 'number');
-        this.verifyType(expr, rightA, rightE, '-', 'number');
+        this.verifyType(expr.left, leftA, leftE, '-', 'number');
+        this.verifyType(expr.right, rightA, rightE, '-', 'number');
         break;
       case '*':
-        this.verifyType(expr, leftA, leftE, '*', 'number');
-        this.verifyType(expr, rightA, rightE, '*', 'number');
+        this.verifyType(expr.left, leftA, leftE, '*', 'number');
+        this.verifyType(expr.right, rightA, rightE, '*', 'number');
         break;
       case '/':
-        this.verifyType(expr, leftA, leftE, '/', 'number');
-        this.verifyType(expr, rightA, rightE, '/', 'number');
+        this.verifyType(expr.left, leftA, leftE, '/', 'number');
+        this.verifyType(expr.right, rightA, rightE, '/', 'number');
         break;
       case '%':
-        this.verifyType(expr, leftA, leftE, '%', 'int');
-        this.verifyType(expr, rightA, rightE, '%', 'int');
+        this.verifyType(expr.left, leftA, leftE, '%', 'int');
+        this.verifyType(expr.right, rightA, rightE, '%', 'int');
         break;
       case '|':
-        this.verifyType(expr, leftA, leftE, '|', 'int');
-        this.verifyType(expr, rightA, rightE, '|', 'int');
+        this.verifyType(expr.left, leftA, leftE, '|', 'int');
+        this.verifyType(expr.right, rightA, rightE, '|', 'int');
         break;
       case '^':
-        this.verifyType(expr, leftA, leftE, '^', 'int');
-        this.verifyType(expr, rightA, rightE, '^', 'int');
+        this.verifyType(expr.left, leftA, leftE, '^', 'int');
+        this.verifyType(expr.right, rightA, rightE, '^', 'int');
         break;
       case '&':
-        this.verifyType(expr, leftA, leftE, '&', 'int');
-        this.verifyType(expr, rightA, rightE, '&', 'int');
+        this.verifyType(expr.left, leftA, leftE, '&', 'int');
+        this.verifyType(expr.right, rightA, rightE, '&', 'int');
         break;
     }
     return [
