@@ -185,6 +185,25 @@ describe('watches', () => {
       ['x + 1', { type: 'num', v: 1 }, { type: 'num', v: 1 }]
     ]);
   });
+
+  it('can be removed', async () => {
+    const vc = vcs()[0];
+    await vc.verify();
+    vc.runWithInterpreter();
+    vc.addWatch('x + 1');
+    let watches = vc.getWatches();
+    expect(watches).to.have.length(1);
+    vc.removeWatch(0);
+    watches = vc.getWatches();
+    expect(watches).to.have.length(0);
+  });
+
+  it('cannot be removed if non-existing', async () => {
+    const vc = vcs()[0];
+    expect(() => {
+      vc.removeWatch(2);
+    }).to.throw('no such watch');
+  });
 });
 
 describe('execution', () => {

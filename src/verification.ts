@@ -231,6 +231,12 @@ export default class VerificationCondition {
     this.watches.push(source);
   }
 
+  removeWatch (idx: number): void {
+    const watchToRemove = idx < this.watches.length ? this.watches[idx] : undefined;
+    if (watchToRemove === undefined) throw new Error('no such watch');
+    this.watches = this.watches.filter(w => w !== watchToRemove);
+  }
+
   restart (): void {
     this.getInterpreter().restart();
     this.stepToSource();
