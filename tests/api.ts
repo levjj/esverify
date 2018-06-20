@@ -243,7 +243,11 @@ describe('annotations', () => {
     await vc.verify();
     vc.runWithInterpreter();
     expect(vc.getAnnotations()).to.be.deep.eq([
-      [{ file: '', start: { line: 1, column: 13 }, end: { line: 1, column: 14 } }, [0], 0]
+      [
+        { file: '', start: { line: 1, column: 13 }, end: { line: 1, column: 14 } },
+        [{ type: 'num', v: 0 }],
+        { type: 'num', v: 0 }
+      ]
     ]);
   });
 });

@@ -161,7 +161,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     return id(`__free__${name}`);
   }
 
-  freeVar (name: string) {
+  freeVar (name: string, loc: Syntax.SourceLocation) {
     this.freeVars.push(name);
     this.testBody = this.testBody.concat([{
       type: 'VariableDeclaration',
@@ -171,14 +171,14 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       loc: nullLoc()
     }, {
       type: 'VariableDeclaration',
-      id: id(`old_${name}`),
+      id: id(`old_${name}`, loc),
       init: id(name),
       kind: 'const',
       loc: nullLoc()
     }]);
   }
 
-  freeLoc (name: string) {
+  freeLoc (name: string, loc: Syntax.SourceLocation) {
     this.freeVars.push({ name, heap: this.heap });
     this.testBody = this.testBody.concat([{
       type: 'ExpressionStatement',
@@ -191,7 +191,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       loc: nullLoc()
     }, {
       type: 'VariableDeclaration',
-      id: id(`old_${name}`),
+      id: id(`old_${name}`, loc),
       init: id(name),
       kind: 'const',
       loc: nullLoc()
@@ -1175,7 +1175,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
     // free mutable variables within the loop
     for (const fv of stmt.freeVars) {
-      this.freeLoc(fv);
+      this.freeLoc(fv.name, fv.loc);
     }
 
     const startHeap = this.heap;
@@ -1268,18 +1268,18 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
     // add "this" argument
     this.vars.add(thisArg);
-    this.freeVar(thisArg);
+    this.freeVar(thisArg, nullLoc());
 
     // add arguments to scope
     const args: Array<A> = [];
     for (const p of f.params) {
       args.push(p.name);
       this.vars.add(p.name);
-      this.freeVar(p.name);
+      this.freeVar(p.name, p.loc);
       this.heapHint(p.loc);
     }
     for (const fv of f.freeVars) {
-      this.freeLoc(fv);
+      this.freeLoc(fv.name, fv.loc);
     }
 
     // add special result variable

@@ -520,7 +520,6 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
       for (let i = 0; i < callee.node.params.length; i++) {
         const argVal = i < args.length ? args[i] : undefined;
         newFrame.define(callee.node.params[i].name, argVal, 'let');
-        this.annotate(callee.node.params[i].loc, callee.node.params[i].name, argVal);
       }
       this.stack.push(newFrame);
       this.visitBlockStatement(callee.node.body);
@@ -1242,7 +1241,9 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
     } else if (this.pc() === stmt) {
       const val = this.popOp();
       this.frame().define(stmt.id.name, val, stmt.kind);
-      this.annotate(stmt.id.loc, stmt.id.name, val);
+      if (stmt.id.name.startsWith('old_')) {
+        this.annotate(stmt.id.loc, stmt.id.name.substr(4), val);
+      }
       this.clearPC();
       return StepResult.DONE;
     } else {

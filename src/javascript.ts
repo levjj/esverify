@@ -181,7 +181,7 @@ export namespace Syntax {
                                         requires: Array<Assertion>;
                                         ensures: Array<PostCondition>;
                                         body: BlockStatement;
-                                        freeVars: Array<string>;
+                                        freeVars: Array<Identifier>;
                                         loc: SourceLocation; }
 
   export type Expression = Identifier
@@ -227,7 +227,7 @@ export namespace Syntax {
                                     invariants: Array<Assertion>;
                                     test: Expression;
                                     body: BlockStatement;
-                                    freeVars: Array<string>;
+                                    freeVars: Array<Identifier>;
                                     loc: SourceLocation; }
   export interface DebuggerStatement { type: 'DebuggerStatement';
                                        loc: SourceLocation; }
@@ -237,7 +237,7 @@ export namespace Syntax {
                                          requires: Array<Assertion>;
                                          ensures: Array<PostCondition>;
                                          body: BlockStatement;
-                                         freeVars: Array<string>;
+                                         freeVars: Array<Identifier>;
                                          loc: SourceLocation; }
   export interface MethodDeclaration { type: 'MethodDeclaration';
                                        id: Identifier;
@@ -245,7 +245,7 @@ export namespace Syntax {
                                        requires: Array<Assertion>;
                                        ensures: Array<PostCondition>;
                                        body: BlockStatement;
-                                       freeVars: Array<string>;
+                                       freeVars: Array<Identifier>;
                                        className: string;
                                        loc: SourceLocation; }
   export interface ClassDeclaration { type: 'ClassDeclaration';

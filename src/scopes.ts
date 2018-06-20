@@ -64,8 +64,8 @@ class Scope {
       decl = this.ids[sym.name];
     } else if (this.parent) {
       decl = this.parent.lookupUse(sym, clz);
-      if (this.funcOrLoop && !this.funcOrLoop.freeVars.includes(sym.name) && isMutable(decl)) {
-        this.funcOrLoop.freeVars.push(sym.name); // a free variable
+      if (this.funcOrLoop && !this.funcOrLoop.freeVars.some(fv => fv.name === sym.name) && isMutable(decl)) {
+        this.funcOrLoop.freeVars.push(sym); // a free variable
       }
     }
     if (!decl || decl.type === 'Unresolved') {

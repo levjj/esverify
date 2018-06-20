@@ -110,9 +110,9 @@ describe('interpreter', () => {
       }
     }
     const a = new A(23);
-    log(a);
+    log(a.constructor.name);
     log(a.x);
-  }, 13);
+  }, 17);
 
   bisumulate('array expressions', () => {
     const a = [1, 2, 3, log(4), 5];
