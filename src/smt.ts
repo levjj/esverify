@@ -1,5 +1,5 @@
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Syntax, Vars, Visitor, implies } from './logic';
-import { options } from './options';
+import { getOptions } from './options';
 import { instantiateQuantifiers } from './qi';
 import { flatMap } from './util';
 
@@ -311,7 +311,7 @@ function propositionToAssert (prop: P): SMTInput {
 }
 
 export function vcToSMT (classes: Classes, heaps: Heaps, locs: Locs, vars: Vars, freeVars: FreeVars, p: P): SMTInput {
-  const prop = options.qi ? instantiateQuantifiers(heaps, locs, vars, freeVars, p) : p;
+  const prop = getOptions().qi ? instantiateQuantifiers(heaps, locs, vars, freeVars, p) : p;
   const regClasses: Classes = new Set([...classes].filter(c => c.cls !== 'Array'));
   const strClass = [...classes].find(({ cls }) => cls === 'String');
   if (strClass === undefined) throw new Error('cannot find String class');
@@ -535,7 +535,8 @@ ${[...Array(10).keys()].map(i => `
 (declare-fun post${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)
 (declare-fun app${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) JSVal)
 (declare-fun eff${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Heap)
-${options.qi ? '' : `(declare-fun call${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`}
+${getOptions().qi ? '' :
+  `(declare-fun call${i} (JSVal Heap JSVal${[...Array(i).keys()].map(_ => ' JSVal').join('')}) Bool)`}
 `).join('')}
 ; Objects
 (declare-datatypes () ((ClassName
@@ -547,7 +548,7 @@ ${options.qi ? '' : `(declare-fun call${i} (JSVal Heap JSVal${[...Array(i).keys(
 (declare-fun objfield (Obj String) JSVal)
 (declare-fun arrlength (Arr) Int)
 (declare-fun arrelems (Arr Int) JSVal)
-${options.qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
+${getOptions().qi ? '' : '(declare-fun access (JSVal JSVal Heap) Bool)'}
 
 (define-fun instanceof ((obj JSVal) (cls ClassName)) Bool
   (or (and (is-jsobj obj) (= cls c_Object))

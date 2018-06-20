@@ -1,5 +1,5 @@
 import { Message, MessageException, log, unexpected } from './message';
-import { Options, options, setOptions } from './options';
+import { Options, getOptions, setOptions } from './options';
 import { sourceAsJavaScript } from './parser';
 import { resolveNames } from './scopes';
 import { vcgenProgram } from './vcgen';
@@ -26,7 +26,7 @@ export function verificationConditions (src: string, opts: Partial<Options> = {}
 export async function verify (src: string, opts: Partial<Options> = {}): Promise<Array<Message>> {
   const vcs = verificationConditions(src, opts);
   if (!(vcs instanceof Array)) {
-    if (!options.quiet) log(vcs);
+    if (!getOptions().quiet) log(vcs);
     return [vcs];
   }
   const res: Array<Message> = [];
@@ -37,7 +37,7 @@ export async function verify (src: string, opts: Partial<Options> = {}): Promise
     } catch (e) {
       m = e instanceof MessageException ? e.msg : unexpected(e);
     }
-    if (!options.quiet) log(m);
+    if (!getOptions().quiet) log(m);
     res.push(m);
   }
   return res;

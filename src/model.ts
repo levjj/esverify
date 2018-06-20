@@ -1,7 +1,7 @@
 import { Syntax, id, nullLoc } from './javascript';
 import { FreeVar, Vars } from './logic';
 import { MessageException } from './message';
-import { options } from './options';
+import { getOptions } from './options';
 import { SMTOutput } from './smt';
 import { SExpr, matchSExpr, parseSExpr } from './util';
 import { stringifyExpression } from './codegen';
@@ -245,7 +245,7 @@ export class Model {
     return new MessageException({
       status: 'error',
       type: 'unrecognized-model',
-      loc: { file: options.filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+      loc: { file: getOptions().filename, start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       description: `cannot parse smt ${smt}`
     });
   }

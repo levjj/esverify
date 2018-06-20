@@ -1,7 +1,7 @@
 import * as JSyntax from 'estree';
 import { Syntax, id, copyId } from './javascript';
 import { MessageException, unexpected, ParseError } from './message';
-import { options } from './options';
+import { getOptions } from './options';
 import { flatMap } from './util';
 import { parseScript } from 'esprima';
 
@@ -68,7 +68,7 @@ function loc (n: JSyntax.Node): Syntax.SourceLocation {
   if (!n.loc) {
     throw new MessageException(unexpected(new Error('No location information available on nodes')));
   }
-  return { file: options.filename, start: n.loc.start, end: n.loc.end };
+  return { file: getOptions().filename, start: n.loc.start, end: n.loc.end };
 }
 
 function patternAsIdentifier (node: JSyntax.Pattern): Syntax.Identifier {
@@ -964,7 +964,7 @@ function parseSource (source: string): JSyntax.Program {
   } catch (e) {
     const line: number = e.lineNumber || 0;
     const column: number = 0;
-    const loc = { file: options.filename, start: { line, column }, end: { line, column: column + 1 } };
+    const loc = { file: getOptions().filename, start: { line, column }, end: { line, column: column + 1 } };
     const err: ParseError = { status: 'error', type: 'parse-error', loc, description: e.description || 'parse error' };
     throw new MessageException(err);
   }

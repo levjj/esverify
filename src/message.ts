@@ -1,6 +1,6 @@
 import { Syntax } from './javascript';
 import { Model } from './model';
-import { options } from './options';
+import { getOptions } from './options';
 
 export interface BaseMessage { status: string; loc: Syntax.SourceLocation; description: string; }
 
@@ -71,7 +71,7 @@ function formatHTML (msg: Message, withLocation: boolean): string {
 }
 
 export function format (msg: Message, withLocation: boolean = true): string {
-  switch (options.logformat) {
+  switch (getOptions().logformat) {
     case 'simple':
       return formatSimple(msg);
     case 'colored':
@@ -98,7 +98,7 @@ export class MessageException extends Error {
 
 export function unexpected (error: Error,
                             loc: Syntax.SourceLocation = {
-                              file: options.filename,
+                              file: getOptions().filename,
                               start: { line: 0, column: 0 },
                               end: { line: 0, column: 0 }},
                             description?: string): Message {

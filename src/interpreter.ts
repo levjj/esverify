@@ -2,7 +2,7 @@ import { Syntax, Visitor, eqSourceLocation, nullLoc, eqEndPosition, compEndPosit
          findSourceLocation } from './javascript';
 import { sourceAsJavaScriptExpression } from './parser';
 import { JSVal } from './model';
-import { options } from './options';
+import { getOptions } from './options';
 
 declare const console: { log: (s: string) => void };
 
@@ -298,6 +298,7 @@ export interface Interpreter {
   scopes (frameIndex: number): Array<Array<[string, any]>>;
   goto (pos: Syntax.Position, iteration: number): void;
   restart (): void;
+  canStep (): boolean;
   stepInto (): void;
   stepOver (): void;
   stepOut (): void;
@@ -329,7 +330,7 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
 
   loc (): Syntax.SourceLocation {
     const pc = this.pc();
-    if (pc === null) throw new Error('no program counter available');
+    if (pc === null) return nullLoc();
     return pc.loc;
   }
 
@@ -348,6 +349,14 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
 
   restart (): void {
     this.reset();
+  }
+
+  canStep (): boolean {
+    if (this.steps >= getOptions().maxInterpreterSteps) {
+      return false;
+    }
+    if (this.isBreaking()) return false;
+    return this.stack.length > 0 && this.pc() !== null;
   }
 
   goto (pos: Syntax.Position, iteration: number = 0): void {
@@ -1456,7 +1465,7 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
 
   step (): StepResult {
     const frame = this.frame();
-    if (this.steps >= options.maxInterpreterSteps) {
+    if (this.steps >= getOptions().maxInterpreterSteps) {
       return StepResult.DONE;
     }
     try {

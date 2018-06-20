@@ -4,7 +4,7 @@ import { Substituter, Syntax, nullLoc, TestCode, eqSourceLocation, compEndPositi
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars, not, and } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript, JSVal } from './model';
-import { options } from './options';
+import { getOptions } from './options';
 import { SMTInput, SMTOutput, vcToSMT } from './smt';
 import { sourceAsJavaScriptAssertion } from './parser';
 import { VCGenerator } from './vcgen';
@@ -71,7 +71,7 @@ export default class VerificationCondition {
       this.interpreter = null;
       this.result = null;
       const smtin = this.prepareSMT();
-      const smtout = await (options.remote ? this.solveRemote(smtin) : this.solveLocal(smtin));
+      const smtout = await (getOptions().remote ? this.solveRemote(smtin) : this.solveLocal(smtin));
       const modelOrMessage = this.processSMTOutput(smtout);
       if (modelOrMessage instanceof Model) {
         this.model = modelOrMessage;
@@ -264,7 +264,7 @@ export default class VerificationCondition {
 
   getAnnotations (): Array<[Syntax.SourceLocation, Array<JSVal>, JSVal | undefined]> {
     return this.getInterpreter().annotations
-    .filter(annotation => annotation.location.file === options.filename)
+    .filter(annotation => annotation.location.file === getOptions().filename)
     .map((annotation): [Syntax.SourceLocation, Array<JSVal>, JSVal | undefined] => {
       const heap = this.guessCurrentHeap(annotation.location);
       const staticValue = this.modelValue(annotation.variableName, heap);
@@ -283,7 +283,7 @@ export default class VerificationCondition {
   private prepareSMT (): SMTInput {
     const prop = and(this.prop, ...this.assumptions.map(({ prop }) => prop), not(this.assertion));
     const smt = vcToSMT(this.classes, this.heaps, this.locs, this.vars, this.freeVars, prop);
-    if (options.verbose) {
+    if (getOptions().verbose) {
       console.log('SMT Input:');
       console.log('------------');
       console.log(smt);
@@ -293,14 +293,14 @@ export default class VerificationCondition {
   }
 
   private solveLocal (smt: SMTInput): Promise<SMTOutput> {
-    if (!options.quiet && options.verbose) {
-      console.log(`${this.description}: solving locally with ${options.z3path}`);
+    if (!getOptions().quiet && getOptions().verbose) {
+      console.log(`${this.description}: solving locally with ${getOptions().z3path}`);
     }
     let p = Promise.resolve('');
     if (!checkedLocalZ3Version) {
       p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
         const exec = require('child_process').exec;
-        exec(options.z3path + ' -version', (err: Error, out: string) => {
+        exec(getOptions().z3path + ' -version', (err: Error, out: string) => {
           if (err) {
             reject(new Error('cannot invoke z3: ' + String(err)));
           } else {
@@ -315,10 +315,10 @@ export default class VerificationCondition {
         });
       }));
     }
-    if (!options.quiet && options.verbose) {
+    if (!getOptions().quiet && getOptions().verbose) {
       p = p.then(() => new Promise<string>((resolve, reject) => {
         const writeFile = require('fs').writeFile;
-        writeFile(options.logsmt, smt, (err: Error, out: string) => {
+        writeFile(getOptions().logsmt, smt, (err: Error, out: string) => {
           if (err) {
             reject(new Error('cannot write: ' + String(err)));
           } else {
@@ -329,11 +329,13 @@ export default class VerificationCondition {
     }
     p = p.then(() => new Promise<SMTOutput>((resolve, reject) => {
       const spawn = require('child_process').spawn;
-      const p = spawn(options.z3path, [`-T:${options.timeout}`, '-smt2', '-in'], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const p = spawn(getOptions().z3path,
+                      [`-T:${getOptions().timeout}`, '-smt2', '-in'],
+                      { stdio: ['pipe', 'pipe', 'ignore'] });
       let result: string = '';
       p.stdout.on('data', (data: Object) => { result += data.toString(); });
       p.on('exit', (code: number) => {
-        if (!options.quiet && options.verbose) {
+        if (!getOptions().quiet && getOptions().verbose) {
           console.log('SMT Output:');
           console.log('------------');
           console.log(result);
@@ -349,12 +351,12 @@ export default class VerificationCondition {
   }
 
   private async solveRemote (smt: SMTInput): Promise<SMTOutput> {
-    if (!options.quiet && options.verbose) {
-      console.log(`${this.description}: sending request to ${options.z3url}`);
+    if (!getOptions().quiet && getOptions().verbose) {
+      console.log(`${this.description}: sending request to ${getOptions().z3url}`);
     }
-    const req = await fetch(options.z3url, { method: 'POST', body: smt });
+    const req = await fetch(getOptions().z3url, { method: 'POST', body: smt });
     const smtout = await req.text();
-    if (!options.quiet && options.verbose) {
+    if (!getOptions().quiet && getOptions().verbose) {
       console.log('SMT Output:');
       console.log('------------');
       console.log(smtout);
@@ -395,7 +397,7 @@ export default class VerificationCondition {
 
   private testSource (): string {
     const code = stringifyTestCode(this.testCode());
-    if (!options.quiet && options.verbose) {
+    if (!getOptions().quiet && getOptions().verbose) {
       console.log('Test Code:');
       console.log('------------');
       console.log(code);
@@ -418,7 +420,7 @@ export default class VerificationCondition {
 
   private stepToSource (): void {
     const interpreter = this.getInterpreter();
-    while (interpreter.loc().file !== options.filename) {
+    while (interpreter.canStep() && interpreter.loc().file !== getOptions().filename) {
       interpreter.stepInto();
     }
   }

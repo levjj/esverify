@@ -1,6 +1,6 @@
 import { FreeVars, Heap, Heaps, Locs, P, Reducer, Substituter, Syntax, Transformer, Traverser, Vars, and, copy,
          eqExpr, eqHeap, eqProp, implies, tru } from './logic';
-import { options } from './options';
+import { getOptions } from './options';
 import { propositionToSMT } from './smt';
 
 declare const console: { log: (s: string) => void };
@@ -329,7 +329,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
       clauses.push(instantiated);
       prop.instantiations.push(t);
       this.instantiations++;
-      if (options.verbose && !options.quiet) {
+      if (getOptions().verbose && !getOptions().quiet) {
         console.log('trigger: ' + propositionToSMT(t));
       }
     }
@@ -348,7 +348,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
       clauses.push(instantiated);
       prop.instantiations.push(t);
       this.instantiations++;
-      if (options.verbose && !options.quiet) {
+      if (getOptions().verbose && !getOptions().quiet) {
         console.log('trigger: ' + propositionToSMT(t));
       }
     }
@@ -367,7 +367,7 @@ class QuantifierInstantiator extends QuantifierTransformer {
       clauses.push(instantiated);
       prop.instantiations.push(t);
       this.instantiations++;
-      if (options.verbose && !options.quiet) {
+      if (getOptions().verbose && !getOptions().quiet) {
         console.log('trigger: ' + propositionToSMT(t));
       }
     }

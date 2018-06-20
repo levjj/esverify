@@ -26,7 +26,11 @@ const defaultOptions: Readonly<Options> = {
   maxInterpreterSteps: 10000
 };
 
-export let options: Readonly<Options> = defaultOptions; // global singleton options object
+let options: Readonly<Options> = defaultOptions; // global singleton options object
+
+export function getOptions (): Readonly<Options> {
+  return options;
+}
 
 export function setOptions (opts: Partial<Options>) {
   options = Object.assign({}, options, opts);
