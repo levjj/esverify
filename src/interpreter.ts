@@ -295,7 +295,7 @@ export interface Interpreter {
   loc (): Syntax.SourceLocation;
   iteration (): number;
   callstack (): Array<[string, Syntax.SourceLocation, number]>;
-  scopes (): Array<Array<[string, any]>>;
+  scopes (frameIndex: number): Array<Array<[string, any]>>;
   goto (pos: Syntax.Position, iteration: number): void;
   restart (): void;
   stepInto (): void;
@@ -325,7 +325,7 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
     this.visitProgram(program); // set initial PC
   }
 
-  // --- Tracer methods
+  // --- Interpreter methods
 
   loc (): Syntax.SourceLocation {
     const pc = this.pc();
@@ -341,8 +341,9 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
     return this.stack.map(frame => frame.asTuple());
   }
 
-  scopes (): Array<Array<[string, any]>> {
-    return this.frame().scopes();
+  scopes (frameIndex: number): Array<Array<[string, any]>> {
+    const idx = Math.max(0, Math.min(this.stack.length - 1, frameIndex));
+    return this.stack[idx].scopes();
   }
 
   restart (): void {

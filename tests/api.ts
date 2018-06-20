@@ -142,7 +142,7 @@ describe('scopes', () => {
     const vc = vcs()[0];
     await vc.verify();
     vc.runWithInterpreter();
-    const scopes = vc.getScopes();
+    const scopes = vc.getScopes(0);
     expect(scopes).to.have.length(1);
     const globalScope = scopes[0];
 

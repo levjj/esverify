@@ -204,9 +204,9 @@ export default class VerificationCondition {
     return this.getInterpreter().callstack();
   }
 
-  getScopes (): Array<Array<[string, JSVal, JSVal | undefined]>> {
+  getScopes (frameIndex: number): Array<Array<[string, JSVal, JSVal | undefined]>> {
     const heap = this.guessCurrentHeap();
-    return this.getInterpreter().scopes().map(scope =>
+    return this.getInterpreter().scopes(frameIndex).map(scope =>
       scope.map(([varname, dynamicValue]): [string, JSVal, JSVal | undefined] => {
         const staticValue = this.modelValue(varname, heap);
         return [varname, this.getInterpreter().asValue(dynamicValue), staticValue];
