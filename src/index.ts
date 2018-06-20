@@ -9,6 +9,7 @@ export { default as VerificationCondition } from './verification';
 export { Message, format as formatMessage } from './message';
 export { Position, SourceLocation } from './javascript';
 export { Options, setOptions } from './options';
+export { JSVal, valueToString } from './model';
 
 export function verificationConditions (src: string, opts: Partial<Options> = {}):
                 Message | Array<VerificationCondition> {

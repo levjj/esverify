@@ -1,6 +1,7 @@
 import { Syntax, Visitor, eqSourceLocation, nullLoc, eqEndPosition, compEndPosition,
          findSourceLocation } from './javascript';
 import { sourceAsJavaScriptExpression } from './parser';
+import { JSVal } from './model';
 
 declare const console: { log: (s: string) => void };
 
@@ -302,6 +303,8 @@ export interface Interpreter {
   run (): void;
   define (name: string, val: any, kind: 'let' | 'const'): void;
   eval (source: string, bindings: Array<[string, any]>): any;
+  asValue (val: any): JSVal;
+  fromValue (val: JSVal): any;
 }
 
 class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> implements Interpreter {
@@ -375,7 +378,87 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
     }
   }
 
+  asValue (val: any): JSVal {
+    if (typeof val === 'number') {
+      return { type: 'num', v: val };
+    } else if (typeof val === 'boolean') {
+      return { type: 'bool', v: val };
+    } else if (typeof val === 'string') {
+      return { type: 'str', v: val };
+    } else if (val === null) {
+      return { type: 'null' };
+    } else if (val === undefined) {
+      return { type: 'undefined' };
+    } else if (isInterpreterFunction(val)) {
+      return {
+        type: 'fun',
+        body: {
+          type: 'FunctionExpression',
+          body: val.node.body,
+          ensures: val.node.ensures,
+          freeVars: val.node.freeVars,
+          id: val.node.id,
+          loc: val.node.loc,
+          params: val.node.params,
+          requires: val.node.requires
+        }
+      };
+    } else if (isSpecWrappedFunction(val)) {
+      return this.asValue(val._orig);
+    } else if (val instanceof Array) {
+      return { type: 'arr', elems: val.map(e => this.asValue(e)) };
+    } else if ('_cls_' in val) {
+      const [cls, ...args] = val._cls_;
+      return { type: 'obj-cls', cls, args: args.map((a: any) => this.asValue(a)) };
+    } else if (typeof val === 'object') {
+      const obj: { [key: string]: JSVal } = {};
+      Object.keys(val).forEach(key => obj[key] = this.asValue(val[key]));
+      return { type: 'obj', v: obj };
+    } else {
+      const str = String(val);
+      return { type: 'str', v: `<<${str.length > 30 ? str.substr(0, 27) + '...' : str}>>` };
+    }
+  }
+
+  fromValue (val: JSVal): any {
+    switch (val.type) {
+      case 'num':
+      case 'bool':
+      case 'str':
+        return val.v;
+      case 'null':
+        return null;
+      case 'undefined':
+        return undefined;
+      case 'fun':
+        return this.evalExpression(val.body);
+      case 'obj':
+        const obj: { [key: string]: any } = {};
+        Object.keys(val.v).forEach(key => obj[key] = this.fromValue(val.v[key]));
+        return obj;
+      case 'obj-cls':
+        const constr = this.frame().lookup(val.cls);
+        const instance = new constr(...val.args.map(arg => this.fromValue(arg)));
+        instance._cls_ = [constr.name, ...val.args];
+        return instance;
+      case 'arr':
+        return val.elems.map(elem => this.fromValue(elem));
+    }
+  }
+
   // --- other methods
+
+  evalExpression (expression: Syntax.Expression): any {
+    this.stack.push(new EvaluationStackFrame(expression, this.frame().scope));
+    while (true) {
+      const res = this.step();
+      if (res === StepResult.DONE) {
+        const retVal = this.popOp();
+        this.stack.pop();
+        return retVal;
+      }
+    }
+  }
 
   annotate (loc: Syntax.SourceLocation, variableName: string, value: any): any {
     // find index of annotation
@@ -947,7 +1030,9 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
         args.unshift(this.popOp());
       }
       const constr = this.popOp();
-      this.pushOp(new constr(...args));
+      const instance = new constr(...args);
+      instance._cls_ = [constr.name, ...args];
+      this.pushOp(instance);
       this.clearPC();
       return StepResult.DONE;
     } else {

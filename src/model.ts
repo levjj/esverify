@@ -118,6 +118,29 @@ export function valueToPlain (val: JSVal): any {
   }
 }
 
+export function valueToString (val: JSVal): string {
+  switch (val.type) {
+    case 'num':
+    case 'bool':
+    case 'str':
+      return String(val.v);
+    case 'null':
+      return 'null';
+    case 'undefined':
+      return 'undefined';
+    case 'fun':
+      const str = stringifyExpression(val.body);
+      return str.substr(1, str.length - 2); // remove outer parens
+    case 'obj':
+      const formatKey = (s: string) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s) ? s : '"' + s + '"';
+      return `{ ${Object.keys(val.v).map(key => `${formatKey(key)}:${valueToString(val.v[key])}`).join(', ')} }`;
+    case 'obj-cls':
+      return `new ${val.cls}(${val.args.map(arg => valueToString(arg)).join(', ')})`;
+    case 'arr':
+      return `[${val.elems.map(elem => valueToString(elem)).join(', ')}]`;
+  }
+}
+
 export class Model {
 
   private arrLengths: ArrLengths | null = null;

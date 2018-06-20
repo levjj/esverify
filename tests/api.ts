@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { code, incorrect, unverified, verified, vcs } from './helpers';
+import { valueToString } from '../src';
 
 declare function ensures (x: boolean | ((y: any) => boolean)): void;
 declare function requires (x: boolean): void;
@@ -133,6 +134,34 @@ describe('trace', () => {
   });
 });
 
+describe('scopes', () => {
+
+  code(example(), true);
+
+  it('can be queried', async () => {
+    const vc = vcs()[0];
+    await vc.verify();
+    vc.runWithInterpreter();
+    const scopes = vc.getScopes();
+    expect(scopes).to.have.length(1);
+    const globalScope = scopes[0];
+
+    const fBinding = globalScope.find(([varname]) => varname === 'f');
+    expect(fBinding).to.be.an('array');
+    expect(fBinding).to.have.length(3);
+    expect(fBinding[0]).to.be.eq('f');
+    expect(fBinding[1].type).to.be.eq('fun');
+    expect(fBinding[2].type).to.be.eq('fun');
+    expect(valueToString(fBinding[1])).to.be.eq('function f (x) {\n  return x;\n}');
+    expect(valueToString(fBinding[2])).to.be.eq(
+      'function (x_0) {\n  if ((x_0 === 0)) {\n    return 0;\n  }\n  return 0;\n}');
+
+    const xBinding = globalScope.find(([varname]) => varname === 'x');
+    expect(xBinding).to.be.deep.eq(['x', { type: 'num', v: 0 }, { type: 'num', v: 0 }]);
+    expect(valueToString(xBinding[1])).to.be.eq('0');
+  });
+});
+
 describe('watches', () => {
 
   code(example(), true);
@@ -142,21 +171,7 @@ describe('watches', () => {
     await vc.verify();
     vc.runWithInterpreter();
     const watches = vc.getWatches();
-    expect(watches).to.have.length(2);
-    const globalScope = watches[0];
-
-    const fBinding = globalScope.find(([varname]) => varname === 'f');
-    expect(fBinding).to.be.an('array');
-    expect(fBinding).to.have.length(3);
-    expect(fBinding[0]).to.be.eq('f');
-    expect(fBinding[1]).to.be.a('function');
-    expect(fBinding[2]).to.be.a('function');
-
-    const xBinding = globalScope.find(([varname]) => varname === 'x');
-    expect(xBinding).to.be.deep.eq(['x', 0, 0]);
-
-    const customWatches = watches[1];
-    expect(customWatches).to.have.length(0);
+    expect(watches).to.have.length(0);
   });
 
   it('can be added', async () => {
@@ -165,10 +180,9 @@ describe('watches', () => {
     vc.runWithInterpreter();
     vc.addWatch('x + 1');
     const watches = vc.getWatches();
-    expect(watches).to.have.length(2);
-    const customWatches = watches[1];
-    expect(customWatches).to.be.deep.eq([
-      ['x + 1', 1, 1]
+    expect(watches).to.have.length(1);
+    expect(watches).to.be.deep.eq([
+      ['x + 1', { type: 'num', v: 1 }, { type: 'num', v: 1 }]
     ]);
   });
 });

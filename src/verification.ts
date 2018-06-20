@@ -3,7 +3,7 @@ import { Substituter, Syntax, nullLoc, TestCode, eqSourceLocation, compEndPositi
          replaceVarAssertion } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars, not, and } from './logic';
 import { Message, MessageException, unexpected } from './message';
-import { Model, valueToJavaScript, valueToPlain } from './model';
+import { Model, valueToJavaScript, JSVal } from './model';
 import { options } from './options';
 import { SMTInput, SMTOutput, vcToSMT } from './smt';
 import { sourceAsJavaScriptAssertion } from './parser';
@@ -204,24 +204,27 @@ export default class VerificationCondition {
     return this.getInterpreter().callstack();
   }
 
-  getWatches (): Array<Array<[string, any, any]>> {
+  getScopes (): Array<Array<[string, JSVal | undefined, JSVal | undefined]>> {
     const heap = this.guessCurrentHeap();
-    const scopes: Array<Array<[string, any, any]>> = this.getInterpreter().scopes().map(scope =>
-      scope.map(([varname, dynamicValue]): [string, any, any] => {
+    return this.getInterpreter().scopes().map(scope =>
+      scope.map(([varname, dynamicValue]): [string, JSVal | undefined, JSVal | undefined] => {
         const staticValue = this.modelValue(varname, heap);
-        return [varname, dynamicValue, staticValue];
+        return [varname, this.getInterpreter().asValue(dynamicValue), staticValue];
       })
     );
-    scopes.push(this.watches.map((watchSource: string): [string, any, any] => {
-      let dynamicValue: any = '<<error>>';
-      let staticValue: any = '<<error>>';
+  }
+
+  getWatches (): Array<[string, JSVal | undefined, JSVal | undefined]> {
+    return this.watches.map((watchSource: string): [string, JSVal | undefined, JSVal | undefined] => {
+      let dynamicValue: JSVal | undefined = undefined;
+      let staticValue: JSVal | undefined = undefined;
       try {
-        dynamicValue = this.getInterpreter().eval(watchSource, []);
-        staticValue = this.getInterpreter().eval(watchSource, this.currentBindingsFromModel());
+        dynamicValue = this.getInterpreter().asValue(this.getInterpreter().eval(watchSource, []));
+        staticValue = this.getInterpreter().asValue(
+          this.getInterpreter().eval(watchSource, this.currentBindingsFromModel()));
       } catch (e) { /* ignore errors */ }
       return [watchSource, dynamicValue, staticValue];
-    }));
-    return scopes;
+    });
   }
 
   addWatch (source: string): void {
@@ -253,13 +256,17 @@ export default class VerificationCondition {
     this.stepToSource();
   }
 
-  getAnnotations (): Array<[Syntax.SourceLocation, Array<any>, any]> {
+  getAnnotations (): Array<[Syntax.SourceLocation, Array<JSVal>, JSVal | undefined]> {
     return this.getInterpreter().annotations
     .filter(annotation => annotation.location.file === options.filename)
-    .map((annotation): [Syntax.SourceLocation, Array<any>, any] => {
+    .map((annotation): [Syntax.SourceLocation, Array<JSVal>, JSVal | undefined] => {
       const heap = this.guessCurrentHeap(annotation.location);
       const staticValue = this.modelValue(annotation.variableName, heap);
-      return [annotation.location, annotation.values, staticValue];
+      return [
+        annotation.location,
+        annotation.values.map((v: any): JSVal => this.getInterpreter().asValue(v)),
+        staticValue
+      ];
     });
   }
 
@@ -430,16 +437,16 @@ export default class VerificationCondition {
     }
   }
 
-  private modelValue (varname: string, currentHeap: Heap): any {
+  private modelValue (varname: string, currentHeap: Heap): JSVal | undefined {
     const model = this.getModel();
     if (model.mutableVariables().has(varname)) {
       try {
-        return valueToPlain(model.valueOf({ name: varname, heap: currentHeap }));
+        return model.valueOf({ name: varname, heap: currentHeap });
       } catch (e) {
         return undefined;
       }
     } else {
-      return valueToPlain(model.valueOf(varname));
+      return model.valueOf(varname);
     }
   }
 
@@ -451,7 +458,10 @@ export default class VerificationCondition {
       if (generatePreamble().vars.has(varname) || generatePreamble().locs.has(varname)) {
         continue;
       }
-      bindings.push([varname, this.modelValue(varname, heap)]);
+      const jsval = this.modelValue(varname, heap);
+      if (jsval !== undefined) {
+        bindings.push([varname, this.getInterpreter().fromValue(jsval)]);
+      }
     }
     return bindings;
   }
