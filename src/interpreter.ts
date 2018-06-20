@@ -376,16 +376,18 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
   eval (source: string, optBindings: Array<[string, any]> = []): any {
     const expression = sourceAsJavaScriptExpression(source);
     this.stack.push(new EvaluationStackFrame(expression, this.frame().scope));
-    for (const [varname, value] of optBindings) {
-      this.frame().define(varname, value, 'let');
-    }
-    while (true) {
-      const res = this.step();
-      if (res === StepResult.DONE) {
-        const retVal = this.popOp();
-        this.stack.pop();
-        return retVal;
+    try {
+      for (const [varname, value] of optBindings) {
+        this.frame().define(varname, value, 'let');
       }
+      while (true) {
+        const res = this.step();
+        if (res === StepResult.DONE) {
+          return this.popOp();
+        }
+      }
+    } finally {
+      this.stack.pop();
     }
   }
 
