@@ -9,6 +9,7 @@ export interface Options {
   quiet: boolean;
   verbose: boolean;
   logsmt: string;
+  maxInterpreterSteps: number;
 }
 
 const defaultOptions: Readonly<Options> = {
@@ -21,7 +22,8 @@ const defaultOptions: Readonly<Options> = {
   logformat: 'colored',
   quiet: true,
   verbose: false,
-  logsmt: '/tmp/vc.smt'
+  logsmt: '/tmp/vc.smt',
+  maxInterpreterSteps: 10000
 };
 
 export let options: Readonly<Options> = defaultOptions; // global singleton options object

@@ -2,6 +2,7 @@ import { Syntax, Visitor, eqSourceLocation, nullLoc, eqEndPosition, compEndPosit
          findSourceLocation } from './javascript';
 import { sourceAsJavaScriptExpression } from './parser';
 import { JSVal } from './model';
+import { options } from './options';
 
 declare const console: { log: (s: string) => void };
 
@@ -1453,6 +1454,9 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
 
   step (): StepResult {
     const frame = this.frame();
+    if (this.steps >= options.maxInterpreterSteps) {
+      return StepResult.DONE;
+    }
     try {
       return frame.entry(this);
     } catch (e) {
