@@ -4,6 +4,7 @@ import { sourceAsJavaScript } from './parser';
 import { resolveNames } from './scopes';
 import { vcgenProgram } from './vcgen';
 import VerificationCondition from './verification';
+import { TEST_PREAMBLE } from './codegen';
 
 export { default as VerificationCondition } from './verification';
 export { Message, format as formatMessage } from './message';
@@ -41,4 +42,8 @@ export async function verify (src: string, opts: Partial<Options> = {}): Promise
     res.push(m);
   }
   return res;
+}
+
+export function testPreamble (): string {
+  return TEST_PREAMBLE;
 }
