@@ -352,6 +352,7 @@ function spec (f, id, req, ens) {
 export function stringifyTestCode (body: ReadonlyArray<Syntax.Statement>): string {
   const stringifier = new Stringifier();
   return `${TEST_PREAMBLE}
+if (typeof alert === 'undefined') global.alert = console.log;
 
 ${body.map(s => stringifier.visitStatement(s)).join('\n')}`;
 }

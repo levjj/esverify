@@ -65,7 +65,8 @@ export function globalDeclarations (): Array<GlobalDeclaration> {
       builtinConst('console'),
       builtinFunc('parseInt', 2),
       builtinConst('Math'),
-      builtinConst('Number')
+      builtinConst('Number'),
+      builtinFunc('alert', 1)
     ];
   }
   return cachedGlobalDeclarations;
@@ -261,4 +262,9 @@ function preamble () {
       ensures(y => pure() && y === undefined);
     }
   };
+
+  // @ts-ignore: function never used
+  function alert (arg: any) {
+    ensures(y => pure() && y === undefined);
+  }
 }

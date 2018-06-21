@@ -64,6 +64,7 @@ function globalScope (): Scope {
   scope.define('parseInt', parseInt, 'const');
   scope.define('Math', Math, 'const');
   scope.define('Number', Number, 'const');
+  scope.define('alert', console.log, 'let');
 
   scope.define('assert', function assert (p: any) { if (!p) throw new Error('assertion failed'); }, 'const');
   scope.define('spec', function spec (f: any, id: any, req: any, ens: any) {

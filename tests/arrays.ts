@@ -148,7 +148,7 @@ describe('array invariants', () => {
   verified('f_4: res.every((e, i) => (e > i))');
   incorrect('g_1: res.every(e => (e > 23))');
   verified('g_2: a has property 0');
-  incorrect('g_2: (res > 42)', ['a', [24, 24]]);
+  incorrect('g_2: (res > 42)', ['a', [24]]);
   incorrect('g_3: (a[2] > 12)', ['a', []]);
   incorrect('g_4: res.every((e, i) => (e > i))');
 });

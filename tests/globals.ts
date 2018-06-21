@@ -169,3 +169,20 @@ describe('Random dice roll', () => {
   verified('assert: (d6 <= 6)');
   verified('assert: Number.isInteger(d6)');
 });
+
+describe('alert', () => {
+
+  code(() => {
+    function f (x) {
+      ensures(y => y === undefined);
+
+      return alert(x);
+    }
+
+    alert();
+  });
+
+  verified('f: precondition alert(x)');
+  verified('f: (y === undefined)');
+  unverified('precondition alert()');
+});
