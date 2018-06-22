@@ -38,6 +38,7 @@ describe('verification', () => {
     if (message.status !== 'error') { throw new Error(); }
     expect(message.type).to.be.eql('incorrect');
     expect(message.description).to.be.eql('f: (y > 3)');
+    expect(message.description).to.be.eql(vc.getDescription());
     expect(message.loc).to.be.deep.eq({
       file: '',
       start: { line: 3, column: 20 },
