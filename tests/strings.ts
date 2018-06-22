@@ -126,7 +126,7 @@ describe('string substr', () => {
   verified('f: (y[1] === a[3])');
   verified('g: a has property "substr"');
   verified('g: precondition a.substr(2, 2)');
-  incorrect('g: (y[1] !== a[3])', ['a', '\u0000\u0000\u0000\u0000\u0000\u0000']);
+  incorrect('g: (y[1] !== a[3])', ['a', '\u0000\u0000\u0000\u0000\u0000\u0000']).timeout(4000);
   unverified('precondition d.substr(-1, 4)');
 });
 
