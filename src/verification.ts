@@ -425,7 +425,11 @@ export default class VerificationCondition {
 
   private stepToSource (): void {
     const interpreter = this.getInterpreter();
-    while (interpreter.canStep() && interpreter.loc().file !== getOptions().filename) {
+    if (!interpreter.canStep()) return;
+    const prevLoc = interpreter.loc();
+    while (interpreter.canStep() && (
+           interpreter.loc().file !== getOptions().filename ||
+           eqSourceLocation(prevLoc, interpreter.loc()))) {
       interpreter.stepInto();
     }
   }
