@@ -306,6 +306,7 @@ export interface Interpreter {
   run (): void;
   define (name: string, val: any, kind: 'let' | 'const'): void;
   eval (source: string, bindings: Array<[string, any]>): any;
+  evalExpression (expression: Syntax.Expression, bindings: Array<[string, any]>): any;
   asValue (val: any): JSVal;
   fromValue (val: JSVal): any;
 }
@@ -374,11 +375,14 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
     this.frame().define(name, val, kind);
   }
 
-  eval (source: string, optBindings: Array<[string, any]> = []): any {
-    const expression = sourceAsJavaScriptExpression(source);
+  eval (source: string, bindings: Array<[string, any]> = []): any {
+    return this.evalExpression(sourceAsJavaScriptExpression(source), bindings);
+  }
+
+  evalExpression (expression: Syntax.Expression, bindings: Array<[string, any]> = []): any {
     this.stack.push(new EvaluationStackFrame(expression, this.frame().scope));
     try {
-      for (const [varname, value] of optBindings) {
+      for (const [varname, value] of bindings) {
         this.frame().define(varname, value, 'let');
       }
       while (true) {
@@ -461,18 +465,6 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
   }
 
   // --- other methods
-
-  evalExpression (expression: Syntax.Expression): any {
-    this.stack.push(new EvaluationStackFrame(expression, this.frame().scope));
-    while (true) {
-      const res = this.step();
-      if (res === StepResult.DONE) {
-        const retVal = this.popOp();
-        this.stack.pop();
-        return retVal;
-      }
-    }
-  }
 
   annotate (loc: Syntax.SourceLocation, variableName: string, value: any): any {
     // find index of annotation

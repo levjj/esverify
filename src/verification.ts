@@ -1,12 +1,12 @@
 import { stringifyTestCode } from './codegen';
 import { Substituter, Syntax, nullLoc, TestCode, eqSourceLocation, compEndPosition, id,
-         replaceVarAssertion } from './javascript';
+         replaceVarAssertion, replaceVarExpr } from './javascript';
 import { Classes, FreeVars, Heap, Heaps, Locs, P, Vars, not, and } from './logic';
 import { Message, MessageException, unexpected } from './message';
 import { Model, valueToJavaScript, JSVal } from './model';
 import { getOptions } from './options';
 import { SMTInput, SMTOutput, vcToSMT } from './smt';
-import { sourceAsJavaScriptAssertion } from './parser';
+import { sourceAsJavaScriptAssertion, sourceAsJavaScriptExpression } from './parser';
 import { VCGenerator } from './vcgen';
 import { Interpreter, interpret } from './interpreter';
 import { generatePreamble } from './preamble';
@@ -34,7 +34,7 @@ export default class VerificationCondition {
   private description: string;
   private heapHints: Array<[Syntax.SourceLocation, Heap]>;
   private aliases: { [from: string]: string };
-  private watches: Array<string>;
+  private watches: Array<[string, Syntax.Expression]>;
 
   private model: Model | null;
   private interpreter: Interpreter | null;
@@ -215,20 +215,25 @@ export default class VerificationCondition {
   }
 
   getWatches (): Array<[string, JSVal | undefined, JSVal | undefined]> {
-    return this.watches.map((watchSource: string): [string, JSVal | undefined, JSVal | undefined] => {
+    return this.watches.map(([src, expr]): [string, JSVal | undefined, JSVal | undefined] => {
       let dynamicValue: JSVal | undefined = undefined;
       let staticValue: JSVal | undefined = undefined;
       try {
-        dynamicValue = this.getInterpreter().asValue(this.getInterpreter().eval(watchSource, []));
+        dynamicValue = this.getInterpreter().asValue(this.getInterpreter().evalExpression(expr, []));
         staticValue = this.getInterpreter().asValue(
-          this.getInterpreter().eval(watchSource, this.currentBindingsFromModel()));
+          this.getInterpreter().evalExpression(expr, this.currentBindingsFromModel()));
       } catch (e) { /* ignore errors */ }
-      return [watchSource, dynamicValue, staticValue];
+      return [src, dynamicValue, staticValue];
     });
   }
 
   addWatch (source: string): void {
-    this.watches.push(source);
+    let expr = sourceAsJavaScriptExpression(source);
+    for (const aliasedVar in this.aliases) {
+      const replacement = this.aliases[aliasedVar];
+      expr = replaceVarExpr(aliasedVar, id(replacement), id(replacement), expr);
+    }
+    this.watches.push([source, expr]);
   }
 
   removeWatch (idx: number): void {
