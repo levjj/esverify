@@ -388,6 +388,7 @@ class InterpreterVisitor extends Visitor<void, void, StepResult, StepResult> imp
       while (true) {
         const res = this.step();
         if (res === StepResult.DONE) {
+          if (this.steps >= getOptions().maxInterpreterSteps) return undefined;
           return this.popOp();
         }
       }
@@ -1489,15 +1490,16 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
   stepOver (): void {
     const origStackHeight = this.stack.length;
     do {
-      this.stepInto();
-      if (this.isBreaking()) return;
+      const res = this.step();
+      if (res === StepResult.DONE || this.isBreaking()) return;
     } while (this.stack.length > origStackHeight);
   }
 
   stepOut (): any { // returns stack frame return value (does not stop at breakpoints)
     const origStackHeight = this.stack.length;
     do {
-      this.stepInto();
+      const res = this.step();
+      if (res === StepResult.DONE || this.isBreaking()) return;
     } while (this.stack.length >= origStackHeight);
     const retVal = this.popOp();
     this.pushOp(retVal);
@@ -1507,8 +1509,7 @@ ${stmt.fields.map(f => `  this.${f} = ${f};\n`).join('')}
   run (): void {
     while (true) {
       const res = this.step();
-      if (this.isBreaking()) return;
-      if (this.stack.length === 1 && res === StepResult.DONE) return;
+      if (res === StepResult.DONE || this.isBreaking()) return;
     }
   }
 }
