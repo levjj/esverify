@@ -229,6 +229,12 @@ describe('execution', () => {
     vc.stepInto();
     expect(vc.pc()).to.be.deep.eq({
       file: '',
+      start: { line: 4, column: 19 },
+      end: { line: 4, column: 20 }
+    });
+    vc.stepInto();
+    expect(vc.pc()).to.be.deep.eq({
+      file: '',
       start: { line: 4, column: 12 },
       end: { line: 4, column: 21 }
     });
