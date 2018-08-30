@@ -16,7 +16,7 @@ function isAscending (list) {
   ensures(pure());
 
   return list === null || list.tail === null ||
-        list.head <= list.tail.head && isAscending(list.tail);
+         list.head <= list.tail.head && isAscending(list.tail);
 }
 
 function isDescending (list) {
@@ -25,7 +25,7 @@ function isDescending (list) {
   ensures(pure());
 
   return list === null || list.tail === null ||
-        list.head >= list.tail.head && isDescending(list.tail);
+         list.head >= list.tail.head && isDescending(list.tail);
 }
 
 function reverseHelper (pivot, acc, list) {
@@ -41,12 +41,11 @@ function reverseHelper (pivot, acc, list) {
   ensures(pure());
 
   const newList = new IntList(pivot, acc);
-  isDescending(newList);
+  isDescending(newList);    // instantiation
 
   if (list === null) {
     return newList;
   } else {
-    assert(list.tail === null || list.tail instanceof IntList);
     isAscending(list);      // instantiation
     isAscending(list.tail); // instantiation
     return reverseHelper(list.head, newList, list.tail);
