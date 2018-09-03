@@ -784,20 +784,20 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     const [rightA, rightE] = this.visitExpression(expr.right);
     switch (expr.operator) {
       case '<':
-        this.verifyType(expr.left, leftA, leftE, '<', 'number or string');
-        this.verifyType(expr.right, rightA, rightE, '<', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '<', 'number');
+        this.verifyType(expr.right, rightA, rightE, '<', 'number');
         break;
       case '<=':
-        this.verifyType(expr.left, leftA, leftE, '<=', 'number or string');
-        this.verifyType(expr.right, rightA, rightE, '<=', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '<=', 'number');
+        this.verifyType(expr.right, rightA, rightE, '<=', 'number');
         break;
       case '>':
-        this.verifyType(expr.left, leftA, leftE, '>', 'number or string');
-        this.verifyType(expr.right, rightA, rightE, '>', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '>', 'number');
+        this.verifyType(expr.right, rightA, rightE, '>', 'number');
         break;
       case '>=':
-        this.verifyType(expr.left, leftA, leftE, '>=', 'number or string');
-        this.verifyType(expr.right, rightA, rightE, '>=', 'number or string');
+        this.verifyType(expr.left, leftA, leftE, '>=', 'number');
+        this.verifyType(expr.right, rightA, rightE, '>=', 'number');
         break;
       case '<<':
         this.verifyType(expr.left, leftA, leftE, '<<', 'int');
