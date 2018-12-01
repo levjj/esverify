@@ -1,6 +1,5 @@
 language: node_js
-node_js:
-  - '9.10'
+node_js: '9.10'
 dist: trusty
 before_script:
   - wget https://github.com/Z3Prover/z3/releases/download/z3-4.6.0/z3-4.6.0-x64-ubuntu-14.04.zip -O /tmp/z3-4.6.0-x64-ubuntu-14.04.zip
@@ -14,4 +13,4 @@ script:
   - npm test
   - npm run build
 after_success:
-  - npm run travis-deploy-once "npm run semantic-release"
+  - npx travis-deploy-once "npx semantic-release"
