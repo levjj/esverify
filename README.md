@@ -1,7 +1,7 @@
 # esverify
 
 [![Build Status](https://travis-ci.org/levjj/esverify.svg?branch=master)](https://travis-ci.org/levjj/esverify)
-[![NPM Version](https://img.shields.io/npm/v/esverify.svg)](https://www.npmjs.com/package/esverify)
+[![NPM Version](https://img.shields.io/npm/v/esverify.svg)](https://www.npmjs.com/package/esverify) [![Greenkeeper badge](https://badges.greenkeeper.io/levjj/esverify.svg)](https://greenkeeper.io/)
 
 Program Verification for ECMAScript/JavaScript ([esverify.org](http://esverify.org/)).
 
