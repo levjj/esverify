@@ -1,3 +1,4 @@
+import 'mocha';
 import { expect } from 'chai';
 import { verificationConditions } from '../src';
 import { code, incorrect, verified, unverified } from './helpers';

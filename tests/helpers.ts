@@ -1,3 +1,4 @@
+import 'mocha';
 import { expect } from 'chai';
 import { verificationConditions } from '../src';
 import { FreeVar } from '../src/logic';

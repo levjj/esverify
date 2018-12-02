@@ -1,3 +1,4 @@
+import 'mocha';
 import { expect } from 'chai';
 import { code, incorrect, unverified, verified, vcs } from './helpers';
 

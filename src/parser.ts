@@ -862,6 +862,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement, withAssertions: boolean
       const body = stmtBody.type === 'BlockStatement' ? stmtBody.body : returnExpr(stmtBody);
       if (stmt.generator) throw unsupported(stmt, 'generators not supported');
       if (stmt.async) throw unsupported(stmt, 'async not supported');
+      if (stmt.id === null) throw unsupported(stmt, 'export default function not supported');
       checkDistinct(stmt.params);
       const params: Array<Syntax.Identifier> = stmt.params.map(patternAsIdentifier);
       const fd: Syntax.FunctionDeclaration = {
@@ -886,6 +887,7 @@ function statementAsJavaScript (stmt: JSyntax.Statement, withAssertions: boolean
     }
     case 'ClassDeclaration': {
       if (stmt.superClass) throw unsupported(stmt, 'inheritance not supported');
+      if (stmt.id === null) throw unsupported(stmt, 'export default class not supported');
       const methods: Array<Syntax.MethodDeclaration> = [];
       for (const method of stmt.body.body) {
         if (method.kind === 'constructor') continue;

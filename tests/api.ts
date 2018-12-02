@@ -1,5 +1,6 @@
+import 'mocha';
 import { expect } from 'chai';
-import { code, incorrect, unverified, verified, vcs } from './helpers';
+import { code, vcs } from './helpers';
 import { valueToString } from '../src';
 
 declare function ensures (x: boolean | ((y: any) => boolean)): void;
