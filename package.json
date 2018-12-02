@@ -26,7 +26,7 @@
   "homepage": "https://github.com/levjj/esverify#readme",
   "scripts": {
     "lint": "tsc --noEmit && tslint --project .",
-    "test": "TS_NODE_DISABLE_WARNINGS=true mocha -r ts-node/register tests/*.ts",
+    "test": "TS_NODE_TRANSPILE_ONLY=true mocha -r ts-node/register tests/*.ts",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.module.json",
     "commit": "commit",
     "commitmsg": "commitlint -x @commitlint/config-conventional -e $GIT_PARAMS",

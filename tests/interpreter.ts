@@ -1,3 +1,4 @@
+import 'mocha';
 import { bisumulate } from './helpers';
 
 declare function log (out: any): void;

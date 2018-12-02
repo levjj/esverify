@@ -1,3 +1,4 @@
+import 'mocha';
 import { code, verified } from './helpers';
 
 declare function assert (x: boolean): void;
