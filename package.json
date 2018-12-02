@@ -28,9 +28,7 @@
     "lint": "tsc --noEmit && tslint --project .",
     "test": "TS_NODE_TRANSPILE_ONLY=true mocha -r ts-node/register tests/*.ts",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.module.json",
-    "commit": "commit",
-    "commitmsg": "commitlint -x @commitlint/config-conventional -e $GIT_PARAMS",
-    "prepush": "npm run lint && npm test && npm run build"
+    "commit": "commit"
   },
   "repository": {
     "type": "git",
@@ -57,5 +55,11 @@
     "tslint": "^5.11.0",
     "tslint-config-standard": "^8.0.1",
     "typescript": "^3.2.1"
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "commitlint -x @commitlint/config-conventional -e $HUSKY_GIT_PARAMS",
+      "pre-push": "npm run lint && npm test && npm run build"
+    }
   }
 }
