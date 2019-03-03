@@ -16,10 +16,14 @@ export function vcs (): Array<VerificationCondition> {
   return savedVCs;
 }
 
+export function codeToString (fn: () => any) {
+  const code = fn.toString();
+  return code.substring(14, code.length - 2);
+}
+
 export function code (fn: () => any, each: boolean = false) {
   const setUp = () => {
-    const code = fn.toString();
-    const t = verificationConditions(code.substring(14, code.length - 2));
+    const t = verificationConditions(codeToString(fn));
     if (!(t instanceof Array)) {
       log(t);
       if (t.status === 'error' && t.type === 'unexpected') console.log(t.error);
