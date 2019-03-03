@@ -36,7 +36,8 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   heapHints: Array<[Syntax.SourceLocation, Heap]>;
 
   constructor (classes: Classes, oldHeap: Heap, heap: Heap, locs: Locs, vars: Vars, assumptions: Array<string>,
-               heapHints: Array<[Syntax.SourceLocation, Heap]>, prop: P = tru) {
+               heapHints: Array<[Syntax.SourceLocation, Heap]>, assertionPolarity: true | false | undefined,
+               prop: P) {
     super();
     this.classes = classes;
     this.oldHeap = oldHeap;
@@ -48,10 +49,10 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
     this.resVar = null;
     this.freeVars = [];
     this.testBody = [];
-    this.assertionPolarity = true;
     this.simpleAssertion = true;
     this.assumptions = assumptions;
     this.heapHints = heapHints;
+    this.assertionPolarity = assertionPolarity;
   }
 
   have (p: P, t: TestCode = []): void {
@@ -1404,6 +1405,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
                            new Set([...this.vars]),
                            [...this.assumptions],
                            this.heapHints,
+                           this.assertionPolarity,
                            this.prop);
   }
 
@@ -1671,15 +1673,14 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
 
 export function vcgenProgram (prog: Syntax.Program): Array<VerificationCondition> {
   const { classes, heap, locs, vars, prop } = generatePreamble();
-  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], prop);
+  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], true, prop);
   vcgen.visitProgram(prog);
   return vcgen.vcs;
 }
 
 export function transformProgram (prog: Syntax.Program): string {
   const { classes, heap, locs, vars, prop } = generatePreamble();
-  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], prop);
-  vcgen.assertionPolarity = undefined;
+  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], undefined, prop);
   vcgen.visitProgram(prog);
   return stringifyTestCode(vcgen.testBody);
 }

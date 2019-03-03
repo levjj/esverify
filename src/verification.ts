@@ -155,7 +155,7 @@ export default class VerificationCondition {
     const assumptions = this.assumptions.map(({ source }) => source);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
                                   new Set([...this.locs]), new Set([...this.vars]), assumptions, this.heapHints,
-                                  this.prop);
+                                  true, this.prop);
     const [assumptionP] = vcgen.assume(assumption);
     this.assumptions = this.assumptions.concat([{ source, prop: assumptionP, canBeDeleted: true }]);
   }
@@ -181,7 +181,7 @@ export default class VerificationCondition {
     const assumptions = this.assumptions.map(({ source }) => source);
     const vcgen = new VCGenerator(new Set([...this.classes]), maxHeap, maxHeap,
                                   new Set([...this.locs]), new Set([...this.vars]), assumptions,
-                                  this.heapHints, this.prop);
+                                  this.heapHints, true, this.prop);
     const [assertionP, , assertionT] = vcgen.assert(assertion);
     return new VerificationCondition(this.classes, maxHeap, this.locs, this.vars, this.prop, this.assumptions,
                                      assertionP, this.loc, source, this.freeVars, this.testBody, assertionT,

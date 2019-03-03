@@ -29,6 +29,17 @@ describe('source transformation', () => {
     assert(x < y);`);
   });
 
+  it('retains assertions in functions', () => {
+    expectTransformation(() => {
+      function f (x) {
+        assert(x > 0);
+      }
+    }, `
+    function f (x) {
+      assert(x > 0);
+    }`);
+  });
+
   it('changes preconditions to assertions', () => {
     expectTransformation(() => {
       function f (x) {
