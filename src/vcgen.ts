@@ -1,4 +1,4 @@
-import { stringifyAssertion, stringifyExpression } from './codegen';
+import { stringifyAssertion, stringifyExpression, stringifyTestCode } from './codegen';
 import { Syntax, TestCode, Visitor, id, isValidAssignmentTarget, nullLoc, removeTestCodePrefix,
          replaceVarAssertion as replaceJSVarAssertion, replaceVarFunction as replaceJSVarFunction,
          replaceVarBlock as replaceJSVarBlock, uniqueIdentifier, eqSourceLocation,
@@ -30,7 +30,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   resVar: string | null;
   freeVars: FreeVars;
   testBody: TestCode;
-  assertionPolarity: boolean;
+  assertionPolarity: true | false | undefined;
   simpleAssertion: boolean;
   assumptions: Array<string>;
   heapHints: Array<[Syntax.SourceLocation, Heap]>;
@@ -95,7 +95,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
       this.simpleAssertion = true;
       const [assertP, assertTriggers, assertE, assertT] = this.visitAssertion(assertion);
       const checkT: Array<Syntax.Statement> = [];
-      if (this.assertionPolarity && (assertE.type !== 'Literal' || assertE.value !== true)) {
+      if (this.assertionPolarity !== false && (assertE.type !== 'Literal' || assertE.value !== true)) {
         checkT.push(this.check(assertE));
       }
       return [assertP, assertTriggers, checkT.concat(assertT)];
@@ -109,10 +109,18 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
   assume (assertion: Syntax.Assertion, oldHeap: Heap = this.oldHeap, heap: Heap = this.heap):
          [P, AccessTriggers, TestCode] {
     try {
-      this.assertionPolarity = !this.assertionPolarity;
+      if (this.assertionPolarity === true) {
+        this.assertionPolarity = false;
+      } else if (this.assertionPolarity === false) {
+        this.assertionPolarity = true;
+      }
       return this.assert(assertion, oldHeap, heap);
     } finally {
-      this.assertionPolarity = !this.assertionPolarity;
+      if (this.assertionPolarity === true) {
+        this.assertionPolarity = false;
+      } else if (this.assertionPolarity === false) {
+        this.assertionPolarity = true;
+      }
     }
   }
 
@@ -578,7 +586,7 @@ export class VCGenerator extends Visitor<[A, AccessTriggers, Syntax.Expression],
           loc: assertion.loc
         });
       }
-      if (this.assertionPolarity) {
+      if (this.assertionPolarity !== false) {
         if (specP.type !== 'And' || specP.clauses.length !== 2) {
           throw new Error('expected spec to translate to [fnCheck, forAll]');
         }
@@ -1666,4 +1674,12 @@ export function vcgenProgram (prog: Syntax.Program): Array<VerificationCondition
   const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], prop);
   vcgen.visitProgram(prog);
   return vcgen.vcs;
+}
+
+export function transformProgram (prog: Syntax.Program): string {
+  const { classes, heap, locs, vars, prop } = generatePreamble();
+  const vcgen = new VCGenerator(classes, heap, heap, locs, vars, [], [], prop);
+  vcgen.assertionPolarity = undefined;
+  vcgen.visitProgram(prog);
+  return stringifyTestCode(vcgen.testBody);
 }

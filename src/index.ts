@@ -2,7 +2,7 @@ import { Message, MessageException, log, unexpected } from './message';
 import { Options, getOptions, setOptions } from './options';
 import { sourceAsJavaScript } from './parser';
 import { resolveNames } from './scopes';
-import { vcgenProgram } from './vcgen';
+import { vcgenProgram, transformProgram } from './vcgen';
 import VerificationCondition from './verification';
 import { TEST_PREAMBLE } from './codegen';
 
@@ -46,4 +46,15 @@ export async function verify (src: string, opts: Partial<Options> = {}): Promise
 
 export function testPreamble (): string {
   return TEST_PREAMBLE;
+}
+
+export function transformSourceCode (src: string, opts: Partial<Options> = {}): Message | string {
+  setOptions(opts);
+  try {
+    const prog = sourceAsJavaScript(src);
+    resolveNames(prog);
+    return transformProgram(prog);
+  } catch (e) {
+    return e instanceof MessageException ? e.msg : unexpected(e);
+  }
 }
