@@ -13,4 +13,4 @@ script:
   - npm test
   - npm run build
 after_success:
-  - npx travis-deploy-once "npx semantic-release"
+  - npx semantic-release
