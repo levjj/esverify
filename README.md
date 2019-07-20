@@ -1,6 +1,6 @@
 # esverify
 
-[![Build Status](https://travis-ci.org/levjj/esverify.svg?branch=master)](https://travis-ci.org/levjj/esverify)
+[![Build Status](https://travis-ci.com/levjj/esverify.svg?branch=master)](https://travis-ci.com/levjj/esverify)
 [![NPM Version](https://img.shields.io/npm/v/esverify.svg)](https://www.npmjs.com/package/esverify)
 [![Greenkeeper badge](https://badges.greenkeeper.io/levjj/esverify.svg)](https://greenkeeper.io/)
 
@@ -39,25 +39,25 @@ More examples can be found in the `tests` directory.
 
 ## Supported Features
 
-* expressions with boolean values, strings, integer and real number arithmetic
-* function pre- and post conditions as well as inline assertions and invariants
-* automatically generates counter-examples for failed assertions
-* runs counter-example as JavaScript code to reproduce errors in dynamic context
+* Expressions with boolean values, strings, integer and real number arithmetic
+* Function pre- and post conditions as well as inline assertions and invariants
+* Automatically generates counter-examples for failed assertions
+* Runs counter-example as JavaScript code to reproduce errors in dynamic context
   and differentiate incorrect programs from false negatives
-* mutable variables and limited temporal reasoning, e.g. `old(x) > x`
-* control flow including branching, returns and while loops with manually
+* Mutable variables and limited temporal reasoning, e.g. `old(x) > x`
+* Control flow including branching, returns and while loops with manually
   specified invariants
-* inductive reasoning with loop invariants and recursive functions
-* automatic inlining of function body for external proofs of function properties
+* Inductive reasoning with loop invariants and recursive functions
+* Automatic inlining of function body for external proofs of function properties
   (restricted to one level of inlining)
-* closures
-* checking of function purity
-* higher-order functions
-* simple proof checking using Curry-Howard correspondence
-* simple immutable classes with fields, methods and class invariant (no inheritance)
-* immutable JavaScript objects using string keys
-* immutable arrays (no sparse arrays)
-* restricted verifier preamble for global objects such as `console` and `Math`
+* Closures
+* Checking of function purity
+* Higher-order functions
+* Simple proof checking using Curry-Howard correspondence
+* Simple immutable classes with fields, methods and class invariant (no inheritance)
+* Immutable JavaScript objects using string keys
+* Immutable arrays (no sparse arrays)
+* Restricted verifier preamble for global objects such as `console` and `Math`
 
 It is based on the [z3](https://github.com/Z3Prover/z3) SMT solver but avoids
 trigger heuristics and thereby (most) timeouts and other unpredictable results by
@@ -65,13 +65,13 @@ requiring manual instantiation. Function definitions and class invariants corres
 to universal quantifiers and function calls and field access act as triggers that
 instantiate these quantifiers in a deterministic way.
 
-## To Do
+## To Do (see [GitHub issues](https://github.com/levjj/esverify/issues))
 
-* termination checking
-* mutable objects, arrays and classes
-* modules with imports and exports
-* prototype and subclass inheritance
-* verifier-only "ghost" variables, arguments and functions/predicates
+* Termination checking
+* Mutable objects, arrays and classes
+* Modules with imports and exports
+* Prototype and subclass inheritance
+* Verifier-only "ghost" variables, arguments and functions/predicates
 * TypeScript as input language
 
 ## Usage as Command Line Tool
