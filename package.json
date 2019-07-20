@@ -23,7 +23,7 @@
   "bugs": {
     "url": "https://github.com/levjj/esverify/issues"
   },
-  "homepage": "https://github.com/levjj/esverify#readme",
+  "homepage": "https://esverify.org/",
   "scripts": {
     "lint": "tsc --noEmit && tslint --project .",
     "test": "TS_NODE_TRANSPILE_ONLY=true mocha -r ts-node/register tests/*.ts",
