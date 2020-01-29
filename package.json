@@ -47,7 +47,7 @@
     "@commitlint/prompt-cli": "^8.1.0",
     "@commitlint/travis-cli": "^8.1.0",
     "@types/chai": "^4.1.4",
-    "@types/mocha": "^5.2.5",
+    "@types/mocha": "^7.0.0",
     "chai": "^4.1.2",
     "husky": "^4.0.2",
     "mocha": "^6.2.0",
