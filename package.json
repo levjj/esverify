@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@types/esprima": "^4.0.2",
-    "@types/estree": "0.0.41",
+    "@types/estree": "0.0.43",
     "esprima": "^4.0.1",
     "minimist2": "^1.0.2"
   },
