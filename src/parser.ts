@@ -613,6 +613,9 @@ function expressionAsJavaScript (expr: JSyntax.Expression, withAssertions: boole
       };
     case 'ObjectExpression': {
       const properties = expr.properties.map(property => {
+        if (property.type !== 'Property') {
+          throw unsupported(property, 'only simple properties supported');
+        }
         if (property.kind !== 'init') throw unsupported(property, 'getters and setters not supported');
         if (property.value.type === 'ObjectPattern' ||
             property.value.type === 'ArrayPattern' ||
