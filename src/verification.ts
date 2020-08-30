@@ -310,8 +310,8 @@ export default class VerificationCondition {
             reject(new Error('cannot invoke z3: ' + String(err)));
           } else {
             const vstr = out.toString().match(/(\d+)\.(\d+)\.\d+/);
-            if (!vstr || +vstr[1] < 4 || +vstr[2] < 6) {
-              reject(new Error('esverify requires z3 verison 4.6 or above'));
+            if (!vstr || +vstr[1] !== 4 || +vstr[2] !== 6) {
+              reject(new Error('esverify requires z3 verison 4.6'));
             } else {
               checkedLocalZ3Version = true;
               resolve('');
