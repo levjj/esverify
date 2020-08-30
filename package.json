@@ -18,7 +18,7 @@
     "esverify": "./bin/esverify.js"
   },
   "engines": {
-    "node": ">=8.9"
+    "node": ">=14.9"
   },
   "bugs": {
     "url": "https://github.com/levjj/esverify/issues"
@@ -36,25 +36,25 @@
   },
   "dependencies": {
     "@types/esprima": "^4.0.2",
-    "@types/estree": "0.0.44",
+    "@types/estree": "0.0.45",
     "esprima": "^4.0.1",
     "minimist2": "^1.0.2"
   },
   "devDependencies": {
-    "@commitlint/cli": "^8.1.0",
-    "@commitlint/config-conventional": "^8.1.0",
-    "@commitlint/prompt": "^8.1.0",
-    "@commitlint/prompt-cli": "^8.1.0",
-    "@commitlint/travis-cli": "^8.1.0",
-    "@types/chai": "^4.1.4",
-    "@types/mocha": "^7.0.0",
-    "chai": "^4.1.2",
-    "husky": "^4.0.2",
-    "mocha": "^7.1.0",
-    "ts-node": "^8.3.0",
-    "tslint": "^5.18.0",
+    "@commitlint/cli": "^10.0.0",
+    "@commitlint/config-conventional": "^10.0.0",
+    "@commitlint/prompt": "^10.0.0",
+    "@commitlint/prompt-cli": "^10.0.0",
+    "@commitlint/travis-cli": "^10.0.0",
+    "@types/chai": "^4.2.12",
+    "@types/mocha": "^8.0.3",
+    "chai": "^4.2.0",
+    "husky": "^4.2.5",
+    "mocha": "^8.1.3",
+    "ts-node": "^9.0.0",
+    "tslint": "^6.1.3",
     "tslint-config-standard": "^9.0.0",
-    "typescript": "^3.5.3"
+    "typescript": "^4.0.2"
   },
   "husky": {
     "hooks": {

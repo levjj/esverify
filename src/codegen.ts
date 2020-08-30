@@ -210,8 +210,7 @@ class Stringifier extends Visitor<string, string, string, string> {
   visitFunctionExpression (expr: Syntax.FunctionExpression): string {
     if (expr.id === null && expr.body.body.length === 1 && expr.body.body[0].type === 'ReturnStatement' &&
         expr.requires.length === 0 && expr.ensures.length === 0) {
-      const retStmt = expr.body.body[0] as Syntax.ReturnStatement;
-      return `${this.visitParams(expr.params.map(p => p.name))} => ${this.visitExpression(retStmt.argument)}`;
+      return `${this.visitParams(expr.params.map(p => p.name))} => ${this.visitExpression(expr.body.body[0].argument)}`;
     }
     const body: Array<string | Syntax.Statement> = ([] as Array<string | Syntax.Statement>)
       .concat(expr.requires.map(req => `requires(${this.visitAssertion(req)});`))

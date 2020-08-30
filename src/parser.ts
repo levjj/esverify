@@ -193,6 +193,9 @@ function expressionAsTerm (expr: JSyntax.Expression): Syntax.Term {
       };
     }
     case 'LogicalExpression':
+      if (expr.operator !== '||' && expr.operator !== '&&') {
+        throw unsupported(expr, 'Unsupported operator ' + expr.operator);
+      }
       return {
         type: 'LogicalTerm',
         operator: expr.operator,
@@ -323,6 +326,9 @@ function expressionAsAssertion (expr: JSyntax.Expression): Syntax.Assertion {
       return expressionAsTerm(expr);
     }
     case 'LogicalExpression':
+      if (expr.operator !== '||' && expr.operator !== '&&') {
+        throw unsupported(expr, 'Unsupported operator ' + expr.operator);
+      }
       return {
         type: 'BinaryAssertion',
         operator: expr.operator,
