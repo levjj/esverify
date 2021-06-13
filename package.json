@@ -41,20 +41,20 @@
     "minimist2": "^1.0.2"
   },
   "devDependencies": {
-    "@commitlint/cli": "^10.0.0",
-    "@commitlint/config-conventional": "^10.0.0",
-    "@commitlint/prompt": "^10.0.0",
-    "@commitlint/prompt-cli": "^10.0.0",
-    "@commitlint/travis-cli": "^10.0.0",
-    "@types/chai": "^4.2.12",
-    "@types/mocha": "^8.0.3",
-    "chai": "^4.2.0",
-    "husky": "^4.2.5",
-    "mocha": "^8.1.3",
-    "ts-node": "^9.0.0",
+    "@commitlint/cli": "^12.0.0",
+    "@commitlint/config-conventional": "^12.0.0",
+    "@commitlint/prompt": "^12.0.0",
+    "@commitlint/prompt-cli": "^12.0.0",
+    "@commitlint/travis-cli": "^12.0.0",
+    "@types/chai": "^4.2.18",
+    "@types/mocha": "^8.2.2",
+    "chai": "^4.3.4",
+    "husky": "^4.3.8",
+    "mocha": "^8.4.0",
+    "ts-node": "^9.1.1",
     "tslint": "^6.1.3",
     "tslint-config-standard": "^9.0.0",
-    "typescript": "^4.0.2"
+    "typescript": "^4.3.2"
   },
   "husky": {
     "hooks": {

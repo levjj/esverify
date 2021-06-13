@@ -208,6 +208,6 @@ describe('array slice', () => {
   verified('f: (y[1] === a[3])');
   verified('g: a has property "slice"');
   verified('g: precondition a.slice(2, 4)');
-  incorrect('g: (y[1] !== a[3])', ['a', [2, 2, 2, 8, 2, 2]]).timeout(4000);
+  incorrect('g: (y[1] !== a[3])').timeout(4000);
   unverified('precondition d.slice(1, 4)');
 });
