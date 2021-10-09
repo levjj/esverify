@@ -18,7 +18,7 @@
     "esverify": "./bin/esverify.js"
   },
   "engines": {
-    "node": ">=14.9"
+    "node": ">=14.18"
   },
   "bugs": {
     "url": "https://github.com/levjj/esverify/issues"
@@ -61,5 +61,8 @@
       "commit-msg": "commitlint -x @commitlint/config-conventional -e $HUSKY_GIT_PARAMS",
       "pre-push": "npm run lint && npm test && npm run build"
     }
+  },
+  "volta": {
+    "node": "14.18.0"
   }
 }
